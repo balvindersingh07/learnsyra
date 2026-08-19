@@ -1,0 +1,72 @@
+.ta-hero {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.76)),
+    radial-gradient(circle at 0% 0%, rgba(108, 92, 231, 0.16), transparent 48%),
+    radial-gradient(circle at 100% 0%, rgba(34, 199, 214, 0.12), transparent 42%);
+}
+.ta-chip {
+  border: 1px solid rgba(99, 102, 241, 0.14);
+  background: rgba(255, 255, 255, 0.92);
+  color: #172033;
+}
+.ta-chip[data-on='true'] {
+  border-color: rgba(108, 92, 231, 0.45);
+  background: rgba(108, 92, 231, 0.1);
+  color: #5b4bd6;
+}
+.ta-page input:focus-visible,
+.ta-page select:focus-visible,
+.ta-page button:focus-visible {
+  outline: 2px solid #6c5ce7;
+  outline-offset: 2px;
+}
+.ta-card:hover {
+  transform: translateY(-2px);
+}
+.ta-skel {
+  height: 1.4rem;
+  border-radius: 0.75rem;
+  background: linear-gradient(90deg, rgba(108, 92, 231, 0.08), rgba(34, 199, 214, 0.16), rgba(108, 92, 231, 0.08));
+  background-size: 200% 100%;
+  animation: ta-shimmer 1.2s ease infinite;
+}
+@keyframes ta-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+.ta-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  min-height: 8rem;
+}
+.ta-bar > span {
+  flex: 1;
+  min-width: 0;
+  background: linear-gradient(180deg, #6c5ce7, #22c7d6);
+  border-radius: 8px 8px 4px 4px;
+  min-height: 4px;
+}
+.ta-funnel {
+  display: grid;
+  gap: 8px;
+}
+.ta-funnel > div {
+  background: rgba(108, 92, 231, 0.1);
+  border-radius: 12px;
+  padding: 8px 12px;
+}
+.ta-drawer {
+  background: rgba(23, 32, 51, 0.45);
+}
+.ta-star {
+  height: 8px;
+  border-radius: 99px;
+  background: rgba(108, 92, 231, 0.12);
+  overflow: hidden;
+}
+.ta-star > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #6c5ce7, #22c7d6);
+}

@@ -1,0 +1,204 @@
+.ac-hero {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.76)),
+    radial-gradient(circle at 0% 0%, rgba(108, 92, 231, 0.12), transparent 48%),
+    radial-gradient(circle at 100% 0%, rgba(245, 158, 11, 0.08), transparent 40%);
+}
+.ac-page {
+  --ac-gap: 0.85rem;
+}
+.ac-page > .grid > aside {
+  box-shadow: 0 8px 20px rgba(23, 32, 51, 0.04);
+}
+.ac-dash {
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+.ac-dash h1 {
+  font-size: 1.75rem;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+}
+.ac-dash h2 {
+  font-size: 1.125rem;
+  line-height: 1.25;
+  margin-bottom: 0.5rem;
+}
+.ac-stat {
+  min-height: 4.6rem;
+  padding: 0.7rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.ac-stat span {
+  font-size: 0.72rem;
+  line-height: 1.2;
+  color: #667085;
+  font-weight: 600;
+}
+.ac-stat strong {
+  font-size: 1.5rem;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  margin-top: 0.2rem;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+.ac-attn {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 3.25rem;
+  padding: 0.45rem 0.85rem;
+  border-bottom: 1px solid rgba(99, 102, 241, 0.08);
+}
+.ac-attn:last-child {
+  border-bottom: none;
+}
+.ac-attn em {
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  min-width: 1.5rem;
+  text-align: right;
+}
+.ac-health {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 2.15rem;
+  padding: 0.15rem 0;
+  border-bottom: 1px solid rgba(99, 102, 241, 0.06);
+  font-size: 0.8125rem;
+}
+.ac-health:last-child {
+  border-bottom: none;
+}
+.ac-act {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 2.35rem;
+  padding: 0.2rem 0;
+  border-bottom: 1px solid rgba(99, 102, 241, 0.06);
+  font-size: 0.8125rem;
+}
+.ac-act:last-child {
+  border-bottom: none;
+}
+.ac-act i {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: #6c5ce7;
+  flex-shrink: 0;
+}
+.ac-pill {
+  border: 1px solid rgba(99, 102, 241, 0.14);
+  background: rgba(255, 255, 255, 0.92);
+  color: #172033;
+  border-radius: 999px;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  min-height: 2rem;
+}
+.ac-chip {
+  border: 1px solid rgba(99, 102, 241, 0.14);
+  background: rgba(255, 255, 255, 0.92);
+  color: #172033;
+}
+.ac-chip[data-on='true'] {
+  border-color: rgba(108, 92, 231, 0.45);
+  background: rgba(108, 92, 231, 0.1);
+  color: #5b4bd6;
+}
+.ac-nav {
+  background: none;
+  border: none;
+  color: #172033;
+}
+.ac-nav[data-on='true'] {
+  background: rgba(108, 92, 231, 0.1);
+  color: #5b4bd6;
+}
+.ac-page input:focus-visible,
+.ac-page select:focus-visible,
+.ac-page button:focus-visible {
+  outline: 2px solid #6c5ce7;
+  outline-offset: 2px;
+}
+.ac-dash button[aria-disabled='true'] {
+  opacity: 0.55;
+}
+.ac-skel {
+  height: 1.4rem;
+  border-radius: 0.75rem;
+  background: linear-gradient(90deg, rgba(108, 92, 231, 0.08), rgba(34, 199, 214, 0.16), rgba(108, 92, 231, 0.08));
+  background-size: 200% 100%;
+  animation: ac-shimmer 1.2s ease infinite;
+}
+@keyframes ac-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+.ac-dash .ac-bar {
+  min-height: 5.25rem;
+}
+.ac-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+  min-height: 7rem;
+}
+.ac-bar > span {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 2px;
+  align-items: flex-end;
+  height: 100%;
+}
+.ac-bar i {
+  flex: 1;
+  border-radius: 6px 6px 3px 3px;
+  min-height: 4px;
+  display: block;
+}
+.ac-warn {
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  background: rgba(245, 158, 11, 0.08);
+}
+.ac-chart-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.ac-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.ac-status i {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  display: inline-block;
+}
+.ac-status[data-s='active'] i { background: #20c997; }
+.ac-status[data-s='suspended'] i { background: #f59e0b; }
+.ac-status[data-s='suspended'] { color: #b45309; }
+.ac-drawer {
+  background: rgba(23, 32, 51, 0.45);
+}
+@media (max-width: 767px) {
+  .ac-desktop-table { display: none; }
+}
+@media (min-width: 768px) {
+  .ac-mobile-cards { display: none; }
+}
+

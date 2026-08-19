@@ -1,0 +1,17 @@
+{
+  "title": "LearnSyra",
+  "description": "LearnSyra is an interactive learning platform combining AI assistance and expert tutors to offer affordable, career-focused education through courses, projects, and interview prep.",
+  "icons": {
+    "icon": "/logo.png"
+  },
+  "openGraph": {
+    "image": "/logo.png"
+  },
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

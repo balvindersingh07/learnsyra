@@ -1,0 +1,17 @@
+.course-thumb .thumb-inner {
+  transition: transform 0.3s ease;
+}
+.course-card:hover .thumb-inner {
+  transform: scale(1.03);
+}
+.wish-pop {
+  animation: wish-pop 0.28s ease;
+}
+@keyframes wish-pop {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+.compare-bar {
+  box-shadow: 0 -12px 32px rgba(23, 32, 51, 0.08);
+}

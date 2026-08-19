@@ -1,0 +1,51 @@
+.career-ring {
+  transform: rotate(-90deg);
+}
+.career-ring-fill {
+  stroke-dasharray: var(--career-circ);
+  stroke-dashoffset: calc(var(--career-circ) * (1 - var(--career-pct) / 100));
+  transition: stroke-dashoffset 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.career-count {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+}
+.career-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.career-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 36px rgba(108, 92, 231, 0.1);
+}
+.career-road {
+  scrollbar-width: thin;
+}
+.career-road::-webkit-scrollbar {
+  height: 6px;
+}
+.career-check:checked {
+  accent-color: #6C5CE7;
+}
+.career-path-step::after {
+  content: '';
+  display: block;
+  width: 1px;
+  height: 18px;
+  margin: 4px auto;
+  background: linear-gradient(180deg, #6C5CE7, #22C7D6);
+}
+.career-path-step:last-child::after {
+  display: none;
+}
+.career-modal-in {
+  animation: career-in 0.28s ease;
+}
+@keyframes career-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.career-xp {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.92), rgba(255,255,255,0.72)),
+    radial-gradient(circle at 100% 0%, rgba(108,92,231,0.12), transparent 46%);
+}

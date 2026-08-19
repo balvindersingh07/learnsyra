@@ -1,0 +1,19 @@
+.wish-pop {
+  animation: wish-pop 0.28s ease;
+}
+@keyframes wish-pop {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+.cd-acc {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.22s ease;
+}
+.cd-acc[data-open='true'] {
+  grid-template-rows: 1fr;
+}
+.cd-acc > div {
+  overflow: hidden;
+}

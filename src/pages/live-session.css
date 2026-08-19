@@ -1,0 +1,74 @@
+.lv-workspace {
+  height: calc(100dvh - 4rem);
+  min-height: 0;
+}
+.lv-tab[data-active='true'] {
+  background: rgba(108, 92, 231, 0.14);
+  color: #5B4BD6;
+}
+.lv-ctrl {
+  min-width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: 1px solid rgba(99, 102, 241, 0.16);
+  background: rgba(255, 255, 255, 0.92);
+  color: #172033;
+}
+.lv-ctrl[data-on='false'] {
+  background: rgba(244, 63, 94, 0.12);
+  color: #e11d48;
+  border-color: rgba(244, 63, 94, 0.22);
+}
+.lv-ctrl[data-danger='true'] {
+  background: rgba(244, 63, 94, 0.12);
+  color: #e11d48;
+}
+.lv-video {
+  background: linear-gradient(160deg, #2a2158 0%, #172033 55%, #1a3a48 100%);
+}
+.lv-pulse {
+  animation: lv-pulse 1.4s ease infinite;
+}
+@keyframes lv-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+.lv-in {
+  animation: lv-in 0.4s ease;
+}
+@keyframes lv-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.lv-share {
+  box-shadow: 0 0 0 2px rgba(108, 92, 231, 0.45);
+}
+.lv-sticky {
+  box-shadow: 0 -12px 32px rgba(23, 32, 51, 0.08);
+}
+.lv-check:checked {
+  accent-color: #6C5CE7;
+}
+.lv-avail {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #20C997;
+  box-shadow: 0 0 0 4px rgba(32, 201, 151, 0.16);
+}
+.lv-drawer {
+  box-shadow: 0 16px 48px rgba(23, 32, 51, 0.16);
+}
+.lv-countdown {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+}
+textarea:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--ls-primary);
+  outline-offset: 2px;
+}

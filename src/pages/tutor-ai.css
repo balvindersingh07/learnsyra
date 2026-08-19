@@ -1,0 +1,73 @@
+.tai-hero {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.76)),
+    radial-gradient(circle at 0% 0%, rgba(108, 92, 231, 0.16), transparent 48%),
+    radial-gradient(circle at 100% 0%, rgba(34, 199, 214, 0.12), transparent 42%);
+}
+.tai-chip {
+  border: 1px solid rgba(99, 102, 241, 0.14);
+  background: rgba(255, 255, 255, 0.92);
+  color: #172033;
+}
+.tai-chip[data-on='true'] {
+  border-color: rgba(108, 92, 231, 0.45);
+  background: rgba(108, 92, 231, 0.1);
+  color: #5b4bd6;
+}
+.tai-page input:focus-visible,
+.tai-page select:focus-visible,
+.tai-page textarea:focus-visible,
+.tai-page button:focus-visible {
+  outline: 2px solid #6c5ce7;
+  outline-offset: 2px;
+}
+.tai-action:hover,
+.tai-card:hover {
+  transform: translateY(-2px);
+}
+.tai-progress {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(108, 92, 231, 0.12);
+  overflow: hidden;
+}
+.tai-progress > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #6c5ce7, #22c7d6);
+}
+.tai-spin {
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 99px;
+  border: 2px solid rgba(108, 92, 231, 0.2);
+  border-top-color: #6c5ce7;
+  animation: tai-rotate 0.8s linear infinite;
+}
+@keyframes tai-rotate {
+  to { transform: rotate(360deg); }
+}
+.tai-skel {
+  height: 0.75rem;
+  border-radius: 99px;
+  background: linear-gradient(90deg, rgba(108, 92, 231, 0.08), rgba(34, 199, 214, 0.18), rgba(108, 92, 231, 0.08));
+  background-size: 200% 100%;
+  animation: tai-shimmer 1.2s ease infinite;
+}
+@keyframes tai-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+.tai-drawer {
+  background: rgba(23, 32, 51, 0.45);
+}
+.tai-rail {
+  position: sticky;
+  top: 5.5rem;
+}
+@media (max-width: 1279px) {
+  .tai-right-desktop { display: none; }
+}
+@media (max-width: 1023px) {
+  .tai-left-desktop { display: none; }
+}

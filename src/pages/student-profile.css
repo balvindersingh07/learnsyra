@@ -1,0 +1,49 @@
+.sp-hero {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.94), rgba(255,255,255,0.78)),
+    radial-gradient(circle at 100% 0%, rgba(108,92,231,0.14), transparent 42%);
+}
+.sp-stat {
+  min-width: 0;
+}
+.sp-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  align-items: end;
+  height: 88px;
+}
+.sp-week-bar {
+  border-radius: 8px 8px 4px 4px;
+  background: linear-gradient(180deg, #6C5CE7, #22C7D6);
+  min-height: 6px;
+  transition: height 0.45s ease;
+}
+.sp-tabs {
+  scrollbar-width: thin;
+}
+.sp-lock {
+  opacity: 0.55;
+  filter: grayscale(0.2);
+}
+.sp-ach:hover {
+  transform: translateY(-2px);
+}
+.sp-saved {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.sp-choice {
+  border: 1px solid rgba(99, 102, 241, 0.14);
+  background: rgba(255, 255, 255, 0.92);
+  color: #172033;
+}
+.sp-choice[data-on='true'] {
+  border-color: rgba(108, 92, 231, 0.4);
+  background: rgba(108, 92, 231, 0.1);
+  color: #5B4BD6;
+}
+.sp-choice:focus-visible {
+  outline: 2px solid #6C5CE7;
+  outline-offset: 2px;
+}

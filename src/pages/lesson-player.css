@@ -1,0 +1,31 @@
+.lp-workspace {
+  height: calc(100dvh - 4rem);
+  min-height: 0;
+}
+.lp-chapter[data-active='true'] {
+  color: #5B4BD6;
+  background: rgba(108, 92, 231, 0.1);
+}
+.lp-lesson[data-current='true'] {
+  background: rgba(108, 92, 231, 0.14);
+  box-shadow: 0 0 0 1px rgba(108, 92, 231, 0.28), 0 8px 18px rgba(108, 92, 231, 0.12);
+}
+.lp-tab[data-active='true'] {
+  background: rgba(108, 92, 231, 0.14);
+  color: #5B4BD6;
+}
+.lp-range {
+  appearance: none;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.25);
+  outline: none;
+}
+.lp-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+}
