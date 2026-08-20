@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { useBlocker, useLocation, useNavigate, Link } from 'react-router-dom'
+import { useLocation, useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { formatInr } from '../lib/courseCatalog'
 import { tutorBookPath, tutorPath } from '../lib/paths'
@@ -79,7 +79,6 @@ export default function TutorSettings() {
   const [blockReason, setBlockReason] = useState('')
 
   const dirty = JSON.stringify(hub) !== JSON.stringify(saved) || JSON.stringify(notify) !== JSON.stringify(savedNotify)
-  const blocker = useBlocker(({ currentLocation, nextLocation }) => dirty && currentLocation.pathname !== nextLocation.pathname)
 
   useEffect(() => {
     const next = loadOrCreateHub(userId, {
@@ -101,17 +100,16 @@ export default function TutorSettings() {
   }, [location.hash])
 
   useEffect(() => {
-    if (!drawer && !pauseOpen && blocker.state !== 'blocked') return
+    if (!drawer && !pauseOpen) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setDrawer(false)
         setPauseOpen(false)
-        if (blocker.state === 'blocked') blocker.reset()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [drawer, pauseOpen, blocker])
+  }, [drawer, pauseOpen])
 
   useEffect(() => {
     const onLeave = (e: BeforeUnloadEvent) => {
@@ -348,20 +346,6 @@ export default function TutorSettings() {
           confirm="Pause Account"
           onCancel={() => setPauseOpen(false)}
           onConfirm={pauseAccount}
-        />
-      )}
-      {blocker.state === 'blocked' && (
-        <Confirm
-          title="Unsaved changes"
-          body="Leave this page without saving?"
-          confirm="Discard"
-          extra="Save"
-          onCancel={() => blocker.reset()}
-          onConfirm={() => blocker.proceed()}
-          onExtra={() => {
-            if (persist()) blocker.proceed()
-            else blocker.reset()
-          }}
         />
       )}
     </div>

@@ -9,6 +9,7 @@ import {
   type AdminOverview,
   type AdminRange,
 } from '../lib/adminPlatform'
+import { loadDashboardHealth, type HealthItem } from '../lib/platformHealth'
 import './admin-control.css'
 
 const RANGES: { id: AdminRange; label: string }[] = [
@@ -31,6 +32,7 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [dismissed, setDismissed] = useState(() => loadDismissedInsights())
+  const [health, setHealth] = useState<HealthItem[] | null>(null)
 
   const load = () => {
     setError(null)
@@ -42,6 +44,10 @@ export default function AdminDashboard() {
   }
 
   useEffect(() => { load() }, [range, from, to])
+
+  useEffect(() => {
+    loadDashboardHealth().then(setHealth)
+  }, [])
 
   const insights = (data?.insights ?? []).filter(i => !dismissed.includes(i.id)).slice(0, 3)
   const maxGrowth = Math.max(1, ...(data?.growth ?? []).flatMap(g => [g.students, g.tutors, g.courses, g.sessions]))
@@ -84,7 +90,6 @@ export default function AdminDashboard() {
             <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">LearnSyra Super Admin</p>
             <h1 className="font-black text-ink" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>Super Admin</h1>
             <p className="text-[13px] font-semibold text-ink leading-tight">Platform Control Center</p>
-            <p className="text-[13px] text-muted truncate">Manage users, tutors, courses, sessions, payments, and growth.</p>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
             {RANGES.map(r => (
@@ -176,10 +181,17 @@ export default function AdminDashboard() {
           </section>
           <section className="glass rounded-2xl p-3.5">
             <h2 className="font-black text-ink">Platform Health</h2>
-            {['API', 'Database', 'Authentication', 'Payments', 'Bookings', 'AI Services'].map(s => (
-              <div key={s} className="ac-health">
-                <span>{s}</span>
-                <span className="text-muted">Status unavailable</span>
+            {(health ?? [
+              { name: 'API', status: 'Checking…' },
+              { name: 'Database', status: 'Checking…' },
+              { name: 'Authentication', status: 'Checking…' },
+              { name: 'Payments', status: 'Checking…' },
+              { name: 'Bookings', status: 'Checking…' },
+              { name: 'AI Services', status: 'Checking…' },
+            ]).map(s => (
+              <div key={s.name} className="ac-health">
+                <span>{s.name}</span>
+                <span className="text-muted">{s.status}</span>
               </div>
             ))}
           </section>

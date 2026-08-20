@@ -7,6 +7,7 @@ import { loadAdminSessionIndex, type AdminSessionRow } from './adminSessions'
 import { isVerificationBackendAvailable } from './adminVerification'
 import { adminWindow, type AdminRange } from './adminPlatform'
 import { isSupabaseConfigured, supabase } from './supabase'
+import { loadAnalyticsHealth } from './platformHealth'
 
 export type { AdminRange }
 
@@ -195,7 +196,7 @@ export async function getAdminAnalytics(range: AdminRange, custom?: { from: stri
   const periodHint = `Selected period · ${selectedPeriodLabel(range, custom)}`
   const failed: string[] = []
 
-  const [profiles, courses, catalog, listings, enrollPack, reviewPack, sessions, projects, payments, reports] = await Promise.all([
+  const [profiles, courses, catalog, listings, enrollPack, reviewPack, sessions, projects, payments, reports, health] = await Promise.all([
     settled('profiles', getAllProfiles(), [] as ProfileLite[], failed),
     settled('courses', getAllCoursesAdmin(), [] as CourseRow[], failed),
     settled('projects', getProjects(), [] as ProjectRow[], failed),
@@ -206,6 +207,7 @@ export async function getAdminAnalytics(range: AdminRange, custom?: { from: stri
     settled('student_projects', loadAdminProjectIndex(), null, failed),
     settled('payments', loadAdminPaymentIndex(), null, failed),
     settled('reports', loadAdminReportIndex(), null, failed),
+    loadAnalyticsHealth(),
   ])
 
   const realProfiles = profiles.filter(p => !isDemo(p.id))
@@ -507,7 +509,7 @@ export async function getAdminAnalytics(range: AdminRange, custom?: { from: stri
       summary: verifyOn ? 'Verification backend flag is present. Counts remain unset until verification records exist.' : 'Verification analytics unavailable.',
     },
     insights,
-    health: ['Database', 'Authentication', 'Courses API', 'Projects API', 'Bookings', 'Live Classes', 'Payments', 'Reports'].map(name => ({ name, status: 'Status unavailable' })),
+    health,
     exportNote: 'Analytics export will be available when reporting is connected.',
     activity: activity.slice(0, 10),
     activityNote: 'Events derived from recorded users, courses, projects, and sessions. This is not an audit log.',
