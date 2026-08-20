@@ -39,7 +39,7 @@ export default function PasswordField({ className, style, ...props }: Props) {
       <input
         {...props}
         type={visible ? 'text' : 'password'}
-        className={className}
+        className={['w-full box-border', className].filter(Boolean).join(' ')}
         style={{ ...style, paddingRight: '2.75rem' }}
       />
       <button
