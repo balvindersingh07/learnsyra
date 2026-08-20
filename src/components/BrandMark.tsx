@@ -1,4 +1,4 @@
-const SRC = '/logo.png?v=2'
+import logoUrl from '../assets/logo.png'
 
 interface Props {
   size?: number
@@ -11,7 +11,7 @@ export default function BrandMark({ size = 36, withWordmark = false, wordmarkCla
   return (
     <span className={`inline-flex items-center gap-2 ${className}`}>
       <img
-        src={SRC}
+        src={logoUrl}
         alt="LearnSyra"
         width={size}
         height={size}
