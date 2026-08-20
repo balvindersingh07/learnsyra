@@ -736,61 +736,17 @@ export function finalizeInterview(live: LiveInterview, interviewBefore: number, 
   }
 }
 
-function daysAgo(n: number) {
-  const d = new Date()
-  d.setDate(d.getDate() - n)
-  return d.toISOString()
-}
-
-function seedRecord(partial: Partial<InterviewRecord> & Pick<InterviewRecord, 'id' | 'role' | 'type' | 'score' | 'completedAt'>): InterviewRecord {
-  return {
-    difficulty: 'Intermediate',
-    duration: 20,
-    questions: [],
-    answers: [],
-    technicalScore: Math.max(60, partial.score - 4),
-    problemSolvingScore: Math.max(58, partial.score - 6),
-    communicationScore: Math.min(88, partial.score + 4),
-    confidenceScore: Math.max(56, partial.score - 8),
-    roleReadiness: partial.score,
-    skillImpact: [],
-    feedback: { well: [], improve: [] },
-    weakAreas: [],
-    recommendations: { title: 'Practice TypeScript Interview', minutes: 10, href: '/career/interview?practice=typescript' },
-    startedAt: partial.completedAt,
-    careerBefore: 85,
-    careerAfter: 85,
-    interviewBefore: 68,
-    seeded: true,
-    ...partial,
-  }
-}
-
 export function loadHistory(): InterviewRecord[] {
   try {
     const raw = localStorage.getItem(HISTORY_KEY)
-    if (raw) return JSON.parse(raw) as InterviewRecord[]
+    if (raw) {
+      const rows = JSON.parse(raw) as InterviewRecord[]
+      return rows.filter(row => !row.seeded)
+    }
   } catch {
     /* ignore */
   }
-  const seed = [
-    seedRecord({
-      id: 'seed-week',
-      role: 'React Developer',
-      type: 'technical',
-      score: 68,
-      completedAt: daysAgo(7),
-    }),
-    seedRecord({
-      id: 'seed-recent',
-      role: 'Frontend Developer',
-      type: 'technical',
-      score: 72,
-      completedAt: daysAgo(2),
-    }),
-  ]
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(seed))
-  return seed
+  return []
 }
 
 export function saveHistory(rows: InterviewRecord[]) {

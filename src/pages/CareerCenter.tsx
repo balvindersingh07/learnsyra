@@ -13,7 +13,6 @@ import {
 import {
   emptyCareerSnapshot,
   getCareerSnapshot,
-  getDemoCareerSnapshot,
   loadWeeklyActions,
   saveWeeklyActions,
   statusFor,
@@ -70,7 +69,6 @@ export default function CareerCenter() {
   const { session } = useAuth()
   const uid = session?.user.id ?? null
   const ringId = useId()
-  const [previewDemo, setPreviewDemo] = useState(false)
   const [data, setData] = useState<CareerSnapshot>(() => emptyCareerSnapshot())
   const [week, setWeek] = useState(() => emptyCareerSnapshot().weeklyActions)
   const [openMatch, setOpenMatch] = useState<CareerMatch | null>(null)
@@ -78,13 +76,6 @@ export default function CareerCenter() {
   const shown = useCountUp(data.readinessScore)
 
   useEffect(() => {
-    if (previewDemo) {
-      const demo = getDemoCareerSnapshot()
-      setData(demo)
-      setWeek(demo.weeklyActions)
-      return
-    }
-
     let alive = true
     const load = async () => {
       const [profile, certs, mine, catalog, enrollments] = await Promise.all([
@@ -147,7 +138,7 @@ export default function CareerCenter() {
     return () => {
       alive = false
     }
-  }, [previewDemo, uid])
+  }, [uid])
 
   useEffect(() => {
     if (!openMatch) return
@@ -175,10 +166,22 @@ export default function CareerCenter() {
   const improve = data.skills.filter(s => s.status === 'improve')
   const xpPct = Math.round((data.xp.intoLevel / data.xp.levelNeed) * 100)
 
+  const hasLiveActivity = Boolean(
+    data.targetRole ||
+      data.haveSkills.length ||
+      data.portfolio.length ||
+      data.certificates.length ||
+      data.activity.length ||
+      data.readinessScore > 0 ||
+      data.interview.overall > 0 ||
+      data.resume.score > 0 ||
+      data.resume.checks.length,
+  )
+
   const toggleWeek = (id: string) => {
     const next = week.map(w => (w.id === id ? { ...w, done: !w.done } : w))
     setWeek(next)
-    if (!previewDemo) saveWeeklyActions(next, uid)
+    saveWeeklyActions(next, uid)
   }
 
   return (
@@ -191,12 +194,9 @@ export default function CareerCenter() {
         >
           Turn Your Skills Into Your <span className="gradient-text">Career.</span>
         </h1>
-        <p className="text-muted text-base sm:text-lg max-w-2xl leading-relaxed mb-4">
+        <p className="text-muted text-base sm:text-lg max-w-2xl leading-relaxed">
           Learn, build real projects, prepare for interviews, and become job-ready with an AI-guided career plan.
         </p>
-        <button type="button" className="btn-glass text-sm" onClick={() => setPreviewDemo(v => !v)}>
-          {previewDemo ? 'Exit Demo Preview' : 'Preview Demo Career Profile'}
-        </button>
       </header>
 
       <CareerHubNav />
@@ -248,14 +248,11 @@ export default function CareerCenter() {
                 {data.readinessDelta > 0 ? `+${data.readinessDelta}% this month` : 'Getting Started'}
               </p>
               <p className="text-sm text-muted leading-relaxed mb-3">{data.readinessNote}</p>
-              <div className="flex flex-wrap gap-2">
-                <span className="badge badge-primary">{data.simulated ? '✨ Demo preview' : '✨ Built from your activity'}</span>
-                {data.simulated && (
-                  <span className="badge" style={{ background: 'rgba(79,140,255,0.12)', color: '#4F8CFF' }}>
-                    Sample data — not your profile
-                  </span>
-                )}
-              </div>
+              {hasLiveActivity && (
+                <div className="flex flex-wrap gap-2">
+                  <span className="badge badge-primary">✨ Built from your activity</span>
+                </div>
+              )}
             </div>
           </div>
         </section>
@@ -275,7 +272,7 @@ export default function CareerCenter() {
           <p className="text-sm text-muted mb-4 leading-relaxed">
             {data.targetRole
               ? 'Based on your skills, projects, learning activity and career preferences.'
-              : 'Choose a role to start matching. Nothing here is filled with sample career data.'}
+              : 'Set a target role to see personalized recommendations.'}
           </p>
           {data.haveSkills.length === 0 && data.needSkills.length === 0 ? (
             <p className="text-sm text-muted mb-5">No skills on your profile yet. Add a target role or complete a course to start your skill map.</p>
@@ -379,7 +376,7 @@ export default function CareerCenter() {
           🧬 Skills You Need
         </h2>
         <p className="text-sm text-muted mb-5">
-          {data.targetRole ? `Target: ${data.targetRole}` : 'Set a target role to focus this map. Sample skills are not shown as yours.'}
+          {data.targetRole ? `Target: ${data.targetRole}` : 'Set a target role to see personalized recommendations.'}
         </p>
         {data.skills.length === 0 ? (
           <p className="text-sm text-muted">No skills tracked yet. Enroll in a course or save skills on your career profile.</p>
@@ -410,9 +407,7 @@ export default function CareerCenter() {
       <section className="mb-6" aria-labelledby="matches-heading">
         <Heading>🎯 Career Matches</Heading>
         <p className="text-sm text-muted mb-4">
-          {data.simulated
-            ? 'Demo matches for the sample persona.'
-            : 'Suggested paths to explore — not a personalized score until you add real skills and projects.'}
+          Suggested paths to explore — not a personalized score until you add real skills and projects.
         </p>
         <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
           {data.careerMatches.map(m => (
@@ -423,7 +418,7 @@ export default function CareerCenter() {
               <div className="text-2xl font-black text-primary career-count my-2">
                 {m.match > 0 ? `${m.match}% Match` : 'Explore this path'}
               </div>
-              <p className="text-xs text-muted mb-2">Strong: {m.strong.join(' · ')}</p>
+              {m.strong.length > 0 && <p className="text-xs text-muted mb-2">Strong: {m.strong.join(' · ')}</p>}
               <p className="text-xs text-muted mb-2">Missing: {m.missing.join(' · ')}</p>
               <p className="text-xs text-ink mb-4 flex-1">{m.nextStep}</p>
               <button type="button" className="btn-glass text-xs py-2" onClick={() => setOpenMatch(m)}>
@@ -443,7 +438,7 @@ export default function CareerCenter() {
             {data.portfolioStats.projects} Projects · {data.portfolioStats.certificates} Certificates · {data.portfolioStats.verified} Skills Verified
           </p>
           {data.portfolio.length === 0 ? (
-            <p className="text-sm text-muted mb-4">No projects in your portfolio yet. Start a catalog project to see it here.</p>
+            <p className="text-sm text-muted mb-4">Complete a project to add it to your portfolio.</p>
           ) : (
             <div className="space-y-3 mb-4">
             {data.portfolio.map(p => (
@@ -484,7 +479,7 @@ export default function CareerCenter() {
             🏆 Your Certificates
           </h2>
           {data.certificates.length === 0 ? (
-            <p className="text-sm text-muted mb-3">No certificates yet. Finish a course to earn one.</p>
+            <p className="text-sm text-muted mb-3">Complete your first course to start building your career profile.</p>
           ) : (
           <div className="space-y-3 mb-3">
             {data.certificates.map(c => (
@@ -514,7 +509,7 @@ export default function CareerCenter() {
             🚀 Projects That Strengthen Your Career
           </h2>
           {data.projectImpact.length === 0 ? (
-            <p className="text-sm text-muted">Project impact appears after you start real projects. Sample trackers are not listed here.</p>
+            <p className="text-sm text-muted">Complete a project to add it to your portfolio.</p>
           ) : (
           data.projectImpact.map(p => (
             <article key={p.title}>
@@ -561,7 +556,7 @@ export default function CareerCenter() {
             </>
           ) : (
             <>
-              <p className="text-sm text-muted mb-4">No tutor sessions yet. Book a mentor when you want expert feedback — sample tutors are not shown as yours.</p>
+              <p className="text-sm text-muted mb-4">No tutor sessions yet. Book a mentor when you want expert feedback.</p>
               <button type="button" className="btn-primary text-sm" onClick={() => navigate('/tutors')}>
                 Browse Tutors →
               </button>
@@ -591,7 +586,7 @@ export default function CareerCenter() {
           <p className="text-sm text-muted mb-4">
             <span className="font-bold text-ink">AI Recommendation</span>
             <br />
-            {data.interview.rec}
+            {data.interview.overall > 0 ? data.interview.rec : 'Complete an interview to track interview readiness.'}
           </p>
           <button type="button" className="btn-primary text-sm w-full" onClick={() => navigate('/career/interview')}>
             Start AI Interview →
@@ -626,7 +621,7 @@ export default function CareerCenter() {
             💼 Job Opportunities
           </h2>
           <p className="text-sm text-muted mb-4">
-            {data.jobMatches.length > 0 ? `${data.jobMatches.length} sample matches` : 'Browse the catalog after you set a role — no sample jobs are marked as yours.'}
+            {data.jobMatches.length > 0 ? `${data.jobMatches.length} matches from the catalog` : 'Set a target role to see personalized recommendations.'}
           </p>
           {data.jobMatches.length === 0 ? (
             <p className="text-sm text-muted mb-4">No personalized job matches yet.</p>
@@ -760,7 +755,7 @@ export default function CareerCenter() {
               {openMatch.title}
             </h2>
             <p className="text-sm text-muted mb-4">
-              {openMatch.match > 0 ? `Match ${openMatch.match}%` : 'Not a personalized match yet'}
+              {openMatch.match > 0 ? `Match ${openMatch.match}%` : 'Not a personalized match yet — this is a career path to explore.'}
             </p>
             <h3 className="text-sm font-bold text-ink mb-2">Required Skills</h3>
             <div className="flex flex-wrap gap-2 mb-4">
@@ -775,9 +770,17 @@ export default function CareerCenter() {
                 </span>
               ))}
             </div>
-            <p className="text-sm text-muted mb-1"><span className="font-bold text-ink">Recommended Projects</span> — {openMatch.projects.join(', ')}</p>
-            <p className="text-sm text-muted mb-1"><span className="font-bold text-ink">Recommended Courses</span> — {openMatch.courses.join(', ')}</p>
-            <p className="text-sm text-muted mb-5">Interview Readiness {openMatch.interview}%</p>
+            {openMatch.projects.length > 0 && (
+              <p className="text-sm text-muted mb-1">
+                <span className="font-bold text-ink">Recommended Projects</span> — {openMatch.projects.join(', ')}
+              </p>
+            )}
+            <p className="text-sm text-muted mb-1">
+              <span className="font-bold text-ink">Recommended Courses</span> — {openMatch.courses.join(', ')}
+            </p>
+            <p className="text-sm text-muted mb-5">
+              {openMatch.interview > 0 ? `Interview Readiness ${openMatch.interview}%` : 'Complete an interview to track interview readiness.'}
+            </p>
             <div className="flex flex-wrap gap-2">
               <button type="button" className="btn-primary text-sm" onClick={() => { setOpenMatch(null); navigate('/career/interview') }}>
                 Prepare for This Role →
