@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useBlocker, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import AdminShell from '../components/AdminShell'
 import { useAuth } from '../context/AuthContext'
 import { displayInitials } from '../lib/roleAccess'
@@ -39,8 +39,6 @@ export default function AdminProfile() {
   const emailState = email
     ? (session?.user.email_confirmed_at ? 'Verified' : 'Not verified')
     : null
-  const blocker = useBlocker(({ currentLocation, nextLocation }) => dirty && currentLocation.pathname !== nextLocation.pathname)
-
   useEffect(() => {
     if (!dirty) return
     const onBefore = (e: BeforeUnloadEvent) => {
@@ -52,10 +50,6 @@ export default function AdminProfile() {
   }, [dirty])
 
   useEffect(() => {
-    if (blocker.state === 'blocked') setLeaveOpen(true)
-  }, [blocker.state])
-
-  useEffect(() => {
     const open = editOpen || pwOpen || leaveOpen
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
@@ -63,7 +57,6 @@ export default function AdminProfile() {
         e.preventDefault()
         if (leaveOpen) {
           setLeaveOpen(false)
-          if (blocker.state === 'blocked') blocker.reset()
         } else if (editOpen && dirty) setLeaveOpen(true)
         else {
           setEditOpen(false)
@@ -73,7 +66,7 @@ export default function AdminProfile() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [editOpen, pwOpen, leaveOpen, dirty, blocker])
+  }, [editOpen, pwOpen, leaveOpen, dirty])
 
   const retry = () => {
     setErr(null)
@@ -99,12 +92,10 @@ export default function AdminProfile() {
     setEditName(profile?.full_name ?? '')
     setLeaveOpen(false)
     setEditOpen(false)
-    if (blocker.state === 'blocked') blocker.proceed()
   }
 
   const keepEditing = () => {
     setLeaveOpen(false)
-    if (blocker.state === 'blocked') blocker.reset()
   }
 
   const saveName = async () => {
