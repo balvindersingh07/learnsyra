@@ -288,6 +288,8 @@ function MissionTaskCard({
   )
 }
 
+const EMPTY_STATS = { streak: 0, level: 1, weekHours: 0, careerScore: 0, completedLessons: 0 }
+
 export default function Dashboard({ onNav }: Props) {
   const { profile, session } = useAuth()
   const uid = session?.user.id ?? null
@@ -296,7 +298,7 @@ export default function Dashboard({ onNav }: Props) {
   const [loadingCourses, setLoadingCourses] = useState(true)
   const [bookings, setBookings] = useState<BookingRow[]>([])
   const [certs, setCerts] = useState<CertificateRow[]>([])
-  const [stats, setStats] = useState({ streak: 0, level: 1, weekHours: 0, careerScore: 0, completedLessons: 0 })
+  const [stats, setStats] = useState(EMPTY_STATS)
   const [liveNow, setLiveNow] = useState<LiveClass[]>([])
   const [career, setCareer] = useState<CareerProfile | null>(null)
   const [submittedCount, setSubmittedCount] = useState(0)
@@ -310,21 +312,46 @@ export default function Dashboard({ onNav }: Props) {
   const matchRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    getMyEnrolledCourses()
-      .then(setEnrolled)
-      .catch(() => setEnrolled([]))
-      .finally(() => setLoadingCourses(false))
-    getMyBookings().then(setBookings).catch(() => setBookings([]))
-    getCertificates().then(setCerts).catch(() => setCerts([]))
-    getStudentStats().then(setStats).catch(() => {})
-    getLiveClasses()
-      .then(list => setLiveNow(list.filter(c => c.status === 'live')))
-      .catch(() => setLiveNow([]))
-    getCareerProfile().then(setCareer).catch(() => setCareer(null))
-    getMyStudentProjects()
-      .then(rows => setSubmittedCount(rows.filter(p => p.status !== 'started').length))
-      .catch(() => setSubmittedCount(0))
-  }, [session])
+    let cancelled = false
+    setEnrolled([])
+    setBookings([])
+    setCerts([])
+    setStats(EMPTY_STATS)
+    setCareer(null)
+    setSubmittedCount(0)
+    setLiveNow([])
+    setLoadingCourses(true)
+
+    if (!uid) {
+      setLoadingCourses(false)
+      return
+    }
+
+    Promise.all([
+      getMyEnrolledCourses().catch(() => []),
+      getMyBookings().catch(() => []),
+      getCertificates().catch(() => []),
+      getStudentStats().catch(() => EMPTY_STATS),
+      getLiveClasses().catch(() => []),
+      getCareerProfile().catch(() => null),
+      getMyStudentProjects().catch(() => []),
+    ]).then(([courses, books, certificates, studentStats, lives, careerRow, projects]) => {
+      if (cancelled) return
+      setEnrolled(courses)
+      setBookings(books)
+      setCerts(certificates)
+      setStats(studentStats)
+      setLiveNow(lives.filter(c => c.status === 'live'))
+      setCareer(careerRow)
+      setSubmittedCount(projects.filter(p => p.status !== 'started').length)
+    }).finally(() => {
+      if (!cancelled) setLoadingCourses(false)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [uid])
 
   useEffect(() => {
     setMissionDone(loadMissionDone(uid))
@@ -868,7 +895,7 @@ export default function Dashboard({ onNav }: Props) {
 
         {/* Right - 1/3 */}
         <div className="space-y-7">
-          <AIPanel onNav={onNav} firstName={firstName} topic={intel.tutor.currentLesson} />
+          <AIPanel key={uid ?? 'guest'} onNav={onNav} firstName={firstName} topic={intel.tutor.currentLesson} />
 
           <TutorHandoff topic={intel.tutor.topic} onFindTutor={() => onNav('tutors')} />
 

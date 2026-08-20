@@ -19,6 +19,11 @@
   min-height: 6px;
   transition: height 0.45s ease;
 }
+.sp-week-bar[data-empty='true'] {
+  min-height: 0;
+  height: 0 !important;
+  background: transparent;
+}
 .sp-tabs {
   scrollbar-width: thin;
 }

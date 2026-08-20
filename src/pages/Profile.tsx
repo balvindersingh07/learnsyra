@@ -25,6 +25,7 @@ import { kindLabel, relativeWhen } from '../lib/interviewStudio'
 import { saveTargetRole } from '../lib/jobRecommendations'
 import { careerInterviewPath, careerJobsPath, careerResumePath, tutorPath } from '../lib/paths'
 import {
+  EMPTY_EXTRAS,
   buildStudentHub,
   goalMilestones,
   initials,
@@ -49,7 +50,7 @@ export default function Profile() {
   const navigate = useNavigate()
   const { session, profile, updateProfile, updatePassword } = useAuth()
   const uid = session?.user.id ?? null
-  const [extras, setExtras] = useState<ProfileExtras>(() => loadProfileExtras())
+  const [extras, setExtras] = useState<ProfileExtras>({ ...EMPTY_EXTRAS })
   const [enrolled, setEnrolled] = useState<{ id: string; title: string; progress: number; last_lesson_id: string | null }[]>([])
   const [apiCourses, setApiCourses] = useState<CourseRow[]>([])
   const [apiProjects, setApiProjects] = useState<ProjectRow[]>([])
@@ -82,17 +83,39 @@ export default function Profile() {
   }, [profile])
 
   useEffect(() => {
-    getMyEnrolledCourses().then(setEnrolled).catch(() => setEnrolled([]))
-    getCourses().then(setApiCourses).catch(() => setApiCourses([]))
-    getProjects().then(setApiProjects).catch(() => setApiProjects([]))
-    getMyStudentProjects().then(setStudentProjects).catch(() => setStudentProjects([]))
-    getCertificates().then(setCerts).catch(() => setCerts([]))
-    getCareerProfile().then(setCareerProfile).catch(() => setCareerProfile(null))
-    getMyBookings().then(setBookings).catch(() => setBookings([]))
-    getStudentStats()
-      .then(s => setStats({ streak: s.streak, weekHours: s.weekHours, completedLessons: s.completedLessons }))
-      .catch(() => {})
-  }, [session])
+    let cancelled = false
+    setEnrolled([])
+    setStudentProjects([])
+    setCerts([])
+    setCareerProfile(null)
+    setBookings([])
+    setStats({ streak: 0, weekHours: 0, completedLessons: 0 })
+
+    Promise.all([
+      getMyEnrolledCourses().catch(() => []),
+      getCourses().catch(() => []),
+      getProjects().catch(() => []),
+      getMyStudentProjects().catch(() => []),
+      getCertificates().catch(() => []),
+      getCareerProfile().catch(() => null),
+      getMyBookings().catch(() => []),
+      getStudentStats().catch(() => ({ streak: 0, weekHours: 0, completedLessons: 0 })),
+    ]).then(([nextEnrolled, courses, projects, mine, certificates, career, books, studentStats]) => {
+      if (cancelled) return
+      setEnrolled(nextEnrolled)
+      setApiCourses(courses)
+      setApiProjects(projects)
+      setStudentProjects(mine)
+      setCerts(certificates)
+      setCareerProfile(career)
+      setBookings(books)
+      setStats({ streak: studentStats.streak, weekHours: studentStats.weekHours, completedLessons: studentStats.completedLessons })
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [uid])
 
   const name = profile?.full_name || session?.user.email || 'Student'
   const hub = useMemo(
@@ -101,7 +124,7 @@ export default function Profile() {
         name,
         email: session?.user.email ?? '',
         avatar: profile?.avatar_url ?? null,
-        headline: profile?.headline ?? extras.targetRole,
+        headline: profile?.headline ?? null,
         extras,
         enrolled,
         apiCourses,
@@ -299,7 +322,7 @@ export default function Profile() {
         <div className="sp-week mb-2" aria-hidden="true">
           {hub.activityWeek.map(d => (
             <div key={d.label} className="flex flex-col justify-end h-full">
-              <div className="sp-week-bar" style={{ height: d.hours > 0 ? `${Math.max(8, (d.hours / maxHours) * 100)}%` : '0%' }} />
+              <div className="sp-week-bar" data-empty={d.hours <= 0 ? 'true' : 'false'} style={{ height: d.hours > 0 ? `${Math.max(8, (d.hours / maxHours) * 100)}%` : '0%' }} />
             </div>
           ))}
         </div>

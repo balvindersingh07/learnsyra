@@ -276,8 +276,9 @@ export async function getProjects(): Promise<ProjectRow[]> {
 }
 
 export async function getMyEnrollments(): Promise<EnrollmentRow[]> {
-  if (!isSupabaseConfigured) return []
-  const { data, error } = await supabase.from('enrollments').select('*')
+  const uid = await currentUserId()
+  if (!uid || !isSupabaseConfigured) return []
+  const { data, error } = await supabase.from('enrollments').select('*').eq('student_id', uid)
   if (error) throw error
   return (data as EnrollmentRow[]) ?? []
 }
@@ -285,10 +286,12 @@ export async function getMyEnrollments(): Promise<EnrollmentRow[]> {
 export async function getMyEnrolledCourses(): Promise<
   (CourseRow & { progress: number; last_lesson_id: string | null })[]
 > {
-  if (!isSupabaseConfigured) return []
+  const uid = await currentUserId()
+  if (!uid || !isSupabaseConfigured) return []
   const { data, error } = await supabase
     .from('enrollments')
     .select('progress, last_lesson_id, course:courses(*)')
+    .eq('student_id', uid)
     .order('enrolled_at', { ascending: false })
   if (error) throw error
   return (
@@ -413,8 +416,9 @@ export async function toggleBookmark(courseId: string): Promise<boolean> {
 }
 
 export async function getMyStudentProjects(): Promise<StudentProjectRow[]> {
-  if (!isSupabaseConfigured) return []
-  const { data, error } = await supabase.from('student_projects').select('*')
+  const uid = await currentUserId()
+  if (!uid || !isSupabaseConfigured) return []
+  const { data, error } = await supabase.from('student_projects').select('*').eq('student_id', uid)
   if (error) throw error
   return (data as StudentProjectRow[]) ?? []
 }
@@ -477,10 +481,12 @@ export async function bookTutor(
 }
 
 export async function getMyBookings(): Promise<BookingRow[]> {
-  if (!isSupabaseConfigured) return []
+  const uid = await currentUserId()
+  if (!uid || !isSupabaseConfigured) return []
   const { data, error } = await supabase
     .from('bookings')
     .select('*, listing:tutor_listings(*)')
+    .eq('student_id', uid)
     .order('created_at', { ascending: false })
   if (error) throw error
   return (data as unknown as BookingRow[]) ?? []
@@ -522,7 +528,7 @@ export function computeReadiness(input: {
   const projects = Math.min(20, input.submittedProjects * 10)
   const resume = input.resumeLength > 80 ? 15 : input.resumeLength > 20 ? 8 : 0
   const role = input.targetRole.trim() ? 5 : 0
-  return Math.min(100, Math.max(12, enroll + progress + projects + resume + role))
+  return Math.min(100, Math.max(0, enroll + progress + projects + resume + role))
 }
 
 export async function getNotifications(): Promise<NotificationRow[]> {
@@ -557,10 +563,12 @@ export async function markNotificationsRead() {
 }
 
 export async function getCertificates(): Promise<CertificateRow[]> {
-  if (!isSupabaseConfigured) return []
+  const uid = await currentUserId()
+  if (!uid || !isSupabaseConfigured) return []
   const { data, error } = await supabase
     .from('certificates')
     .select('*')
+    .eq('student_id', uid)
     .order('issued_at', { ascending: false })
   if (error) throw error
   return (data as CertificateRow[]) ?? []
@@ -604,11 +612,14 @@ export async function getStudentStats() {
   }
 
   const career = await getCareerProfile()
+  const hasCareerSignal = Boolean(
+    career?.target_role?.trim() || (career?.skills?.length ?? 0) > 0 || career?.resume_text?.trim(),
+  )
   return {
     streak,
     level: Math.floor(rows.length / 4) + 1,
     weekHours: Math.round((weekMin / 60) * 10) / 10,
-    careerScore: career?.readiness_score ?? 0,
+    careerScore: hasCareerSignal ? career?.readiness_score ?? 0 : 0,
     completedLessons: rows.length,
   }
 }
