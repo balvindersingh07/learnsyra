@@ -1,8 +1,8 @@
-import type { CertificateRow, CourseRow, ProjectRow, StudentProjectRow } from './api'
+import { computeReadiness, type BookingRow, type CareerProfile, type CertificateRow, type CourseRow, type ProjectRow, type StudentProjectRow } from './api'
 import { loadSavedLessons, type SavedLesson } from './aiLearning'
 import { getCareerSnapshot, type CareerSkill, type CareerSnapshot } from './careerCenter'
 import { buildCatalog, loadLocalWishlist, type CatalogCourse } from './courseCatalog'
-import { getCourseDetailPack, loadLocalEnroll } from './courseDetail'
+import { getCourseDetailPack } from './courseDetail'
 import { kindLabel, loadHistory, loadInterviewCareerOverlay, relativeWhen, type InterviewRecord } from './interviewStudio'
 import {
   appStats,
@@ -11,7 +11,6 @@ import {
   getJobById,
   JOB_ROLES,
   loadApps,
-  loadTargetRole,
   rankCatalog,
   WORK_MODES,
   type ExperienceBand,
@@ -19,7 +18,7 @@ import {
   type JobRole,
   type WorkMode,
 } from './jobRecommendations'
-import { loadLocalDone } from './lessonWorkspace'
+import { peekAuthUserId } from './supabase'
 import {
   careerJobPath,
   careerResumePath,
@@ -38,7 +37,7 @@ import {
   type ProjectProgress,
 } from './projectWorkspace'
 import { loadActiveId, loadDocs, loadResumeCareerOverlay, type ResumeDoc } from './resumeBuilder'
-import { buildTutorCatalog, loadTutorBookings, loadTutorWishlist, type TutorBooking } from './tutorMarketplace'
+import { buildTutorCatalog, loadTutorWishlist } from './tutorMarketplace'
 
 export type ProfileVisibility = 'private' | 'recruiter' | 'public'
 export type SavedTab = 'Courses' | 'Projects' | 'Lessons' | 'Jobs' | 'Tutors'
@@ -47,8 +46,8 @@ export interface ProfileExtras {
   phone: string
   location: string
   targetRole: string
-  experienceLevel: ExperienceBand
-  workMode: WorkMode
+  experienceLevel: ExperienceBand | ''
+  workMode: WorkMode | ''
   interests: string[]
   linkedin: string
   github: string
@@ -61,25 +60,32 @@ export interface ProfileExtras {
 
 const EXTRAS_KEY = 'learnsyra_profile_extras'
 
+function extrasStorageKey(userId?: string | null) {
+  const uid = userId || peekAuthUserId()
+  return uid ? `${EXTRAS_KEY}:${uid}` : null
+}
+
 export const EMPTY_EXTRAS: ProfileExtras = {
   phone: '',
   location: '',
   targetRole: '',
-  experienceLevel: 'Junior',
-  workMode: 'Remote',
+  experienceLevel: '',
+  workMode: '',
   interests: [],
   linkedin: '',
   github: '',
   portfolio: '',
   learningGoals: '',
-  weeklyTargetHours: 6,
+  weeklyTargetHours: 0,
   visibility: 'private',
   bestStreak: 0,
 }
 
-export function loadProfileExtras(): ProfileExtras {
+export function loadProfileExtras(userId?: string | null): ProfileExtras {
+  const key = extrasStorageKey(userId)
+  if (!key) return { ...EMPTY_EXTRAS }
   try {
-    const raw = localStorage.getItem(EXTRAS_KEY)
+    const raw = localStorage.getItem(key)
     if (!raw) return { ...EMPTY_EXTRAS }
     return { ...EMPTY_EXTRAS, ...(JSON.parse(raw) as Partial<ProfileExtras>) }
   } catch {
@@ -87,8 +93,10 @@ export function loadProfileExtras(): ProfileExtras {
   }
 }
 
-export function saveProfileExtras(extras: ProfileExtras) {
-  localStorage.setItem(EXTRAS_KEY, JSON.stringify(extras))
+export function saveProfileExtras(extras: ProfileExtras, userId?: string | null) {
+  const key = extrasStorageKey(userId)
+  if (!key) return
+  localStorage.setItem(key, JSON.stringify(extras))
 }
 
 export function initials(name: string) {
@@ -186,7 +194,7 @@ function mergeExtras(extras: ProfileExtras, resume: ResumeDoc | undefined, caree
     ...extras,
     phone: extras.phone || resume?.contact.phone || '',
     location: extras.location || resume?.contact.location || '',
-    targetRole: extras.targetRole || loadTargetRole(career.targetRole),
+    targetRole: extras.targetRole || career.targetRole || '',
     linkedin: extras.linkedin || resume?.contact.linkedin || '',
     github: extras.github || resume?.contact.github || '',
     portfolio: extras.portfolio || resume?.contact.portfolio || '',
@@ -205,15 +213,56 @@ export function buildStudentHub(input: {
   studentProjects: StudentProjectRow[]
   certs: CertificateRow[]
   stats: { streak: number; weekHours: number; completedLessons: number }
+  careerProfile?: CareerProfile | null
+  bookings?: BookingRow[]
 }): StudentHub {
-  const career = getCareerSnapshot()
+  const uid = peekAuthUserId()
+  const titleById = new Map(input.apiProjects.map(p => [p.id, p.title]))
+  const portfolio = input.studentProjects.map(row => ({
+    id: row.id,
+    title: titleById.get(row.project_id) || 'Project',
+    score: 0,
+    skills: input.apiProjects.find(p => p.id === row.project_id)?.skills ?? [],
+    status: (row.status === 'completed' ? 'Portfolio Ready' : 'Needs Review') as 'Portfolio Ready' | 'Needs Review',
+    href: `/projects/${row.project_id}`,
+  }))
+  const certificates = input.certs.map(r => ({
+    title: r.title,
+    completed: new Date(r.issued_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+    official: true,
+  }))
+  const hasActivity =
+    Boolean(input.careerProfile?.target_role?.trim()) ||
+    (input.careerProfile?.skills?.length ?? 0) > 0 ||
+    input.certs.length > 0 ||
+    input.studentProjects.length > 0 ||
+    input.enrolled.length > 0
+  const readiness = hasActivity
+    ? computeReadiness({
+        enrolledCount: input.enrolled.length,
+        avgProgress:
+          input.enrolled.length > 0
+            ? input.enrolled.reduce((s, e) => s + (e.progress ?? 0), 0) / input.enrolled.length
+            : 0,
+        submittedProjects: input.studentProjects.filter(p => p.status === 'submitted' || p.status === 'completed').length,
+        resumeLength: input.careerProfile?.resume_text?.trim().length ?? 0,
+        targetRole: input.careerProfile?.target_role ?? '',
+      })
+    : 0
+  const career = getCareerSnapshot({
+    userId: uid,
+    targetRole: input.careerProfile?.target_role,
+    readiness: hasActivity ? readiness : undefined,
+    skills: input.careerProfile?.skills,
+    certificates,
+    portfolio,
+  })
   const resume = pickResume()
   const extras = mergeExtras(input.extras, resume, career)
-  const overlay = loadResumeCareerOverlay()
+  const overlay = loadResumeCareerOverlay(uid)
   const courses = buildCatalog(input.apiCourses)
   const projects = buildProjectCatalog(input.apiProjects)
   const progressMap = loadAllProgress()
-  const localEnroll = new Set(loadLocalEnroll())
   const history = loadHistory().slice().sort((a, b) => +new Date(b.completedAt) - +new Date(a.completedAt))
   const apps = loadApps()
   const jobStats = appStats(apps)
@@ -222,11 +271,15 @@ export function buildStudentHub(input: {
     haveSkills: career.haveSkills,
     gapSkills: career.needSkills,
     projects: career.portfolio.map(p => ({ id: p.id, title: p.title, skills: p.skills })),
-    interviewScore: loadInterviewCareerOverlay()?.interviewAfter ?? career.interview.overall,
+    interviewScore: loadInterviewCareerOverlay(uid)?.interviewAfter ?? career.interview.overall,
     resumeScore: overlay?.resumeScore ?? career.resume.score,
     resumeSkills: resume?.skills.filter(s => s.included).map(s => s.name),
   })
-  const ranked = rankCatalog(profile)
+  const hasJobSignal = Boolean(
+    extras.targetRole.trim() &&
+      (career.haveSkills.length || career.portfolio.length || overlay || career.interview.overall > 0),
+  )
+  const ranked = hasJobSignal ? rankCatalog(profile) : []
   const bestMatch = ranked.reduce((m, j) => Math.max(m, j.matchScore), 0)
 
   const skills = career.skills.map(s => ({
@@ -272,8 +325,8 @@ export function buildStudentHub(input: {
 
   const completedProjects = shownProjects.filter(p => p.status === 'Portfolio Ready')
   const reviewProjects = shownProjects.filter(p => p.status === 'Needs Review')
-  const completedCourses = completedCourseList(courses, input.enrolled, input.certs)
-  const currentCourse = currentLearning(courses, input.enrolled, localEnroll)
+  const completedCourses = completedCourseList(input.enrolled, input.certs)
+  const currentCourse = currentLearning(courses, input.enrolled)
 
   const hasName = input.name.trim().length > 1
   const hasGoal = Boolean(extras.targetRole)
@@ -305,22 +358,22 @@ export function buildStudentHub(input: {
 
   const week = weekActivity(input.stats.weekHours)
   const bestStreak = Math.max(extras.bestStreak, input.stats.streak)
-  const bookings = loadTutorBookings()
-  const tutors = buildTutorCatalog([])
-  const recentBook = bookings.slice().sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))[0]
+  const recentBook = (input.bookings ?? []).slice().sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))[0]
   const tutor = recentBook
-    ? tutorFromBooking(recentBook, tutors, career)
-    : {
-        name: career.tutorImpact.name,
-        tutorId: career.tutorImpact.tutorId,
-        session: career.tutorImpact.session,
-        minutes: 60,
-        rating: 5,
-        status: 'Career Center record',
-        summary: career.tutorImpact.feedback,
-        sessionHref: null as string | null,
-        bookHref: tutorBookPath(career.tutorImpact.tutorId),
-      }
+    ? tutorFromApiBooking(recentBook)
+    : career.tutorImpact.name
+      ? {
+          name: career.tutorImpact.name,
+          tutorId: career.tutorImpact.tutorId,
+          session: career.tutorImpact.session,
+          minutes: 0,
+          rating: 0,
+          status: career.tutorImpact.session ? 'Completed' : '',
+          summary: career.tutorImpact.feedback,
+          sessionHref: null as string | null,
+          bookHref: tutorBookPath(career.tutorImpact.tutorId),
+        }
+      : null
 
   const resumeCheck = overlay?.checks ?? career.resume.checks
   const portfolioChecks = [
@@ -380,7 +433,7 @@ export function buildStudentHub(input: {
     completedCourses,
     completions: completionsList(input.certs, career),
     achievements,
-    saved: savedBuckets(courses, projects, apps, tutors),
+    saved: savedBuckets(courses, projects, apps, buildTutorCatalog([])),
     jobs: {
       saved: jobStats.saved,
       applied: jobStats.applied,
@@ -388,28 +441,23 @@ export function buildStudentHub(input: {
       offers: jobStats.offers,
       bestMatch,
     },
-    activity: buildActivity(history, progressMap, projects, bookings, overlay, career),
+    activity: buildActivity(history, progressMap, projects, overlay, career),
     xp: career.xp,
     extras,
   }
 }
 
-function tutorFromBooking(
-  booking: TutorBooking,
-  tutors: ReturnType<typeof buildTutorCatalog>,
-  career: CareerSnapshot,
-) {
-  const t = tutors.find(x => x.id === booking.tutorId)
+function tutorFromApiBooking(booking: BookingRow) {
   return {
-    name: t?.name ?? 'Tutor',
-    tutorId: booking.tutorId,
-    session: booking.sessionLabel,
-    minutes: booking.duration,
-    rating: t?.rating ?? 5,
+    name: booking.listing?.name ?? 'Tutor',
+    tutorId: booking.tutor_listing_id,
+    session: booking.message?.trim() || `Session · ${booking.status}`,
+    minutes: 0,
+    rating: 0,
     status: booking.status === 'completed' ? 'Completed' : booking.status,
-    summary: career.tutorImpact.feedback,
-    sessionHref: `/sessions/${booking.id}`,
-    bookHref: tutorBookPath(booking.tutorId),
+    summary: '',
+    sessionHref: `/sessions/${booking.id}` as string | null,
+    bookHref: tutorBookPath(booking.tutor_listing_id),
   }
 }
 
@@ -422,19 +470,11 @@ function relativeResume(iso: string) {
 }
 
 function completedCourseList(
-  catalog: CatalogCourse[],
   enrolled: { id: string; title: string; progress: number }[],
   certs: CertificateRow[],
 ) {
   const done = new Map<string, { id: string; title: string; href: string }>()
   enrolled.filter(c => c.progress >= 100).forEach(c => done.set(c.id, { id: c.id, title: c.title, href: coursePath(c.id) }))
-  catalog.forEach(c => {
-    const pack = getCourseDetailPack(c)
-    const finished = loadLocalDone(c.id)
-    if (pack.lessonCount && finished.length >= pack.lessonCount) {
-      done.set(c.id, { id: c.id, title: c.title, href: coursePath(c.id) })
-    }
-  })
   certs.forEach(c => {
     const id = c.course_id || c.id
     if (![...done.values()].some(x => x.title === c.title)) {
@@ -447,47 +487,33 @@ function completedCourseList(
 function currentLearning(
   catalog: CatalogCourse[],
   enrolled: { id: string; title: string; progress: number; last_lesson_id: string | null }[],
-  localEnroll: Set<string>,
 ) {
   const open = enrolled.find(c => c.progress < 100) ?? enrolled[0]
-  const pick =
-    (open && catalog.find(c => c.id === open.id)) ||
-    catalog.find(c => localEnroll.has(c.id)) ||
-    catalog.find(c => c.title === 'Full Stack Web Development') ||
-    catalog[0]
-  if (!pick) return null
-  const pack = getCourseDetailPack(pick)
-  const total = pack.lessonCount || pack.sections.reduce((s, sec) => s + sec.lessons.length, 0) || 1
-  const localDone = loadLocalDone(pick.id).length
-  const apiPct = open && open.id === pick.id ? open.progress : 0
-  const pct = apiPct || Math.round((localDone / total) * 100)
-  const done = apiPct ? Math.round((apiPct / 100) * total) : localDone
-  const last = open?.last_lesson_id
+  if (!open) return null
+  const pick = catalog.find(c => c.id === open.id)
+  const pack = pick ? getCourseDetailPack(pick) : null
+  const total = pack
+    ? pack.lessonCount || pack.sections.reduce((s, sec) => s + sec.lessons.length, 0) || 0
+    : 0
+  const pct = open.progress
+  const done = total ? Math.round((pct / 100) * total) : 0
+  const last = open.last_lesson_id
   return {
-    id: pick.id,
-    title: pick.title,
+    id: open.id,
+    title: open.title,
     progress: pct,
     done,
     total,
-    href: last ? `/courses/${pick.id}/learn/${last}` : coursePath(pick.id),
+    href: last ? `/courses/${open.id}/learn/${last}` : coursePath(open.id),
   }
 }
 
 function weekActivity(realHours: number) {
   const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-  if (realHours > 0) {
-    const weights = [0.16, 0.2, 0.12, 0.22, 0.14, 0.12, 0.04]
-    return {
-      sample: false,
-      weekHours: realHours,
-      days: labels.map((label, i) => ({ label, hours: Math.round(realHours * weights[i] * 10) / 10 })),
-    }
-  }
-  const mins = [45, 70, 35, 90, 40, 35, 5]
   return {
-    sample: true,
-    weekHours: Math.round((mins.reduce((a, b) => a + b, 0) / 60) * 10) / 10,
-    days: labels.map((label, i) => ({ label, hours: mins[i] / 60 })),
+    sample: false,
+    weekHours: realHours,
+    days: labels.map(label => ({ label, hours: 0 })),
   }
 }
 
@@ -558,7 +584,6 @@ function buildActivity(
   history: InterviewRecord[],
   progress: Record<string, ProjectProgress>,
   projects: CatalogProject[],
-  bookings: TutorBooking[],
   overlay: ReturnType<typeof loadResumeCareerOverlay>,
   career: CareerSnapshot,
 ): HubActivity[] {
@@ -575,9 +600,6 @@ function buildActivity(
       meta: p.score != null ? `${p.score} / 100` : undefined,
     })
   })
-  bookings.filter(b => b.status === 'completed').slice(0, 2).forEach(b => {
-    rows.push({ when: relativeWhen(b.createdAt), text: `Tutor session · ${b.sessionLabel}` })
-  })
   if (overlay) rows.push({ when: 'Resume', text: 'Resume readiness on file', meta: `${overlay.resumeScore}%` })
   if (!rows.length) career.activity.forEach(a => rows.push({ when: a.when, text: a.text }))
   return rows.slice(0, 8)
@@ -588,18 +610,31 @@ export const PROFILE_EXPERIENCE = EXPERIENCE
 export const PROFILE_MODES = WORK_MODES
 
 export function insightCopy(hub: StudentHub) {
+  if (!hub.targetRole && hub.skills.length === 0 && hub.gaps.length === 0) {
+    return 'Choose a career goal and complete your first course to start building your career profile.'
+  }
   const gap = hub.gaps[0]?.name
-  const gap2 = hub.gaps[1]?.name
-  const extra = gap && gap2 ? `${gap} and ${gap2}` : gap || 'a remaining skill'
-  return `Your profile is strong for ${hub.targetRole} roles. Your biggest opportunity is adding ${extra} experience.`
+  if (gap) {
+    return hub.targetRole
+      ? `Your biggest opportunity for ${hub.targetRole} roles is adding ${gap} experience.`
+      : `Add ${gap} experience to strengthen your career profile.`
+  }
+  return 'Keep learning, building projects, and practicing interviews to grow your career profile.'
 }
 
 export function goalMilestones(hub: StudentHub) {
-  const names = ['React', 'JavaScript', 'REST APIs', 'TypeScript', 'Testing']
+  if (hub.skills.length === 0) {
+    return [
+      { name: 'Choose a career goal', done: Boolean(hub.targetRole.trim()) },
+      { name: 'Enroll in a course', done: Boolean(hub.currentCourse) || hub.stats.courses > 0 },
+      { name: 'Complete a project', done: hub.projectStats.completed > 0 },
+      { name: 'Interview Ready', done: hub.career.interview.overall >= 80 },
+    ]
+  }
   return [
-    ...names.map(name => ({
-      name,
-      done: hub.skills.find(s => s.name === name)?.verified ?? hub.career.haveSkills.includes(name),
+    ...hub.skills.slice(0, 5).map(s => ({
+      name: s.name,
+      done: s.verified || hub.career.haveSkills.includes(s.name),
     })),
     { name: 'Interview Ready', done: hub.career.interview.overall >= 80 },
   ]

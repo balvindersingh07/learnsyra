@@ -70,7 +70,7 @@ export default function Courses({ onNav }: Props) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [enrolled, setEnrolled] = useState<(CourseRow & { progress: number; last_lesson_id: string | null })[]>([])
-  const [careerGoal, setCareerGoal] = useState('Frontend Developer')
+  const [careerGoal, setCareerGoal] = useState('')
   const [wish, setWish] = useState<Set<string>>(() => new Set(loadLocalWishlist()))
   const [toast, setToast] = useState<string | null>(null)
   const [compare, setCompare] = useState<string[]>([])
@@ -292,14 +292,16 @@ export default function Courses({ onNav }: Props) {
         <div className="glass rounded-2xl p-5 mb-8"><div className="dash-skel h-24 w-full" /></div>
       ) : rec && recCourse ? (
         <section className="glass rounded-2xl p-5 md:p-6 mb-8 dash-elevate">
-          <div className="text-sm font-semibold text-primary mb-1">✨ Recommended For You</div>
-          <p className="text-sm text-muted mb-4">Based on your learning progress and career goal</p>
+          <div className="text-sm font-semibold text-primary mb-1">Explore Courses</div>
+          <p className="text-sm text-muted mb-4">Recommended catalog course — not a personal learning-path match.</p>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <h2 className="text-xl font-bold text-ink mb-1" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
                 {recCourse.title}
               </h2>
-              <div className="text-sm font-semibold text-primary mb-3">{rec.match}% match for your learning path</div>
+              {rec.match > 0 && (
+                <div className="text-sm font-semibold text-primary mb-3">{rec.match}% match for your learning path</div>
+              )}
               <ul className="text-sm text-muted space-y-1 mb-3">
                 {rec.reasons.map(r => (
                   <li key={r}>• {r}</li>
@@ -320,18 +322,17 @@ export default function Courses({ onNav }: Props) {
 
       <section className="glass rounded-2xl p-5 mb-8 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <div className="text-sm font-bold text-ink" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>🎯 Your Career Goal</div>
-          <div className="text-lg font-black text-ink mt-0.5">{careerGoal}</div>
-          <p className="text-sm text-muted">These courses can help you reach your goal faster.</p>
+          <div className="text-sm font-bold text-ink" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
+            {careerGoal ? 'Your Career Goal' : 'Choose your career goal'}
+          </div>
+          <div className="text-lg font-black text-ink mt-0.5">{careerGoal || 'Not set'}</div>
+          <p className="text-sm text-muted">
+            {careerGoal ? 'These courses can help you reach your goal faster.' : 'Start your learning journey — explore available courses below.'}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex flex-wrap gap-1.5">
-            {['React', 'TypeScript', 'Testing'].map(s => (
-              <span key={s} className="badge badge-primary">{s}</span>
-            ))}
-          </div>
           <button type="button" className="btn-glass text-sm" onClick={() => onNav('career')}>
-            Update Career Goal
+            {careerGoal ? 'Update Career Goal' : 'Set Career Goal'}
           </button>
         </div>
       </section>
@@ -345,7 +346,9 @@ export default function Courses({ onNav }: Props) {
                 <div>
                   <div className="text-sm font-bold text-ink">{c.title}</div>
                   <div className="text-sm text-muted">{c.progress}% complete</div>
-                  <div className="text-xs text-muted mt-1">Current lesson: Building REST APIs</div>
+                  {c.last_lesson_id ? (
+                    <div className="text-xs text-muted mt-1">Continue where you left off</div>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button type="button" className="btn-primary text-sm" onClick={() => onNav('course-detail', c.id)}>
@@ -354,7 +357,7 @@ export default function Courses({ onNav }: Props) {
                   <button
                     type="button"
                     className="btn-glass text-sm"
-                    onClick={() => goAi(`Help me continue ${c.title}. Current lesson: Building REST APIs.`)}
+                    onClick={() => goAi(`Help me continue ${c.title}.`)}
                   >
                     Resume with AI →
                   </button>
@@ -366,7 +369,12 @@ export default function Courses({ onNav }: Props) {
       )}
 
       <section className="mb-8">
-        <h2 className="text-lg font-bold text-ink mb-3" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>🧬 Close Your Skill Gaps</h2>
+        <h2 className="text-lg font-bold text-ink mb-3" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>Start your learning journey</h2>
+        {SKILL_GAPS.length === 0 ? (
+          <div className="glass rounded-2xl p-5 text-sm text-muted">
+            Skill gaps appear after you set a career goal and add skills. Explore available courses below.
+          </div>
+        ) : (
         <div className="grid sm:grid-cols-2 gap-3">
           {SKILL_GAPS.map(g => {
             const recC = findByTitle(catalog, g.courseTitle)
@@ -395,6 +403,7 @@ export default function Courses({ onNav }: Props) {
             )
           })}
         </div>
+        )}
       </section>
 
       <section className="mb-8">
@@ -466,12 +475,11 @@ export default function Courses({ onNav }: Props) {
         </div>
         {pathOpen && (
           <div className="rounded-xl p-4" style={{ background: 'rgba(108,92,231,0.06)' }}>
-            <div className="text-sm font-bold text-ink mb-2">Your recommended path</div>
+            <div className="text-sm font-bold text-ink mb-2">Explore this path</div>
             <ol className="text-sm text-muted space-y-1 mb-4">
               {FRONTEND_PATH.map((s, i) => (
                 <li key={s.title}>
                   <span className="font-semibold text-ink">{i + 1}. {s.title}</span>
-                  {s.state === 'done' ? ' ✓' : s.state === 'current' ? ' ← Current' : ''}
                 </li>
               ))}
             </ol>

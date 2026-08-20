@@ -1,4 +1,4 @@
-import { peekAuthUserId } from './supabase'
+import { peekAuthUserId, userStorageKey } from './supabase'
 
 export type InterviewRole =
   | 'Frontend Developer'
@@ -561,8 +561,10 @@ function typeAllowed(kind: InterviewKind, qType: QuestionKind) {
 }
 
 export function loadUsedQuestionIds() {
+  const key = userStorageKey(USED_KEY)
+  if (!key) return []
   try {
-    const raw = localStorage.getItem(USED_KEY)
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as string[]) : []
   } catch {
     return []
@@ -570,7 +572,9 @@ export function loadUsedQuestionIds() {
 }
 
 function saveUsedQuestionIds(ids: string[]) {
-  localStorage.setItem(USED_KEY, JSON.stringify(ids.slice(-80)))
+  const key = userStorageKey(USED_KEY)
+  if (!key) return
+  localStorage.setItem(key, JSON.stringify(ids.slice(-80)))
 }
 
 export function pickQuestions(setup: InterviewSetup, count: number): InterviewQuestion[] {
@@ -737,8 +741,10 @@ export function finalizeInterview(live: LiveInterview, interviewBefore: number, 
 }
 
 export function loadHistory(): InterviewRecord[] {
+  const key = userStorageKey(HISTORY_KEY)
+  if (!key) return []
   try {
-    const raw = localStorage.getItem(HISTORY_KEY)
+    const raw = localStorage.getItem(key)
     if (raw) {
       const rows = JSON.parse(raw) as InterviewRecord[]
       return rows.filter(row => !row.seeded)
@@ -750,7 +756,9 @@ export function loadHistory(): InterviewRecord[] {
 }
 
 export function saveHistory(rows: InterviewRecord[]) {
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(rows.slice(0, 20)))
+  const key = userStorageKey(HISTORY_KEY)
+  if (!key) return
+  localStorage.setItem(key, JSON.stringify(rows.slice(0, 20)))
 }
 
 export function appendHistory(record: InterviewRecord) {
@@ -759,8 +767,10 @@ export function appendHistory(record: InterviewRecord) {
 }
 
 export function loadLive(): LiveInterview | null {
+  const key = userStorageKey(LIVE_KEY)
+  if (!key) return null
   try {
-    const raw = localStorage.getItem(LIVE_KEY)
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as LiveInterview) : null
   } catch {
     return null
@@ -768,8 +778,10 @@ export function loadLive(): LiveInterview | null {
 }
 
 export function saveLive(live: LiveInterview | null) {
-  if (!live) localStorage.removeItem(LIVE_KEY)
-  else localStorage.setItem(LIVE_KEY, JSON.stringify(live))
+  const key = userStorageKey(LIVE_KEY)
+  if (!key) return
+  if (!live) localStorage.removeItem(key)
+  else localStorage.setItem(key, JSON.stringify(live))
 }
 
 export function loadInterviewCareerOverlay(userId?: string | null): InterviewCareerOverlay | null {

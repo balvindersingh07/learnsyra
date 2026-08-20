@@ -3,11 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import {
   kindLabel,
   relativeWhen,
-  SARAH_TUTOR_ID,
-  TS_COURSE_ID,
   type InterviewRecord,
 } from '../../lib/interviewStudio'
-import { coursePath, tutorBookPath, tutorPath } from '../../lib/paths'
 
 const RING = 339.292
 
@@ -174,7 +171,9 @@ export default function InterviewResults({
       <section className="glass rounded-3xl p-6 mb-6">
         <h3 className="text-lg font-black text-ink mb-2" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>✨ Your Next Best Action</h3>
         <blockquote className="text-sm text-ink mb-4 pl-3" style={{ borderLeft: '3px solid #6C5CE7' }}>
-          Your technical fundamentals are strong. Your biggest opportunity is system design and TypeScript.
+          {record.weakAreas[0]
+            ? `Recommended next: practice ${record.weakAreas[0].label}.`
+            : 'Recommended: keep practicing with another interview when you are ready.'}
         </blockquote>
         <p className="text-sm font-bold text-ink mb-3">
           {record.recommendations.title} · {record.recommendations.minutes} min
@@ -183,8 +182,8 @@ export default function InterviewResults({
           <button type="button" className="btn-primary" onClick={() => onPractice('typescript')}>
             Practice Again →
           </button>
-          <button type="button" className="btn-glass" onClick={() => navigate(coursePath(TS_COURSE_ID))}>
-            Review TypeScript Course →
+          <button type="button" className="btn-glass" onClick={() => navigate('/courses?q=TypeScript')}>
+            Explore TypeScript courses →
           </button>
         </div>
       </section>
@@ -210,27 +209,25 @@ export default function InterviewResults({
       {weak && (
         <section className="glass rounded-3xl p-6 mb-6">
           <h3 className="text-lg font-black text-ink mb-2" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>👨‍🏫 Want Expert Feedback?</h3>
-          <p className="text-sm text-muted mb-3">Your AI interview identified weaknesses in system design.</p>
-          <p className="text-sm font-bold text-ink mb-4">Dr. Sarah Kim</p>
+          <p className="text-sm text-muted mb-3">Want a human review of your answers?</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted mb-4">Recommended · Explore tutors</p>
           <div className="flex flex-wrap gap-2">
             <button type="button" className="btn-glass text-sm" onClick={() => navigate('/tutors')}>
               Ask a Tutor →
             </button>
-            <button type="button" className="btn-primary text-sm" onClick={() => navigate(tutorBookPath(SARAH_TUTOR_ID))}>
-              Book Session →
+            <button type="button" className="btn-primary text-sm" onClick={() => navigate('/tutors')}>
+              Find a Tutor →
             </button>
           </div>
-          <button type="button" className="text-xs font-semibold text-primary mt-3" onClick={() => navigate(tutorPath(SARAH_TUTOR_ID))}>
-            View tutor profile
-          </button>
         </section>
       )}
 
       <section className="glass rounded-3xl p-6 mb-6">
-        <h3 className="text-lg font-black text-ink mb-2" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>📚 Recommended Learning</h3>
-        <p className="text-sm font-bold text-ink mb-3">TypeScript for React Developers</p>
-        <button type="button" className="btn-primary text-sm" onClick={() => navigate(`/courses?q=TypeScript`)}>
-          Continue Learning →
+        <h3 className="text-lg font-black text-ink mb-2" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>Recommended learning</h3>
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted mb-2">Explore</p>
+        <p className="text-sm font-bold text-ink mb-3">Courses that match your interview topics</p>
+        <button type="button" className="btn-primary text-sm" onClick={() => navigate(`/courses?q=${encodeURIComponent(record.role || 'interview')}`)}>
+          Explore courses →
         </button>
       </section>
 

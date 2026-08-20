@@ -151,11 +151,17 @@ export default function CareerJobDetail() {
         <p className="text-sm text-muted">{job.location} · {salaryLabel(job)} · {job.yearsLabel} · Posted {relativePosted(job.postedAt)}</p>
         <div className="flex flex-wrap items-end gap-4 mt-4">
           <div>
-            <div className="text-3xl font-black text-primary career-count">{job.matchScore}%</div>
-            <div className="text-[10px] font-semibold uppercase text-muted">LearnSyra Match</div>
-            <div className="progress-bar mt-1 w-36" aria-hidden="true">
-              <div className="progress-fill" style={{ width: `${job.matchScore}%` }} />
-            </div>
+            {job.matchScore > 0 ? (
+              <>
+                <div className="text-3xl font-black text-primary career-count">{job.matchScore}%</div>
+                <div className="text-[10px] font-semibold uppercase text-muted">LearnSyra Match</div>
+                <div className="progress-bar mt-1 w-36" aria-hidden="true">
+                  <div className="progress-fill" style={{ width: `${job.matchScore}%` }} />
+                </div>
+              </>
+            ) : (
+              <div className="text-sm font-semibold text-muted">Set your career goal</div>
+            )}
           </div>
           <div className="hidden lg:flex flex-wrap gap-2">
             <button type="button" className="btn-primary text-sm" onClick={() => setReviewOpen(true)}>Apply →</button>
@@ -167,12 +173,14 @@ export default function CareerJobDetail() {
       </section>
 
       <section className="glass rounded-3xl p-5 mb-4">
-        <h2 className="text-lg font-black text-ink mb-3">🧬 Your Match</h2>
+        <h2 className="text-lg font-black text-ink mb-3">{job.matchScore > 0 ? 'Your Match' : 'Explore this listing'}</h2>
         <div className="grid sm:grid-cols-2 gap-4 text-sm">
           <div>
-            <h3 className="font-bold mb-1">You Have</h3>
+            <h3 className="font-bold mb-1">{job.matchScore > 0 ? 'You Have' : 'Role skills'}</h3>
             <div className="flex flex-wrap gap-1.5">
-              {job.matchReasons.map((r, i) => <span key={`${r}-${i}`} style={{ color: '#0F8A68' }}>✓ {r}</span>)}
+              {job.matchScore > 0
+                ? job.matchReasons.map((r, i) => <span key={`${r}-${i}`} style={{ color: '#0F8A68' }}>✓ {r}</span>)
+                : <span className="text-muted">Set your career goal to see a personalized match.</span>}
             </div>
           </div>
           <div>

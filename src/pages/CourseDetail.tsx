@@ -332,7 +332,7 @@ export default function CourseDetail({ onNav }: Props) {
           {enrolled && (
             <div className="text-sm text-muted mb-3">
               <span className="font-semibold text-ink">{displayProgress}% Complete</span>
-              <div>Current lesson: Building REST APIs</div>
+              <div>Continue where you left off</div>
             </div>
           )}
           <div className="mb-2">{primary}</div>
@@ -357,7 +357,7 @@ export default function CourseDetail({ onNav }: Props) {
 
       {pack.matchCopy ? (
       <section className="glass rounded-2xl p-5 md:p-6 mb-8">
-        <SectionTitle>✨ Why LearnSyra Recommends This</SectionTitle>
+        <SectionTitle>Explore this course</SectionTitle>
         {course.demo && <div className="badge badge-amber mb-2">Demo Course — Not Production Data</div>}
         <p className="text-sm text-muted leading-relaxed mb-4">{pack.matchCopy}</p>
         {pack.match > 0 && (
@@ -379,7 +379,7 @@ export default function CourseDetail({ onNav }: Props) {
         </div>
         )}
         <button type="button" className="btn-primary text-sm mt-4" onClick={() => onNav('career')}>
-          View My Skill Gap →
+          View career center →
         </button>
       </section>
       ) : null}

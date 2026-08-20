@@ -103,14 +103,13 @@ export default function LiveSummary({
       </section>
 
       <section className="glass rounded-2xl p-5 mb-4">
-        <h2 className="text-lg font-bold text-ink mb-1">🧠 Recommended Practice</h2>
-        <div className="font-semibold text-ink">Build: API Error Handling Challenge</div>
-        <div className="text-xs text-muted mb-2">10–15 minutes · REST APIs · JavaScript</div>
+        <h2 className="text-lg font-bold text-ink mb-1">Recommended practice</h2>
+        <p className="text-sm text-muted mb-2">Explore a short AI practice drill after your session.</p>
         <button
           type="button"
           className="btn-primary text-sm"
           onClick={() => {
-            setPendingAiPrompt('Give me a 10-15 minute API error handling practice challenge for my React Expense Tracker.')
+            setPendingAiPrompt('Give me a short practice challenge based on what I just reviewed with my tutor.')
             navigate('/ai-learning')
           }}
         >
@@ -120,26 +119,27 @@ export default function LiveSummary({
 
       <div className="grid sm:grid-cols-2 gap-4 mb-4">
         <section className="glass rounded-2xl p-5">
-          <h2 className="text-sm font-bold text-ink mb-1">📚 Continue Learning</h2>
+          <h2 className="text-sm font-bold text-ink mb-1">Explore courses</h2>
           <div className="font-semibold text-ink">{record.recommendedLesson.title}</div>
-          <div className="text-xs text-muted mb-2">{record.recommendedLesson.minutes} min</div>
-          <button type="button" className="btn-glass text-sm" onClick={() => navigate(record.recommendedLesson.href)}>
-            Continue Lesson →
+          <button type="button" className="btn-glass text-sm" onClick={() => navigate(record.recommendedLesson.href || '/courses')}>
+            Explore courses →
           </button>
         </section>
         <section className="glass rounded-2xl p-5">
-          <h2 className="text-sm font-bold text-ink mb-1">🚀 Keep Building</h2>
+          <h2 className="text-sm font-bold text-ink mb-1">Explore projects</h2>
           <div className="font-semibold text-ink">{record.recommendedProject.title}</div>
-          <p className="text-xs text-muted mb-2">&ldquo;{record.recommendedProject.why}&rdquo;</p>
-          <button type="button" className="btn-glass text-sm" onClick={() => navigate(record.recommendedProject.href)}>
-            Start Project →
+          <p className="text-xs text-muted mb-2">{record.recommendedProject.why}</p>
+          <button type="button" className="btn-glass text-sm" onClick={() => navigate(record.recommendedProject.href || '/projects')}>
+            Explore projects →
           </button>
         </section>
       </div>
 
+      {(record.careerAfter > 0 || record.skillDeltas.length > 0) && (
       <section className="glass rounded-2xl p-5 mb-6">
-        <h2 className="text-lg font-bold text-ink mb-2">💼 Career Progress</h2>
-        <p className="text-sm text-muted mb-2">Mock learning signal from this session — not a live assessment.</p>
+        <h2 className="text-lg font-bold text-ink mb-2">Career Progress</h2>
+        <p className="text-sm text-muted mb-2">From this session — only shown when scores are recorded.</p>
+        {record.careerAfter > 0 && (
         <div className="flex items-end gap-4 mb-3">
           <div>
             <div className="text-xs text-muted">Before</div>
@@ -151,6 +151,7 @@ export default function LiveSummary({
             <div className="text-2xl font-black text-primary">{record.careerAfter}%</div>
           </div>
         </div>
+        )}
         <ul className="text-sm">
           {record.skillDeltas.map(s => (
             <li key={s.skill} className="flex justify-between">
@@ -160,6 +161,7 @@ export default function LiveSummary({
           ))}
         </ul>
       </section>
+      )}
 
       <div className="flex items-center gap-3 mb-4">
         <TutorAvatar name={tutor.name} size={44} />

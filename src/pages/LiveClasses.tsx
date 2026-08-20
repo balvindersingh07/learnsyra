@@ -37,19 +37,25 @@ export default function LiveClasses() {
   const [attended, setAttended] = useState<Set<string>>(new Set())
   const [tab, setTab] = useState<'live' | 'upcoming' | 'recordings'>('live')
   const [error, setError] = useState<string | null>(null)
-  const [record, setRecord] = useState<LiveSessionRecord>(() => resolveLiveSession(params.get('session')))
-  const [view, setView] = useState<LivePhase>(() => (record.phase === 'live' ? 'live' : 'lobby'))
+  const [record, setRecord] = useState<LiveSessionRecord | null>(() => resolveLiveSession(params.get('session')))
+  const [view, setView] = useState<LivePhase>(() => (record?.phase === 'live' ? 'live' : 'lobby'))
 
   const catalog = useMemo(() => buildTutorCatalog([]), [])
-  const tutor = getTutorById(catalog, record.tutorId) ?? catalog[0]
+  const tutor = record ? getTutorById(catalog, record.tutorId) : null
 
   useEffect(() => {
     const next = resolveLiveSession(params.get('session'))
     setRecord(next)
+    if (!next) {
+      setView('lobby')
+      return
+    }
     if (next.phase === 'live') setView('live')
     else if (params.get('join') === '1' && secondsUntil(next.scheduledAt) <= 0 && next.status !== 'completed') {
       setRecord(markSessionLive(next))
       setView('live')
+    } else {
+      setView(next.phase === 'summary' ? 'summary' : 'lobby')
     }
   }, [params])
 
@@ -73,9 +79,7 @@ export default function LiveClasses() {
   )
   const shown = tab === 'live' ? live : tab === 'upcoming' ? upcoming : recordings
 
-  if (!tutor) return <div className="pt-24 px-6 text-muted">Loading session…</div>
-
-  if (view === 'live' || view === 'connecting') {
+  if (record && tutor && (view === 'live' || view === 'connecting')) {
     return (
       <LiveWorkspace
         record={record}
@@ -89,26 +93,39 @@ export default function LiveClasses() {
     )
   }
 
-  if (view === 'summary') {
+  if (record && tutor && view === 'summary') {
     return <LiveSummary record={record} tutor={tutor} onChange={setRecord} />
   }
 
   return (
     <div className="pt-20 px-6 pb-16 max-w-5xl mx-auto overflow-x-hidden">
-      <LiveLobby
-        record={record}
-        tutor={tutor}
-        onJoin={() => {
-          setRecord(markSessionLive(record))
-          setView('live')
-        }}
-      />
-
-      {record.status === 'completed' && (
-        <div className="glass rounded-2xl p-4 mb-8 flex flex-wrap items-center justify-between gap-3">
-          <div className="text-sm text-muted">Your last 1-on-1 session is saved.</div>
-          <button type="button" className="btn-glass text-sm" onClick={() => setView('summary')}>
-            Open summary
+      {record && tutor ? (
+        <>
+          <LiveLobby
+            record={record}
+            tutor={tutor}
+            onJoin={() => {
+              setRecord(markSessionLive(record))
+              setView('live')
+            }}
+          />
+          {record.status === 'completed' && (
+            <div className="glass rounded-2xl p-4 mb-8 flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm text-muted">Your last 1-on-1 session is saved.</div>
+              <button type="button" className="btn-glass text-sm" onClick={() => setView('summary')}>
+                Open summary
+              </button>
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="glass rounded-2xl p-8 mb-8 text-center">
+          <h2 className="text-xl font-bold text-ink mb-2" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
+            No live sessions yet
+          </h2>
+          <p className="text-sm text-muted mb-4">Book a tutor session to get started.</p>
+          <button type="button" className="btn-primary text-sm" onClick={() => navigate('/tutors')}>
+            Find a Tutor →
           </button>
         </div>
       )}

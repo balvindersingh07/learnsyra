@@ -260,17 +260,22 @@ export default function Projects() {
 
       {rec && (
         <section className="glass rounded-3xl p-5 md:p-7 mb-10" style={{ borderColor: 'rgba(108,92,231,0.22)' }}>
-          <div className="text-sm font-semibold text-primary mb-2">✨ Your Next Project</div>
+          <div className="text-sm font-semibold text-primary mb-2">Explore Projects</div>
           <div className="flex flex-col lg:flex-row gap-6">
             <div className="flex-1 min-w-0">
               <h2 className="text-2xl font-black text-ink mb-2" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
                 {rec.title}
               </h2>
               <p className="text-sm text-muted leading-relaxed mb-4">
-                &ldquo;{rec.aiReason}&rdquo;
+                Available project — catalog recommendation, not your assigned project.
               </p>
+              {rec.aiReason && rec.skillMatch === 0 && (
+                <p className="text-sm text-muted leading-relaxed mb-4">{rec.aiReason}</p>
+              )}
               <div className="flex flex-wrap gap-2 mb-4">
-                <span className="badge badge-primary">{rec.skillMatch}% Skill Match</span>
+                {rec.skillMatch > 0 && (
+                  <span className="badge badge-primary">{rec.skillMatch}% Skill Match</span>
+                )}
                 <span className="badge badge-amber">{rec.difficulty}</span>
                 <span className="badge">{formatDuration(rec.estimatedMinutes)}</span>
                 {rec.badges.slice(0, 3).map(b => (

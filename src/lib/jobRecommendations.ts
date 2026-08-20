@@ -1,3 +1,5 @@
+import { peekAuthUserId, userStorageKey } from './supabase'
+
 export type JobRole =
   | 'Frontend Developer'
   | 'React Developer'
@@ -81,6 +83,16 @@ export interface JobFilters {
 const APPS_KEY = 'learnsyra_job_apps'
 const FILTER_KEY = 'learnsyra_job_filters'
 const ROLE_KEY = 'learnsyra_job_target_role'
+
+function appsStorageKey(userId?: string | null) {
+  const uid = userId || peekAuthUserId()
+  return uid ? `${APPS_KEY}:${uid}` : null
+}
+
+function roleStorageKey(userId?: string | null) {
+  const uid = userId || peekAuthUserId()
+  return uid ? `${ROLE_KEY}:${uid}` : null
+}
 
 export const JOB_ROLES: JobRole[] = [
   'Frontend Developer',
@@ -278,19 +290,43 @@ function overlap(have: string[], need: string[]) {
   return need.filter(n => h.some(x => x.includes(n.toLowerCase()) || n.toLowerCase().includes(x)))
 }
 
+function hasCareerSignals(profile: StudentJobProfile) {
+  const role = profile.targetRole.trim()
+  return (
+    role.length > 0 ||
+    profile.skills.some(s => s.trim()) ||
+    profile.projects.length > 0 ||
+    profile.resumeScore > 0 ||
+    profile.interviewScore > 0
+  )
+}
+
+function roleAlignScore(job: CatalogJob, targetRole: string) {
+  const role = targetRole.trim()
+  if (!role) return 0
+  if (job.role === role) return 1
+  const first = role.split(/\s+/)[0]?.toLowerCase() ?? ''
+  if (first.length >= 3 && job.title.toLowerCase().includes(first)) return 1
+  if (job.role.includes('Developer') && /developer|engineer/i.test(role)) return 0.6
+  return 0
+}
+
 export function rankJob(job: CatalogJob, profile: StudentJobProfile): RankedJob {
   const have = overlap(profile.skills, job.skills)
   const gaps = job.skills.filter(s => !have.includes(s))
+  if (!hasCareerSignals(profile)) {
+    return { ...job, matchScore: 0, matchReasons: [], skillGaps: gaps.slice(0, 4), careerFit: 'Stretch Role' }
+  }
   const skillPct = job.skills.length ? have.length / job.skills.length : 0
   const projectHit = profile.projects.some(p => p.skills.some(s => job.skills.some(js => js.toLowerCase().includes(s.toLowerCase()) || s.toLowerCase().includes(js.toLowerCase()))))
-  const roleAlign = job.role === profile.targetRole || job.title.toLowerCase().includes(profile.targetRole.split(' ')[0].toLowerCase()) ? 1 : job.role.includes('Developer') && /developer|engineer/i.test(profile.targetRole) ? 0.6 : 0.25
+  const roleAlign = roleAlignScore(job, profile.targetRole)
   const matchScore = Math.round(
     Math.min(
       96,
       Math.max(
-        48,
+        0,
         skillPct * 35 +
-          (projectHit ? 20 : 8) +
+          (projectHit ? 20 : 0) +
           (profile.resumeScore / 100) * 15 +
           (profile.interviewScore / 100) * 15 +
           roleAlign * 15,
@@ -367,8 +403,10 @@ export function sortJobs(jobs: RankedJob[], sort: JobSort) {
 }
 
 export function loadApps(): Record<string, JobApplication> {
+  const key = appsStorageKey()
+  if (!key) return {}
   try {
-    const raw = localStorage.getItem(APPS_KEY)
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as Record<string, JobApplication>) : {}
   } catch {
     return {}
@@ -376,7 +414,9 @@ export function loadApps(): Record<string, JobApplication> {
 }
 
 export function saveApps(map: Record<string, JobApplication>) {
-  localStorage.setItem(APPS_KEY, JSON.stringify(map))
+  const key = appsStorageKey()
+  if (!key) return
+  localStorage.setItem(key, JSON.stringify(map))
 }
 
 export function upsertApp(jobId: string, patch: Partial<JobApplication>) {
@@ -398,8 +438,10 @@ export function appStats(map: Record<string, JobApplication>) {
 }
 
 export function loadFilters(): JobFilters | null {
+  const key = userStorageKey(FILTER_KEY)
+  if (!key) return null
   try {
-    const raw = localStorage.getItem(FILTER_KEY)
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as JobFilters) : null
   } catch {
     return null
@@ -407,15 +449,21 @@ export function loadFilters(): JobFilters | null {
 }
 
 export function saveFilters(f: JobFilters) {
-  localStorage.setItem(FILTER_KEY, JSON.stringify(f))
+  const key = userStorageKey(FILTER_KEY)
+  if (!key) return
+  localStorage.setItem(key, JSON.stringify(f))
 }
 
 export function loadTargetRole(fallback: string) {
-  return localStorage.getItem(ROLE_KEY) || fallback
+  const key = roleStorageKey()
+  if (!key) return fallback
+  return localStorage.getItem(key) || fallback
 }
 
 export function saveTargetRole(role: string) {
-  localStorage.setItem(ROLE_KEY, role)
+  const key = roleStorageKey()
+  if (!key) return
+  localStorage.setItem(key, role)
 }
 
 export function buildJobProfile(input: {

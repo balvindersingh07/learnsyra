@@ -6,12 +6,16 @@ import { useAuth } from '../context/AuthContext'
 import {
   getCertificates,
   getCourses,
+  getMyBookings,
   getMyEnrolledCourses,
+  getCareerProfile,
   getMyStudentProjects,
   getProjects,
   getStudentStats,
   planLabel,
   saveCareerProfile,
+  type BookingRow,
+  type CareerProfile,
   type CertificateRow,
   type CourseRow,
   type ProjectRow,
@@ -44,12 +48,15 @@ const VIS: { id: ProfileVisibility; label: string; note: string }[] = [
 export default function Profile() {
   const navigate = useNavigate()
   const { session, profile, updateProfile, updatePassword } = useAuth()
+  const uid = session?.user.id ?? null
   const [extras, setExtras] = useState<ProfileExtras>(() => loadProfileExtras())
   const [enrolled, setEnrolled] = useState<{ id: string; title: string; progress: number; last_lesson_id: string | null }[]>([])
   const [apiCourses, setApiCourses] = useState<CourseRow[]>([])
   const [apiProjects, setApiProjects] = useState<ProjectRow[]>([])
   const [studentProjects, setStudentProjects] = useState<StudentProjectRow[]>([])
   const [certs, setCerts] = useState<CertificateRow[]>([])
+  const [careerProfile, setCareerProfile] = useState<CareerProfile | null>(null)
+  const [bookings, setBookings] = useState<BookingRow[]>([])
   const [stats, setStats] = useState({ streak: 0, weekHours: 0, completedLessons: 0 })
   const [editOpen, setEditOpen] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
@@ -65,6 +72,10 @@ export default function Profile() {
   const [confirm, setConfirm] = useState('')
 
   useEffect(() => {
+    setExtras(loadProfileExtras(uid))
+  }, [uid])
+
+  useEffect(() => {
     setEditName(profile?.full_name ?? '')
     setEditHeadline(profile?.headline ?? '')
     setEditAvatar(profile?.avatar_url ?? '')
@@ -76,6 +87,8 @@ export default function Profile() {
     getProjects().then(setApiProjects).catch(() => setApiProjects([]))
     getMyStudentProjects().then(setStudentProjects).catch(() => setStudentProjects([]))
     getCertificates().then(setCerts).catch(() => setCerts([]))
+    getCareerProfile().then(setCareerProfile).catch(() => setCareerProfile(null))
+    getMyBookings().then(setBookings).catch(() => setBookings([]))
     getStudentStats()
       .then(s => setStats({ streak: s.streak, weekHours: s.weekHours, completedLessons: s.completedLessons }))
       .catch(() => {})
@@ -96,17 +109,19 @@ export default function Profile() {
         studentProjects,
         certs,
         stats,
+        careerProfile,
+        bookings,
       }),
-    [name, session?.user.email, profile?.avatar_url, profile?.headline, extras, enrolled, apiCourses, apiProjects, studentProjects, certs, stats],
+    [name, session?.user.email, profile?.avatar_url, profile?.headline, extras, enrolled, apiCourses, apiProjects, studentProjects, certs, stats, careerProfile, bookings],
   )
 
   useEffect(() => {
     if (hub.bestStreak > extras.bestStreak) {
       const next = { ...extras, bestStreak: hub.bestStreak }
       setExtras(next)
-      saveProfileExtras(next)
+      saveProfileExtras(next, uid)
     }
-  }, [hub.bestStreak, extras])
+  }, [hub.bestStreak, extras, uid])
 
   useEffect(() => {
     if (!editOpen && !previewOpen) return
@@ -122,7 +137,7 @@ export default function Profile() {
 
   const persistExtras = (next: ProfileExtras) => {
     setExtras(next)
-    saveProfileExtras(next)
+    saveProfileExtras(next, uid)
     if (next.targetRole) saveTargetRole(next.targetRole)
   }
 
@@ -201,8 +216,10 @@ export default function Profile() {
           <div className="min-w-0 flex-1">
             <h2 className="text-2xl font-black text-ink" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>{hub.name}</h2>
             <p className="text-sm text-muted">{hub.headline}</p>
-            <p className="text-base font-bold text-ink mt-1">{hub.targetRole}</p>
-            <p className="text-sm font-bold text-primary">{hub.careerMatch}% Career Match</p>
+            <p className="text-base font-bold text-ink mt-1">{hub.targetRole || 'Choose a career goal to get started'}</p>
+            <p className="text-sm font-bold text-primary">
+              {hub.careerMatch > 0 ? `${hub.careerMatch}% Career Match` : 'Match appears after you add real skills and projects'}
+            </p>
             <div className="flex flex-wrap gap-2 mt-2">
               <span className="badge badge-primary capitalize">{profile?.role ?? 'student'}</span>
               <span className="badge badge-amber">{planLabel(profile?.plan)}</span>
@@ -259,26 +276,30 @@ export default function Profile() {
           {hub.currentCourse ? (
             <>
               <p className="font-bold text-ink">{hub.currentCourse.title}</p>
-              <p className="text-sm text-muted mb-2">{hub.currentCourse.done} / {hub.currentCourse.total} lessons · {hub.currentCourse.progress}%</p>
+              <p className="text-sm text-muted mb-2">
+                {hub.currentCourse.total > 0
+                  ? `${hub.currentCourse.done} / ${hub.currentCourse.total} lessons · ${hub.currentCourse.progress}%`
+                  : `${hub.currentCourse.progress}% complete`}
+              </p>
               <div className="progress-bar mb-4" aria-hidden="true"><div className="progress-fill" style={{ width: `${hub.currentCourse.progress}%` }} /></div>
               <button type="button" className="btn-primary text-sm" onClick={() => navigate(hub.currentCourse!.href)}>Continue Learning →</button>
             </>
           ) : (
-            <button type="button" className="btn-primary text-sm" onClick={() => navigate('/courses')}>Browse courses</button>
+            <>
+              <p className="text-sm text-muted mb-4">You haven't enrolled in any courses yet</p>
+              <button type="button" className="btn-primary text-sm" onClick={() => navigate('/courses')}>Browse courses</button>
+            </>
           )}
         </section>
       </div>
 
       <section className="glass rounded-3xl p-5 mb-5">
         <h2 className="text-lg font-black text-ink mb-1">⏱ Learning Activity</h2>
-        <p className="text-sm text-muted mb-3">
-          {hub.weekHours} hours this week
-          {hub.weekSample ? ' · Sample week (live lesson tracking is empty)' : ''}
-        </p>
+        <p className="text-sm text-muted mb-3">{hub.weekHours} hours this week</p>
         <div className="sp-week mb-2" aria-hidden="true">
           {hub.activityWeek.map(d => (
             <div key={d.label} className="flex flex-col justify-end h-full">
-              <div className="sp-week-bar" style={{ height: `${Math.max(8, (d.hours / maxHours) * 100)}%` }} />
+              <div className="sp-week-bar" style={{ height: d.hours > 0 ? `${Math.max(8, (d.hours / maxHours) * 100)}%` : '0%' }} />
             </div>
           ))}
         </div>
@@ -290,6 +311,9 @@ export default function Profile() {
 
       <section className="glass rounded-3xl p-5 mb-5">
         <h2 className="text-lg font-black text-ink mb-4">🧬 Skill DNA</h2>
+        {hub.skills.length === 0 ? (
+          <p className="text-sm text-muted">Skills appear after you complete courses, projects, or assessments.</p>
+        ) : (
         <div className="space-y-3">
           {hub.skills.map(s => (
             <div key={s.name}>
@@ -302,6 +326,7 @@ export default function Profile() {
             </div>
           ))}
         </div>
+        )}
       </section>
 
       <div className="grid lg:grid-cols-2 gap-4 mb-5">
@@ -317,7 +342,9 @@ export default function Profile() {
         </section>
         <section className="glass rounded-3xl p-5">
           <h2 className="text-lg font-black text-ink mb-3">🎯 Skills To Improve</h2>
-          {hub.gaps.map(g => (
+          {hub.gaps.length === 0 ? (
+            <p className="text-sm text-muted">Set a target role to see personalized recommendations.</p>
+          ) : hub.gaps.map(g => (
             <div key={g.name} className="mb-4">
               <div className="flex justify-between text-sm font-bold">
                 <span>{g.name}</span>
@@ -325,7 +352,7 @@ export default function Profile() {
               </div>
               <p className="text-xs text-muted mb-2">Gap: {Math.max(0, g.target - g.score)} points</p>
               <button type="button" className="btn-glass text-xs" onClick={() => navigate(`/courses?q=${encodeURIComponent(g.courseQuery)}`)}>
-                {g.name === 'Testing' ? 'Practice Testing →' : 'Improve Skill →'}
+                Improve Skill →
               </button>
             </div>
           ))}
@@ -338,6 +365,9 @@ export default function Profile() {
           <button type="button" className="text-sm font-semibold text-primary" onClick={() => navigate('/projects')}>View All Projects →</button>
         </div>
         <p className="text-sm text-muted mb-3">{hub.projectStats.completed} Completed · {hub.projectStats.portfolio} Portfolio Ready · {hub.projectStats.review} Needs Review</p>
+        {hub.projects.length === 0 ? (
+          <p className="text-sm text-muted">Complete a project to add it to your portfolio.</p>
+        ) : (
         <div className="grid sm:grid-cols-2 gap-3">
           {hub.projects.map(p => (
             <article key={p.id} className="glass rounded-2xl p-5 career-card">
@@ -351,6 +381,7 @@ export default function Profile() {
             </article>
           ))}
         </div>
+        )}
       </section>
 
       <div className="grid lg:grid-cols-2 gap-4 mb-5">
@@ -405,6 +436,9 @@ export default function Profile() {
           {hub.interviewTrend.length > 1 && (
             <p className="text-sm font-semibold text-primary mb-3">{hub.interviewTrend.join(' → ')}</p>
           )}
+          {hub.interviews.length === 0 ? (
+            <p className="text-sm text-muted mb-4">Complete an interview to track interview readiness.</p>
+          ) : (
           <div className="space-y-3 mb-4">
             {hub.interviews.map(iv => (
               <article key={iv.id} className="rounded-xl px-3 py-2" style={{ background: 'rgba(108,92,231,0.06)' }}>
@@ -413,23 +447,33 @@ export default function Profile() {
               </article>
             ))}
           </div>
+          )}
           <button type="button" className="btn-primary text-sm" onClick={() => navigate(careerInterviewPath())}>Practice Interview →</button>
         </section>
         <section className="glass rounded-3xl p-5">
           <h2 className="text-lg font-black text-ink mb-3">👨‍🏫 Tutor Learning</h2>
-          {hub.tutor && (
+          {hub.tutor ? (
             <>
               <p className="font-bold">{hub.tutor.name}</p>
               <p className="text-sm">{hub.tutor.session}</p>
-              <p className="text-sm text-muted">{hub.tutor.minutes} minutes · Rating {hub.tutor.rating} / 5 · {hub.tutor.status}</p>
-              <p className="text-sm mt-2 mb-4">AI summary: "{hub.tutor.summary}"</p>
-              <div className="flex flex-wrap gap-2">
+              <p className="text-sm text-muted">
+                {hub.tutor.minutes > 0 ? `${hub.tutor.minutes} minutes · ` : ''}
+                {hub.tutor.rating > 0 ? `Rating ${hub.tutor.rating} / 5 · ` : ''}
+                {hub.tutor.status}
+              </p>
+              {hub.tutor.summary && <p className="text-sm mt-2 mb-4">AI summary: "{hub.tutor.summary}"</p>}
+              <div className="flex flex-wrap gap-2 mt-4">
                 {hub.tutor.sessionHref && (
                   <button type="button" className="btn-primary text-sm" onClick={() => navigate(hub.tutor!.sessionHref!)}>View Session →</button>
                 )}
                 <button type="button" className="btn-glass text-sm" onClick={() => navigate(hub.tutor!.bookHref)}>Book Follow-up →</button>
                 <button type="button" className="btn-glass text-sm" onClick={() => navigate(tutorPath(hub.tutor!.tutorId))}>Tutor profile</button>
               </div>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-muted mb-4">Book your first tutor session</p>
+              <button type="button" className="btn-primary text-sm" onClick={() => navigate('/tutors')}>Browse Tutors →</button>
             </>
           )}
         </section>
@@ -451,7 +495,9 @@ export default function Profile() {
         </section>
         <section className="glass rounded-3xl p-5">
           <h2 className="text-lg font-black text-ink mb-3">🎓 LearnSyra Completions</h2>
-          {hub.completions.map(c => (
+          {hub.completions.length === 0 ? (
+            <p className="text-sm text-muted">Complete your first course to start building your career profile.</p>
+          ) : hub.completions.map(c => (
             <div key={c.title} className="rounded-xl px-3 py-2 mb-2" style={{ background: 'rgba(245,158,11,0.08)' }}>
               <p className="font-bold text-sm">{c.title}</p>
               <p className="text-xs text-muted">Completed {c.completed} · {c.official ? 'Official certificate on file' : 'LearnSyra Completion'}</p>
@@ -501,12 +547,20 @@ export default function Profile() {
             <div><div className="text-xl font-black career-count">{hub.jobs.interviews}</div><div className="text-xs text-muted">Interviews</div></div>
             <div><div className="text-xl font-black career-count">{hub.jobs.offers}</div><div className="text-xs text-muted">Offers</div></div>
           </div>
-          <p className="text-sm">Target: <span className="font-bold">{hub.targetRole}</span></p>
-          <p className="text-sm mb-3">Best Match: <span className="font-bold">{hub.jobs.bestMatch}%</span> LearnSyra Match</p>
+          <p className="text-sm">Target: <span className="font-bold">{hub.targetRole || 'Choose a career goal to get started'}</span></p>
+          <p className="text-sm mb-3">
+            Best Match:{' '}
+            <span className="font-bold">
+              {hub.jobs.bestMatch > 0 ? `${hub.jobs.bestMatch}% LearnSyra Match` : 'Not personalized yet'}
+            </span>
+          </p>
           <button type="button" className="btn-primary text-sm" onClick={() => navigate(careerJobsPath())}>View Job Matches →</button>
         </section>
         <section className="glass rounded-3xl p-5">
           <h2 className="text-lg font-black text-ink mb-3">📈 Recent Activity</h2>
+          {hub.activity.length === 0 ? (
+            <p className="text-sm text-muted">No career activity yet.</p>
+          ) : (
           <ul className="space-y-2">
             {hub.activity.map((a, i) => (
               <li key={`${a.when}-${i}`} className="text-sm">
@@ -515,6 +569,7 @@ export default function Profile() {
               </li>
             ))}
           </ul>
+          )}
         </section>
       </div>
 
@@ -531,8 +586,12 @@ export default function Profile() {
         </section>
         <section className="glass rounded-3xl p-5">
           <h2 className="text-lg font-black text-ink mb-2">🎯 Current Goal</h2>
-          <p className="font-bold mb-1">Become a Job-Ready {hub.targetRole}</p>
-          <p className="text-sm text-muted mb-3">{hub.careerMatch}% toward this goal</p>
+          <p className="font-bold mb-1">
+            {hub.targetRole ? `Become a Job-Ready ${hub.targetRole}` : 'Choose a career goal to get started'}
+          </p>
+          <p className="text-sm text-muted mb-3">
+            {hub.careerMatch > 0 ? `${hub.careerMatch}% toward this goal` : 'Personalized progress appears after you add real skills and projects.'}
+          </p>
           <ul className="text-sm space-y-1 mb-4">
             {milestones.map(m => <li key={m.name}>{m.done ? '✓' : '○'} {m.name}</li>)}
           </ul>
@@ -543,8 +602,12 @@ export default function Profile() {
       <section className="glass rounded-3xl p-5 mb-5">
         <h2 className="text-lg font-black text-ink mb-2">✨ LearnSyra Career Insight</h2>
         <blockquote className="text-sm text-ink mb-4 pl-3" style={{ borderLeft: '3px solid #6C5CE7' }}>{insightCopy(hub)}</blockquote>
-        <button type="button" className="btn-primary text-sm" onClick={() => navigate(`/projects?q=${encodeURIComponent(hub.gaps[0]?.name || 'TypeScript')}`)}>
-          Complete {hub.gaps[0]?.name || 'TypeScript'} Project →
+        <button
+          type="button"
+          className="btn-primary text-sm"
+          onClick={() => navigate(hub.gaps[0]?.name ? `/projects?q=${encodeURIComponent(hub.gaps[0].name)}` : '/projects')}
+        >
+          {hub.gaps[0]?.name ? `Explore ${hub.gaps[0].name} projects →` : 'Browse projects →'}
         </button>
       </section>
 

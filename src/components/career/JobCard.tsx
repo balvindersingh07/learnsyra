@@ -39,14 +39,24 @@ export default function JobCard({
           </p>
         </div>
         <div className="text-right">
-          <div className="text-2xl font-black text-primary career-count">{job.matchScore}%</div>
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-muted">LearnSyra Match</div>
-          <div className="progress-bar mt-1 w-24 ml-auto" aria-hidden="true">
-            <div className="progress-fill" style={{ width: `${job.matchScore}%` }} />
-          </div>
+          {job.matchScore > 0 ? (
+            <>
+              <div className="text-2xl font-black text-primary career-count">{job.matchScore}%</div>
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-muted">LearnSyra Match</div>
+              <div className="progress-bar mt-1 w-24 ml-auto" aria-hidden="true">
+                <div className="progress-fill" style={{ width: `${job.matchScore}%` }} />
+              </div>
+            </>
+          ) : (
+            <div className="text-xs font-semibold text-muted max-w-[7rem]">Set your career goal</div>
+          )}
         </div>
       </div>
+      {job.matchScore > 0 ? (
       <p className="text-xs font-semibold text-ink mt-3 mb-1">Why this matches you</p>
+      ) : (
+      <p className="text-xs font-semibold text-ink mt-3 mb-1">Explore this listing</p>
+      )}
       <div className="flex flex-wrap gap-1.5 mb-2">
         {job.matchReasons.map((r, i) => (
           <span key={`${r}-${i}`} className="text-xs font-semibold px-2 py-0.5 rounded-lg" style={{ background: 'rgba(32,201,151,0.12)', color: '#0F8A68' }}>✓ {r}</span>

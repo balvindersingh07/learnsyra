@@ -1,4 +1,5 @@
 import type { ProjectRow, StudentProjectRow } from './api'
+import { userStorageKey } from './supabase'
 
 export type ProjectCategory =
   | 'Web Development'
@@ -173,8 +174,10 @@ export function categoryVisual(category: ProjectCategory): { icon: string; color
 }
 
 export function loadProjectWishlist(): string[] {
+  const key = userStorageKey(WISH_KEY)
+  if (!key) return []
   try {
-    const raw = localStorage.getItem(WISH_KEY)
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as string[]) : []
   } catch {
     return []
@@ -182,12 +185,16 @@ export function loadProjectWishlist(): string[] {
 }
 
 export function saveProjectWishlist(ids: string[]) {
-  localStorage.setItem(WISH_KEY, JSON.stringify(ids))
+  const key = userStorageKey(WISH_KEY)
+  if (!key) return
+  localStorage.setItem(key, JSON.stringify(ids))
 }
 
 export function loadAllProgress(): Record<string, ProjectProgress> {
+  const key = userStorageKey(PROGRESS_KEY)
+  if (!key) return {}
   try {
-    const raw = localStorage.getItem(PROGRESS_KEY)
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as Record<string, ProjectProgress>) : {}
   } catch {
     return {}
@@ -195,12 +202,16 @@ export function loadAllProgress(): Record<string, ProjectProgress> {
 }
 
 export function saveAllProgress(map: Record<string, ProjectProgress>) {
-  localStorage.setItem(PROGRESS_KEY, JSON.stringify(map))
+  const key = userStorageKey(PROGRESS_KEY)
+  if (!key) return
+  localStorage.setItem(key, JSON.stringify(map))
 }
 
 export function loadPortfolioIds(): string[] {
+  const key = userStorageKey(PORTFOLIO_KEY)
+  if (!key) return []
   try {
-    const raw = localStorage.getItem(PORTFOLIO_KEY)
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as string[]) : []
   } catch {
     return []
@@ -208,7 +219,9 @@ export function loadPortfolioIds(): string[] {
 }
 
 export function savePortfolioIds(ids: string[]) {
-  localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(ids))
+  const key = userStorageKey(PORTFOLIO_KEY)
+  if (!key) return
+  localStorage.setItem(key, JSON.stringify(ids))
 }
 
 export function emptyProgress(project: CatalogProject): ProjectProgress {
@@ -264,7 +277,7 @@ const ROADMAP = [
   'Submit',
 ]
 
-const DEFAULT_TUTOR = { name: 'Dr. Sarah Kim', skills: 'React · Node.js', rating: 4.9 }
+const DEFAULT_TUTOR = { name: 'Explore tutors', skills: 'Recommended', rating: 0 }
 
 const EXPENSE_FILES: ProjectFile[] = [
   {
@@ -586,8 +599,8 @@ function expand(seed: Seed): CatalogProject {
     estimatedMinutes: seed.minutes,
     skills: seed.skills,
     requiredSkills: seed.requiredSkills ?? [
-      { name: seed.skills[0] ?? 'JavaScript', kind: 'required', have: true },
-      { name: seed.skills[1] ?? 'Git', kind: 'required', have: true },
+      { name: seed.skills[0] ?? 'JavaScript', kind: 'required', have: false },
+      { name: seed.skills[1] ?? 'Git', kind: 'required', have: false },
       { name: 'Testing', kind: 'improve', have: false },
     ],
     visual,
@@ -596,7 +609,7 @@ function expand(seed: Seed): CatalogProject {
     aiReason:
       seed.aiReason ??
       `This project helps you apply ${seed.skills.slice(0, 2).join(' and ')} in a portfolio-ready build.`,
-    skillMatch: seed.skillMatch ?? (seed.aiRecommended ? 82 : 64),
+    skillMatch: seed.skillMatch ?? 0,
     aiSupport: seed.aiSupport !== false,
     tutorSupport: seed.tutorSupport !== false,
     portfolioReady: seed.portfolioReady !== false,
@@ -633,8 +646,8 @@ function expand(seed: Seed): CatalogProject {
       nextImprove: ['Add automated tests', 'Improve documentation'],
     },
     careerImpact: seed.skills.slice(0, 3).map((skill, i) => ({ skill, delta: [8, 6, 5][i] ?? 4 })),
-    careerMatchFrom: 82,
-    careerMatchTo: 87,
+    careerMatchFrom: 0,
+    careerMatchTo: 0,
     badgeName: seed.badgeName ?? `${seed.skills[0] ?? 'Project'} Builder`,
     previewKind: slug === 'react-expense' ? 'expense' : 'generic',
   }
@@ -662,8 +675,8 @@ const SEEDS: Seed[] = [
     badges: ['AI Recommended', 'Portfolio Ready', 'Popular'],
     aiRecommended: true,
     aiReason:
-      'You recently completed React Hooks and REST API lessons. This project will help you apply both skills.',
-    skillMatch: 82,
+      'Catalog project for practicing React, JavaScript, REST APIs, and charts.',
+    skillMatch: 0,
     popular: true,
     careerRelevant: true,
     interviewPractice: true,
@@ -671,10 +684,10 @@ const SEEDS: Seed[] = [
     badgeName: 'React Builder',
     createdAt: '2026-07-12',
     requiredSkills: [
-      { name: 'React', kind: 'required', have: true },
-      { name: 'JavaScript', kind: 'required', have: true },
-      { name: 'REST APIs', kind: 'required', have: true },
-      { name: 'Basic Git', kind: 'required', have: true },
+      { name: 'React', kind: 'required', have: false },
+      { name: 'JavaScript', kind: 'required', have: false },
+      { name: 'REST APIs', kind: 'required', have: false },
+      { name: 'Basic Git', kind: 'required', have: false },
       { name: 'TypeScript', kind: 'nice', have: false },
       { name: 'Testing', kind: 'improve', have: false },
       { name: 'State Management', kind: 'practice', have: false },
@@ -692,8 +705,8 @@ const SEEDS: Seed[] = [
     outcomes: ['Auth screens', 'JWT session flow', 'Protected routes', 'Password reset', 'API error handling'],
     badges: ['Portfolio Ready', 'New'],
     aiRecommended: true,
-    aiReason: 'This project builds on the skills you just practiced and introduces authentication.',
-    skillMatch: 79,
+    aiReason: 'Catalog project covering authentication with React and Node.js.',
+    skillMatch: 0,
     nextSlug: 'node-task-queue',
     badgeName: 'Auth Builder',
     createdAt: '2026-08-02',
@@ -808,7 +821,7 @@ const SEEDS: Seed[] = [
     outcomes: ['Knowledge base', 'Retrieval flow', 'Cited answers', 'Fallback path'],
     badges: ['AI Recommended', 'New'],
     aiRecommended: true,
-    skillMatch: 71,
+    skillMatch: 0,
   },
   {
     slug: 'image-classifier',
@@ -1031,7 +1044,6 @@ export function recommendProject(catalog: CatalogProject[], completedIds: string
     if (nxt) return nxt
   }
   return (
-    catalog.find(p => p.title === 'React Expense Tracker' && !completed.has(p.id)) ||
     catalog.find(p => p.aiRecommended && !completed.has(p.id)) ||
     catalog.find(p => !completed.has(p.id)) ||
     catalog[0]

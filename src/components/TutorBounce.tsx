@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import { Navigate } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { useAuth } from '../context/AuthContext'
@@ -14,5 +15,5 @@ export default function TutorBounce({ to = TUTOR_HOME, children }: { to?: string
     )
   }
   if (profile?.role === 'tutor') return <Navigate to={to} replace />
-  return <>{children}</>
+  return <Fragment key={session?.user.id ?? 'anon'}>{children}</Fragment>
 }

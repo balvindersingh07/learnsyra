@@ -14,7 +14,9 @@ export default function TutorHandoff({ topic, onFindTutor, compact }: Props) {
         👨‍🏫 Still stuck?
       </div>
       <p className="text-xs text-muted leading-relaxed mb-3">
-        I can connect you with a tutor who specializes in {topic}.
+        {topic
+          ? `I can connect you with a tutor who specializes in ${topic}.`
+          : 'Find a tutor in the marketplace when you want live help.'}
       </p>
       <button className={compact ? 'btn-primary text-xs px-3 py-1.5' : 'btn-primary text-sm'} onClick={onFindTutor}>
         Find a Tutor →

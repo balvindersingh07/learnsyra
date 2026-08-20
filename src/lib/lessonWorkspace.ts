@@ -1,5 +1,6 @@
 import type { CourseLesson, CourseModule, CourseRow } from './api'
 import { getCourseDetailPack, resolveCatalogCourse, type CourseDetailPack } from './courseDetail'
+import { userStorageKey } from './supabase'
 
 export interface LessonChapter {
   t: number
@@ -40,21 +41,23 @@ export interface LessonWorkspace {
   nextSkills: string[]
 }
 
-const NOTES_KEY = (courseId: string, lessonId: string) => `learnsyra_notes_${courseId}_${lessonId}`
-const DONE_KEY = (courseId: string) => `learnsyra_done_${courseId}`
-const WATCH_KEY = (courseId: string, lessonId: string) => `learnsyra_watch_${courseId}_${lessonId}`
-
 export function loadNotes(courseId: string, lessonId: string) {
-  return localStorage.getItem(NOTES_KEY(courseId, lessonId)) ?? ''
+  const key = userStorageKey('learnsyra_notes', undefined, `${courseId}_${lessonId}`)
+  if (!key) return ''
+  return localStorage.getItem(key) ?? ''
 }
 
 export function saveNotes(courseId: string, lessonId: string, text: string) {
-  localStorage.setItem(NOTES_KEY(courseId, lessonId), text)
+  const key = userStorageKey('learnsyra_notes', undefined, `${courseId}_${lessonId}`)
+  if (!key) return
+  localStorage.setItem(key, text)
 }
 
 export function loadLocalDone(courseId: string): string[] {
+  const key = userStorageKey('learnsyra_done', undefined, courseId)
+  if (!key) return []
   try {
-    const raw = localStorage.getItem(DONE_KEY(courseId))
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as string[]) : []
   } catch {
     return []
@@ -62,15 +65,21 @@ export function loadLocalDone(courseId: string): string[] {
 }
 
 export function saveLocalDone(courseId: string, ids: string[]) {
-  localStorage.setItem(DONE_KEY(courseId), JSON.stringify(ids))
+  const key = userStorageKey('learnsyra_done', undefined, courseId)
+  if (!key) return
+  localStorage.setItem(key, JSON.stringify(ids))
 }
 
 export function loadWatched(courseId: string, lessonId: string) {
-  return localStorage.getItem(WATCH_KEY(courseId, lessonId)) === '1'
+  const key = userStorageKey('learnsyra_watch', undefined, `${courseId}_${lessonId}`)
+  if (!key) return false
+  return localStorage.getItem(key) === '1'
 }
 
 export function saveWatched(courseId: string, lessonId: string) {
-  localStorage.setItem(WATCH_KEY(courseId, lessonId), '1')
+  const key = userStorageKey('learnsyra_watch', undefined, `${courseId}_${lessonId}`)
+  if (!key) return
+  localStorage.setItem(key, '1')
 }
 
 const USEEFFECT: LessonWorkspace = {
@@ -150,30 +159,65 @@ export default function TitleCounter() {
       explain: 'An effect that sets state and has no (or unstable) deps can retrigger itself.',
     },
   ],
-  quizFeedback: "You're strong on useEffect basics. Review dependency arrays before continuing.",
-  insight: 'You performed well on React state questions, but your recent quiz suggests you need more practice with effect dependencies.',
+  quizFeedback: 'Review dependency arrays if any question felt unclear.',
+  insight: '',
   nextTitle: 'Context API in React',
   nextMinutes: 12,
   nextSkills: ['React', 'State Management'],
 }
 
 function genericWorkspace(lesson: CourseLesson, index: number): LessonWorkspace {
+  const title = lesson.title || 'Lesson'
   return {
-    ...USEEFFECT,
-    subtitle: lesson.body || `Learn ${lesson.title} with a short video, practice, and a knowledge check.`,
-    durationLabel: `${lesson.duration_min} min`,
+    subtitle: lesson.body || `Learn ${title} with a short video, practice, and a knowledge check.`,
+    durationLabel: `${lesson.duration_min || 0} min`,
     lessonNo: index + 1,
+    level: 'Lesson',
+    skill: title,
+    chapters: [
+      { t: 0, label: 'Introduction' },
+      { t: 120, label: 'Core idea' },
+      { t: 300, label: 'Practice' },
+      { t: 480, label: 'Check your understanding' },
+    ],
+    objectives: [`Understand ${title}`, 'Practice the idea', 'Check your understanding'],
+    takeaway: `Master ${title} by watching, practicing, and checking your understanding.`,
+    practice: {
+      title: `Practice: ${title}`,
+      difficulty: 'Beginner',
+      minutes: 10,
+      description: `Write a small example that uses what you learned in ${title}.`,
+      starter: `// Practice for ${title}\n\nexport default function Practice() {\n  return <div>${title}</div>\n}\n`,
+      hint: 'Start with a small working example, then add one improvement.',
+      successChecks: ['export'],
+      feedback: 'Nice start. Keep iterating on this lesson.',
+    },
+    quiz: [
+      {
+        q: `What is the main idea of ${title}?`,
+        options: ['Skip the lesson', 'Apply the concept from this lesson', 'Ignore practice', 'Guess randomly'],
+        answer: 1,
+        explain: 'Use this check to confirm you understood the lesson topic.',
+      },
+    ],
+    quizFeedback: 'Review the lesson notes if any question felt unclear.',
+    insight: '',
     nextTitle: 'Next lesson',
-    chapters: USEEFFECT.chapters.map((c, i) => ({
-      ...c,
-      label: i === 0 ? 'Introduction' : c.label,
-    })),
-    takeaway: `Master ${lesson.title} by watching, practicing, and checking your understanding.`,
+    nextMinutes: 0,
+    nextSkills: [],
   }
 }
 
 export function getLessonWorkspace(lesson: CourseLesson, index: number): LessonWorkspace {
-  if (/useeffect|side effect/i.test(lesson.title)) return { ...USEEFFECT, lessonNo: index + 1, durationLabel: `${lesson.duration_min || 18} min` }
+  if (/useeffect|side effect/i.test(lesson.title)) {
+    return {
+      ...USEEFFECT,
+      lessonNo: index + 1,
+      durationLabel: `${lesson.duration_min || 18} min`,
+      insight: '',
+      quizFeedback: 'Review dependency arrays if any question felt unclear.',
+    }
+  }
   return genericWorkspace(lesson, index)
 }
 
@@ -218,13 +262,8 @@ export function nameDemoLessons(modules: CourseModule[]): CourseModule[] {
   })
 }
 
-export function seedDemoDone(modules: CourseModule[], currentId?: string): string[] {
-  const ids: string[] = []
-  modules.forEach((m, mi) => {
-    if (mi === 0) ids.push(...m.lessons.map(l => l.id))
-    if (mi === 1) ids.push(...m.lessons.slice(0, 3).map(l => l.id))
-  })
-  return ids.filter(id => id !== currentId)
+export function seedDemoDone(_modules: CourseModule[], _currentId?: string): string[] {
+  return []
 }
 
 export function resolveWorkspaceCourse(
@@ -234,7 +273,7 @@ export function resolveWorkspaceCourse(
 ) {
   const cat = resolveCatalogCourse(id, apiCourses, apiRow)
   const pack = cat ? getCourseDetailPack(cat) : null
-  return { cat, pack, title: cat?.title || apiRow?.title || 'Full Stack Web Development' }
+  return { cat, pack, title: cat?.title || apiRow?.title || 'Course' }
 }
 
 export function sectionProgress(mod: CourseModule, done: Set<string>) {

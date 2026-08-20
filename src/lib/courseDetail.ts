@@ -1,4 +1,5 @@
 import type { CourseModule, CourseRow } from './api'
+import { userStorageKey } from './supabase'
 import {
   buildCatalog,
   type CatalogCourse,
@@ -55,8 +56,10 @@ export interface CourseDetailPack {
 const ENROLL_KEY = 'learnsyra_local_enroll'
 
 export function loadLocalEnroll(): string[] {
+  const key = userStorageKey(ENROLL_KEY)
+  if (!key) return []
   try {
-    const raw = localStorage.getItem(ENROLL_KEY)
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as string[]) : []
   } catch {
     return []
@@ -64,7 +67,9 @@ export function loadLocalEnroll(): string[] {
 }
 
 export function saveLocalEnroll(ids: string[]) {
-  localStorage.setItem(ENROLL_KEY, JSON.stringify(ids))
+  const key = userStorageKey(ENROLL_KEY)
+  if (!key) return
+  localStorage.setItem(key, JSON.stringify(ids))
 }
 
 function makeLessons(count: number, hours: number, topic: string, previewTitle?: string): DetailLesson[] {
@@ -149,13 +154,13 @@ const FULLSTACK: CourseDetailPack = {
     rate: 800,
   },
   careerRole: 'Full Stack Developer',
-  match: 82,
+  match: 0,
   matchCopy:
-    'This course is a strong match for your current learning path. You are already learning React and have completed JavaScript fundamentals. This course helps you strengthen Node.js, APIs and backend development — skills that move you closer to your Full Stack Developer goal.',
+    'Explore this course. Catalog details describe the curriculum — they are not your personal progress.',
   skillBreakdown: [
-    { name: 'React', state: 'have' },
-    { name: 'JavaScript', state: 'have' },
-    { name: 'REST APIs', state: 'have' },
+    { name: 'React', state: 'improve' },
+    { name: 'JavaScript', state: 'improve' },
+    { name: 'REST APIs', state: 'improve' },
     { name: 'Node.js', state: 'improve' },
     { name: 'TypeScript', state: 'improve' },
   ],

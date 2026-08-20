@@ -526,10 +526,12 @@ export function computeReadiness(input: {
 }
 
 export async function getNotifications(): Promise<NotificationRow[]> {
-  if (!isSupabaseConfigured) return []
+  const uid = await currentUserId()
+  if (!uid || !isSupabaseConfigured) return []
   const { data, error } = await supabase
     .from('notifications')
     .select('*')
+    .eq('user_id', uid)
     .order('created_at', { ascending: false })
     .limit(40)
   if (error) throw error
@@ -567,7 +569,7 @@ export async function getCertificates(): Promise<CertificateRow[]> {
 export async function getStudentStats() {
   const uid = await currentUserId()
   if (!uid || !isSupabaseConfigured) {
-    return { streak: 0, level: 1, weekHours: 0, careerScore: 40, completedLessons: 0 }
+    return { streak: 0, level: 1, weekHours: 0, careerScore: 0, completedLessons: 0 }
   }
   const { data: progress } = await supabase
     .from('lesson_progress')
@@ -606,7 +608,7 @@ export async function getStudentStats() {
     streak,
     level: Math.floor(rows.length / 4) + 1,
     weekHours: Math.round((weekMin / 60) * 10) / 10,
-    careerScore: career?.readiness_score ?? 40,
+    careerScore: career?.readiness_score ?? 0,
     completedLessons: rows.length,
   }
 }

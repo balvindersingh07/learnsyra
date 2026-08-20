@@ -47,6 +47,13 @@ export function peekAuthUserId(): string | null {
   return null
 }
 
+/** Personalized localStorage/sessionStorage key. Returns null when no auth user is present. Does not read legacy unscoped keys. */
+export function userStorageKey(base: string, userId?: string | null, suffix?: string): string | null {
+  const uid = (userId && userId.trim()) || peekAuthUserId()
+  if (!uid) return null
+  return suffix ? `${base}:${uid}:${suffix}` : `${base}:${uid}`
+}
+
 export type UserRole = 'student' | 'tutor' | 'admin'
 
 export type PlanId = 'free' | 'student_pro' | 'career_pro'

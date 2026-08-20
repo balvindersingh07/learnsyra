@@ -31,7 +31,7 @@ export default function ProfilePreviewDialog({ hub, onClose }: { hub: StudentHub
         <h3 className="text-sm font-bold text-ink mb-1">Achievements</h3>
         <p className="text-sm text-muted mb-3">{hub.achievements.filter(a => a.earned).map(a => a.label).join(' · ') || 'None earned yet'}</p>
         <h3 className="text-sm font-bold text-ink mb-1">Career goal</h3>
-        <p className="text-sm text-muted mb-4">Become a job-ready {hub.targetRole}</p>
+        <p className="text-sm text-muted mb-4">{hub.targetRole ? `Become a job-ready ${hub.targetRole}` : 'Choose a career goal to get started'}</p>
         <p className="text-xs text-muted mb-4">Email, phone, tutor sessions, AI chats, and analytics stay private.</p>
         <button type="button" className="btn-glass text-sm" onClick={onClose}>Close preview</button>
       </div>

@@ -1,4 +1,4 @@
-import { peekAuthUserId } from './supabase'
+import { peekAuthUserId, userStorageKey } from './supabase'
 
 export type ResumeSectionId =
   | 'contact'
@@ -562,8 +562,10 @@ export function cloneResume(doc: ResumeDoc, versionName: string, makeDefault = f
 }
 
 export function loadDocs(): ResumeDoc[] {
+  const key = userStorageKey(STORE_KEY)
+  if (!key) return []
   try {
-    const raw = localStorage.getItem(STORE_KEY)
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as ResumeDoc[]) : []
   } catch {
     return []
@@ -571,15 +573,21 @@ export function loadDocs(): ResumeDoc[] {
 }
 
 export function saveDocs(docs: ResumeDoc[]) {
-  localStorage.setItem(STORE_KEY, JSON.stringify(docs.slice(0, 12)))
+  const key = userStorageKey(STORE_KEY)
+  if (!key) return
+  localStorage.setItem(key, JSON.stringify(docs.slice(0, 12)))
 }
 
 export function loadActiveId() {
-  return localStorage.getItem(ACTIVE_KEY)
+  const key = userStorageKey(ACTIVE_KEY)
+  if (!key) return null
+  return localStorage.getItem(key)
 }
 
 export function saveActiveId(id: string) {
-  localStorage.setItem(ACTIVE_KEY, id)
+  const key = userStorageKey(ACTIVE_KEY)
+  if (!key) return
+  localStorage.setItem(key, id)
 }
 
 export function loadResumeCareerOverlay(userId?: string | null): ResumeCareerOverlay | null {

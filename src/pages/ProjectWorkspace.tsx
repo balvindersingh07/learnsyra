@@ -621,8 +621,9 @@ export default function ProjectWorkspace() {
               </button>
             </div>
           </div>
+          {project.careerMatchFrom > 0 && (
           <div className="glass rounded-xl p-3">
-            <div className="text-sm font-bold text-ink mb-1">🎯 Career Impact</div>
+            <div className="text-sm font-bold text-ink mb-1">Career Impact</div>
             <p className="text-xs text-muted mb-2">This project strengthens {project.careerImpact.length} skills required for your target role.</p>
             {project.careerImpact.map(c => (
               <div key={c.skill} className="flex justify-between text-xs">
@@ -634,6 +635,7 @@ export default function ProjectWorkspace() {
               Career match: {project.careerMatchFrom}% → {project.careerMatchTo}%
             </div>
           </div>
+          )}
           <div className="glass rounded-xl p-3 text-center">
             <div>🏆 Project Finisher</div>
             <div className="text-xs text-muted">Completed a portfolio-ready project.</div>
@@ -665,15 +667,21 @@ export default function ProjectWorkspace() {
       )}
 
       <div className="glass rounded-xl p-3 mt-2">
-        <div className="text-sm font-bold text-ink mb-1">👨‍🏫 Need Human Help?</div>
-        <div className="text-sm font-semibold text-ink">{project.tutor.name}</div>
-        <div className="text-xs text-muted">{project.tutor.skills} · ⭐ {project.tutor.rating}</div>
+        <div className="text-sm font-bold text-ink mb-1">Need Human Help?</div>
+        {project.tutor.rating > 0 ? (
+          <>
+            <div className="text-sm font-semibold text-ink">{project.tutor.name}</div>
+            <div className="text-xs text-muted">{project.tutor.skills} · ⭐ {project.tutor.rating}</div>
+          </>
+        ) : (
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Recommended · Explore tutors</p>
+        )}
         <p className="text-xs text-muted my-2">
           Your AI coach can help with most issues. For architecture or complex debugging, a tutor may help.
         </p>
         <div className="flex gap-2">
           <button type="button" className="btn-primary text-xs py-1.5" onClick={() => navigate('/tutors')}>
-            Ask Sarah
+            Find a Tutor
           </button>
           <button type="button" className="btn-glass text-xs py-1.5" onClick={() => navigate('/tutors')}>
             Book Session

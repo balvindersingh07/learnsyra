@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { useAuth } from '../context/AuthContext'
@@ -30,5 +31,5 @@ export default function ProtectedRoute({ children, roles }: Props) {
     return <Navigate to={roleHome(profile.role)} replace />
   }
 
-  return <>{children}</>
+  return <Fragment key={session.user.id}>{children}</Fragment>
 }

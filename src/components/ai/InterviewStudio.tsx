@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { INTERVIEW_FEEDBACK, INTERVIEW_QUESTIONS } from '../../lib/aiLearning'
+import { INTERVIEW_QUESTIONS } from '../../lib/aiLearning'
 
 function formatTime(s: number) {
   const m = Math.floor(s / 60)
@@ -8,8 +8,10 @@ function formatTime(s: number) {
 }
 
 export default function InterviewStudio({
+  targetRole,
   onPractice,
 }: {
+  targetRole?: string | null
   onPractice: () => void
 }) {
   const [i, setI] = useState(0)
@@ -17,6 +19,7 @@ export default function InterviewStudio({
   const [seconds, setSeconds] = useState(0)
   const [done, setDone] = useState(false)
   const total = INTERVIEW_QUESTIONS.length
+  const roleLabel = targetRole?.trim() || 'Choose a target role'
 
   useEffect(() => {
     if (done) return
@@ -40,28 +43,13 @@ export default function InterviewStudio({
         <div className="glass rounded-2xl p-6 max-w-xl mx-auto">
           <div className="text-xs font-semibold text-primary mb-1">🎤 AI Mock Interview</div>
           <h2 className="text-xl font-bold text-ink mb-1" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
-            Interview Score
+            Interview complete
           </h2>
-          <div className="text-4xl font-black gradient-text mb-4">{INTERVIEW_FEEDBACK.score} / 100</div>
-          <div className="space-y-3 mb-4">
-            {INTERVIEW_FEEDBACK.breakdown.map(b => (
-              <div key={b.label}>
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="text-muted">{b.label}</span>
-                  <span className="font-semibold text-ink">{b.v}</span>
-                </div>
-                <div className="progress-bar">
-                  <div className="progress-fill" style={{ width: `${b.v}%` }} />
-                </div>
-              </div>
-            ))}
-          </div>
           <p className="text-sm text-muted leading-relaxed mb-4">
-            <span className="font-semibold text-ink">AI recommendation </span>
-            {INTERVIEW_FEEDBACK.rec}
+            Practice session finished{targetRole?.trim() ? ` for ${targetRole.trim()}` : ''}. Scores appear after a real interview in Career Center — this studio does not invent a score.
           </p>
           <button type="button" className="btn-primary text-sm" onClick={onPractice}>
-            Practice React architecture →
+            Practice again →
           </button>
         </div>
       </div>
@@ -76,8 +64,8 @@ export default function InterviewStudio({
             <h2 className="text-lg font-bold text-ink" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
               🎤 AI Mock Interview
             </h2>
-            <div className="text-sm text-muted mt-1">Role: Junior Frontend Developer</div>
-            <div className="text-sm text-muted">Topic: React · Beginner → Intermediate</div>
+            <div className="text-sm text-muted mt-1">Role: {roleLabel}</div>
+            <div className="text-sm text-muted">Topic: Practice questions</div>
           </div>
           <div className="text-right">
             <div className="text-sm font-semibold text-ink">{formatTime(seconds)}</div>

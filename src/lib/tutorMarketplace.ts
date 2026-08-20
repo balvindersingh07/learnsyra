@@ -1,5 +1,6 @@
 import type { TutorListing } from './api'
 import { formatInr } from './courseCatalog'
+import { userStorageKey } from './supabase'
 import {
   applyPublishedHubs,
   catalogTutorFromHub,
@@ -230,8 +231,10 @@ export function sessionTypesFor(tutor: CatalogTutor): SessionType[] {
 }
 
 export function loadTutorWishlist(): string[] {
+  const key = userStorageKey(WISH_KEY)
+  if (!key) return []
   try {
-    const raw = localStorage.getItem(WISH_KEY)
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as string[]) : []
   } catch {
     return []
@@ -239,12 +242,16 @@ export function loadTutorWishlist(): string[] {
 }
 
 export function saveTutorWishlist(ids: string[]) {
-  localStorage.setItem(WISH_KEY, JSON.stringify(ids))
+  const key = userStorageKey(WISH_KEY)
+  if (!key) return
+  localStorage.setItem(key, JSON.stringify(ids))
 }
 
 export function loadTutorBookings(): TutorBooking[] {
+  const key = userStorageKey(BOOK_KEY)
+  if (!key) return []
   try {
-    const raw = localStorage.getItem(BOOK_KEY)
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as TutorBooking[]) : []
   } catch {
     return []
@@ -252,7 +259,9 @@ export function loadTutorBookings(): TutorBooking[] {
 }
 
 export function saveTutorBookings(rows: TutorBooking[]) {
-  localStorage.setItem(BOOK_KEY, JSON.stringify(rows))
+  const key = userStorageKey(BOOK_KEY)
+  if (!key) return
+  localStorage.setItem(key, JSON.stringify(rows))
 }
 
 export function getBookingById(id: string) {

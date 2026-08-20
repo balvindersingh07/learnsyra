@@ -143,7 +143,15 @@ export default function ProfileEditDialog({
         </label>
         <label className="block text-xs font-semibold text-muted mb-5">
           Weekly learning target (hours)
-          <input type="number" min={1} max={40} className="field w-full mt-1 px-3 py-2 text-sm" value={extras.weeklyTargetHours} onChange={e => onExtras({ ...extras, weeklyTargetHours: Number(e.target.value) || 0 })} />
+          <input
+            type="number"
+            min={0}
+            max={40}
+            className="field w-full mt-1 px-3 py-2 text-sm"
+            value={extras.weeklyTargetHours || ''}
+            placeholder="Not set"
+            onChange={e => onExtras({ ...extras, weeklyTargetHours: Number(e.target.value) || 0 })}
+          />
         </label>
 
         <div className="flex flex-wrap gap-2">

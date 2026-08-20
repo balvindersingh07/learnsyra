@@ -49,7 +49,9 @@ export default function CareerInterview() {
   const ending = useRef(false)
   const autoPractice = useRef(false)
   const [phase, setPhase] = useState<Phase>('setup')
-  const [role, setRole] = useState<InterviewRole>((career.targetRole as InterviewRole) || 'Frontend Developer')
+  const [role, setRole] = useState<InterviewRole | ''>(
+    INTERVIEW_ROLES.includes(career.targetRole as InterviewRole) ? (career.targetRole as InterviewRole) : '',
+  )
   const [kind, setKind] = useState<InterviewKind>('mixed')
   const [difficulty, setDifficulty] = useState<InterviewDifficulty>(() => defaultDifficulty(career.readinessScore))
   const [duration, setDuration] = useState<10 | 20 | 30>(20)
@@ -93,7 +95,7 @@ export default function CareerInterview() {
       project: { kind: 'project', duration: 10, difficulty: 'Intermediate', projects: true },
     }
     const spec = map[practice]
-    if (!spec) return
+    if (!spec || !role) return
     autoPractice.current = true
     ending.current = false
     const created = startLive(
@@ -138,7 +140,9 @@ export default function CareerInterview() {
     return () => window.removeEventListener('keydown', onKey)
   }, [roleOpen, ctxOpen])
 
-  const setup: InterviewSetup = { role, kind, difficulty, duration, useResume, useProjects }
+  const setup: InterviewSetup | null = role
+    ? { role, kind, difficulty, duration, useResume, useProjects }
+    : null
   const lastScore = history[0]?.score ?? career.interview.overall
 
   function persistLive(next: LiveInterview) {
@@ -147,6 +151,10 @@ export default function CareerInterview() {
   }
 
   function begin(nextSetup = setup, count?: number) {
+    if (!nextSetup) {
+      setRoleOpen(true)
+      return
+    }
     ending.current = false
     const created = startLive(nextSetup, count ?? questionCountFor(nextSetup.duration))
     persistLive(created)
@@ -232,6 +240,10 @@ export default function CareerInterview() {
   }, [phase, live?.remainingSec])
 
   function startPractice(id: string) {
+    if (!setup) {
+      setRoleOpen(true)
+      return
+    }
     const map: Record<string, InterviewSetup> = {
       typescript: { ...setup, kind: 'technical', duration: 10, difficulty: 'Intermediate' },
       'system-design': { ...setup, kind: 'system-design', duration: 10, difficulty: 'Intermediate' },
@@ -339,7 +351,9 @@ export default function CareerInterview() {
       <div className="grid lg:grid-cols-2 gap-5 mb-6">
         <section className="glass rounded-3xl p-6" aria-labelledby="target-heading">
           <h2 id="target-heading" className="text-sm font-semibold text-muted mb-1">🎯 Target Role</h2>
-          <div className="text-2xl font-black text-ink" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>{role}</div>
+          <div className="text-2xl font-black text-ink" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
+            {role || 'Choose a target role'}
+          </div>
           <p className="text-sm font-bold text-primary mb-4">{career.targetMatch}% Career Match</p>
           <button type="button" className="btn-glass text-sm" onClick={() => setRoleOpen(true)}>
             Change Role
@@ -374,7 +388,11 @@ export default function CareerInterview() {
                 Your Interview Readiness
               </h2>
               <p className="text-2xl font-black text-ink career-count">{shown} / 100</p>
-              <p className="text-sm font-semibold text-success">+8 points this month</p>
+              <p className="text-sm font-semibold text-muted">
+                {history.length > 1
+                  ? `Latest score ${lastScore} / 100`
+                  : 'Complete an interview to see readiness change.'}
+              </p>
               <span className="badge badge-primary mt-2 inline-block">✨ AI assessed</span>
             </div>
           </div>
@@ -472,16 +490,22 @@ export default function CareerInterview() {
           <p className="text-sm text-muted mb-3">
             The interview can use your target role, current skills, completed courses, projects, resume profile, and previous interview scores.
           </p>
-          <p className="text-sm text-ink"><span className="font-bold">Current focus</span> — React · JavaScript · REST APIs</p>
-          <p className="text-sm text-ink"><span className="font-bold">Needs practice</span> — TypeScript · Testing · System Design</p>
+          <p className="text-sm text-ink">
+            <span className="font-bold">Current focus</span> —{' '}
+            {career.haveSkills.length ? career.haveSkills.slice(0, 4).join(' · ') : 'Add skills to personalize this interview'}
+          </p>
+          <p className="text-sm text-ink">
+            <span className="font-bold">Needs practice</span> —{' '}
+            {career.needSkills.length ? career.needSkills.slice(0, 4).join(' · ') : 'Not set yet'}
+          </p>
         </div>
 
         <h3 className="text-sm font-black text-ink mb-3">Get Ready</h3>
         <ul className="text-sm mb-4 space-y-1">
-          <li>✓ Target role selected</li>
+          <li>{role ? '✓ Target role selected' : '○ Choose a target role'}</li>
           <li>✓ Interview type selected</li>
-          <li>✓ Current skills loaded</li>
-          <li>✓ Project context loaded</li>
+          <li>{career.haveSkills.length ? '✓ Current skills loaded' : '○ Skills not set yet'}</li>
+          <li>{career.portfolio.length ? '✓ Project context loaded' : '○ No projects yet'}</li>
         </ul>
         <div className="flex flex-wrap gap-5 mb-5">
           <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -494,8 +518,8 @@ export default function CareerInterview() {
           </label>
         </div>
         {!hasResume && <p className="text-xs text-muted mb-4">Resume context is optional and will connect to the Resume Builder when it is ready.</p>}
-        <button type="button" className="btn-primary" onClick={() => begin()}>
-          Start Interview →
+        <button type="button" className="btn-primary" onClick={() => begin()} disabled={!role}>
+          {role ? 'Start Interview →' : 'Choose a target role'}
         </button>
       </section>
 

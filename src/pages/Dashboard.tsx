@@ -7,20 +7,16 @@ import {
   categoryStyle,
   getCareerProfile,
   getCertificates,
-  getJobs,
   getLiveClasses,
   getMyBookings,
   getMyEnrolledCourses,
   getMyStudentProjects,
-  getProjects,
   getStudentStats,
   type BookingRow,
   type CareerProfile,
   type CertificateRow,
   type CourseRow,
-  type JobRow,
   type LiveClass,
-  type ProjectRow,
 } from '../lib/api'
 import {
   buildDashboardIntel,
@@ -60,7 +56,7 @@ function TutorAvatar({ name, imageKey }: { name: string; imageKey?: string | nul
         style={{ background: 'linear-gradient(135deg,#6C5CE7,#22C7D6)' }}
         title={name}
       >
-        {initials || 'SK'}
+        {initials || 'T'}
       </div>
     )
   }
@@ -78,18 +74,19 @@ function AIPanel({
   onNav,
   firstName,
   topic,
-  weakSkill,
 }: {
   onNav: (p: Page) => void
   firstName: string
   topic: string
-  weakSkill: string
 }) {
+  const personalized = Boolean(topic)
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState([
     {
       role: 'ai',
-      text: `Hey ${firstName} 👋 You're currently learning ${topic}. I noticed you struggled with ${weakSkill} in your recent practice. Ask me anything — I can explain, quiz you, or suggest a project.`,
+      text: personalized
+        ? `Hey ${firstName} 👋 You're learning ${topic}. Ask me anything — I can explain, quiz you, or suggest a project.`
+        : `Hi ${firstName}! I'm LearnSyra AI. Choose a course or tell me what you want to learn, and I'll help you get started.`,
     },
   ])
 
@@ -102,17 +99,25 @@ function AIPanel({
       { role: 'user', text: q },
       {
         role: 'ai',
-        text: `Great question about "${q}"! Let's tie it back to ${topic}. I can walk through ${weakSkill} again, quiz you, or turn it into a mini project. Want one of those next?`,
+        text: personalized
+          ? `Great question about "${q}"! Let's tie it back to ${topic}. I can walk through it again, quiz you, or turn it into a mini project.`
+          : `Great question about "${q}"! Browse a course or tell me a topic, and I'll help you get started.`,
       },
     ])
   }
 
-  const chips = [
-    { label: 'Explain Again', prompt: `Explain ${weakSkill} again in simpler words.` },
-    { label: 'Quiz Me', prompt: `Quiz me on ${topic}.` },
-    { label: 'Practice', prompt: `Give me a short practice drill for ${weakSkill}.` },
-    { label: 'Give Me a Project', prompt: `Give me a small project to practice ${topic}.` },
-  ]
+  const chips = personalized
+    ? [
+        { label: 'Explain Again', prompt: `Explain ${topic} in simpler words.` },
+        { label: 'Quiz Me', prompt: `Quiz me on ${topic}.` },
+        { label: 'Practice', prompt: `Give me a short practice drill for ${topic}.` },
+        { label: 'Give Me a Project', prompt: `Give me a small project to practice ${topic}.` },
+      ]
+    : [
+        { label: 'What should I learn?', prompt: 'What should I learn first on LearnSyra?' },
+        { label: 'Choose a course', prompt: 'Help me pick a first course.' },
+        { label: 'Explore projects', prompt: 'What kind of beginner project should I try?' },
+      ]
 
   return (
     <div
@@ -285,21 +290,21 @@ function MissionTaskCard({
 
 export default function Dashboard({ onNav }: Props) {
   const { profile, session } = useAuth()
+  const uid = session?.user.id ?? null
   const navigate = useNavigate()
   const [enrolled, setEnrolled] = useState<(CourseRow & { progress: number; last_lesson_id: string | null })[]>([])
   const [loadingCourses, setLoadingCourses] = useState(true)
   const [bookings, setBookings] = useState<BookingRow[]>([])
   const [certs, setCerts] = useState<CertificateRow[]>([])
-  const [stats, setStats] = useState({ streak: 0, level: 1, weekHours: 0, careerScore: 40, completedLessons: 0 })
+  const [stats, setStats] = useState({ streak: 0, level: 1, weekHours: 0, careerScore: 0, completedLessons: 0 })
   const [liveNow, setLiveNow] = useState<LiveClass[]>([])
   const [career, setCareer] = useState<CareerProfile | null>(null)
-  const [projects, setProjects] = useState<ProjectRow[]>([])
   const [submittedCount, setSubmittedCount] = useState(0)
-  const [jobs, setJobs] = useState<JobRow[]>([])
-  const [missionDone, setMissionDone] = useState<string[]>(() => loadMissionDone())
-  const [missionActive, setMissionActive] = useState<string | null>(() => loadMissionActive())
+  const [missionDone, setMissionDone] = useState<string[]>([])
+  const [missionActive, setMissionActive] = useState<string | null>(null)
   const [missionOpen, setMissionOpen] = useState(false)
   const [prepOpen, setPrepOpen] = useState(false)
+  const [prepBooking, setPrepBooking] = useState<BookingRow | null>(null)
   const [hoverDay, setHoverDay] = useState<string | null>(null)
   const [matchSeen, setMatchSeen] = useState(false)
   const matchRef = useRef<HTMLDivElement>(null)
@@ -316,12 +321,15 @@ export default function Dashboard({ onNav }: Props) {
       .then(list => setLiveNow(list.filter(c => c.status === 'live')))
       .catch(() => setLiveNow([]))
     getCareerProfile().then(setCareer).catch(() => setCareer(null))
-    getProjects().then(setProjects).catch(() => setProjects([]))
-    getJobs().then(setJobs).catch(() => setJobs([]))
     getMyStudentProjects()
       .then(rows => setSubmittedCount(rows.filter(p => p.status !== 'started').length))
       .catch(() => setSubmittedCount(0))
   }, [session])
+
+  useEffect(() => {
+    setMissionDone(loadMissionDone(uid))
+    setMissionActive(loadMissionActive(uid))
+  }, [uid])
 
   useEffect(() => {
     const el = matchRef.current
@@ -337,6 +345,7 @@ export default function Dashboard({ onNav }: Props) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
       setPrepOpen(false)
+      setPrepBooking(null)
       setMissionOpen(false)
     }
     window.addEventListener('keydown', onKey)
@@ -353,11 +362,9 @@ export default function Dashboard({ onNav }: Props) {
         enrolled,
         stats,
         career,
-        projects,
         submittedCount,
-        jobs,
       }),
-    [firstName, enrolled, stats, career, projects, submittedCount, jobs],
+    [firstName, enrolled, stats, career, submittedCount],
   )
   const roadmapSteps = intel.roadmap
   const maxActivity = Math.max(...intel.activity.days.map(d => d.hours), 0.1)
@@ -365,20 +372,20 @@ export default function Dashboard({ onNav }: Props) {
   const toggleMission = (id: string) => {
     const next = missionDone.includes(id) ? missionDone.filter(x => x !== id) : [...missionDone, id]
     setMissionDone(next)
-    saveMissionDone(next)
+    saveMissionDone(next, uid)
     if (!missionDone.includes(id) && missionActive === id) {
       setMissionActive(null)
-      saveMissionActive(null)
+      saveMissionActive(null, uid)
     }
   }
 
   const startMissionTask = (t: MissionTask) => {
     if (!missionDone.includes(t.id)) {
       setMissionActive(t.id)
-      saveMissionActive(t.id)
+      saveMissionActive(t.id, uid)
     }
     setMissionOpen(false)
-    if (t.page === 'ai-learning') setPendingAiPrompt(`${t.title} — ${t.minutes} min`)
+    if (t.page === 'ai-learning') setPendingAiPrompt(`${t.title} — ${t.minutes} min`, uid)
     onNav(t.page)
   }
 
@@ -404,7 +411,7 @@ export default function Dashboard({ onNav }: Props) {
             { v: `🔥 ${stats.streak}`, l: 'Day Streak', c: '#f59e0b' },
             { v: `Lv ${stats.level}`, l: 'Current Level', c: '#6C5CE7' },
             { v: `${stats.weekHours}h`, l: 'This Week', c: '#22C7D6' },
-            { v: `${stats.careerScore}%`, l: 'Career Ready', c: '#20C997' },
+            { v: `${intel.careerScore}%`, l: 'Career Ready', c: '#20C997' },
           ].map(s => (
             <div
               key={s.l}
@@ -441,7 +448,7 @@ export default function Dashboard({ onNav }: Props) {
         <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
           <div>
             <h2 className="text-xl font-bold text-ink" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
-              ✨ Your AI Mission Today
+              {intel.mission.personalized ? '✨ Your AI Mission Today' : '✨ Start your learning journey'}
             </h2>
             <p className="text-sm text-muted leading-relaxed mt-0.5">{intel.mission.subtitle}</p>
             <p className="text-sm font-semibold text-ink mt-1">{intel.mission.focus}</p>
@@ -633,7 +640,7 @@ export default function Dashboard({ onNav }: Props) {
                       >
                         {s.label}
                       </div>
-                      {s.current && (
+                      {s.current && s.pct > 0 && (
                         <div className="text-xs font-bold text-primary mt-0.5">{s.pct}%</div>
                       )}
                     </button>
@@ -669,24 +676,46 @@ export default function Dashboard({ onNav }: Props) {
                 View Skill Analysis →
               </button>
             </div>
-            <div className="space-y-3.5">
-              {intel.skillDna.map(sk => (
-                <div key={sk.name}>
-                  <div className="flex justify-between text-sm mb-1.5">
-                    <span className="text-ink font-medium">{sk.name}</span>
-                    <span className="text-muted">{sk.score}%</span>
-                  </div>
-                  <div className="progress-bar-soft">
-                    <div className="progress-fill" style={{ width: `${sk.score}%` }} />
-                  </div>
+            {intel.skillDna.length === 0 ? (
+              <p className="text-sm text-muted leading-relaxed">{intel.skillInsight}</p>
+            ) : (
+              <>
+                <div className="space-y-3.5">
+                  {intel.skillDna.map(sk => (
+                    <div key={sk.name}>
+                      <div className="flex justify-between text-sm mb-1.5">
+                        <span className="text-ink font-medium">{sk.name}</span>
+                        {sk.score > 0 ? (
+                          <span className="text-muted">{sk.score}%</span>
+                        ) : (
+                          <span className="text-muted">Not started</span>
+                        )}
+                      </div>
+                      {sk.score > 0 && (
+                        <div className="progress-bar-soft">
+                          <div className="progress-fill" style={{ width: `${sk.score}%` }} />
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-            <p className="text-sm text-muted mt-4 leading-relaxed">
-              <span className="text-ink font-semibold">Strongest skill: {intel.strongest}</span>
-              <span className="mx-2 text-subtle">·</span>
-              <span>Needs attention: {intel.weakest}</span>
-            </p>
+                <p className="text-sm text-muted mt-4 leading-relaxed">
+                  {intel.strongest ? (
+                    <>
+                      <span className="text-ink font-semibold">Strongest skill: {intel.strongest}</span>
+                      {intel.weakest ? (
+                        <>
+                          <span className="mx-2 text-subtle">·</span>
+                          <span>Needs attention: {intel.weakest}</span>
+                        </>
+                      ) : null}
+                    </>
+                  ) : (
+                    intel.skillInsight
+                  )}
+                </p>
+              </>
+            )}
           </div>
 
           <div className="glass rounded-2xl p-4 card-hover dash-elevate">
@@ -694,41 +723,54 @@ export default function Dashboard({ onNav }: Props) {
               <h3 className="text-base font-bold text-ink" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
                 ✨ Your Next Best Action
               </h3>
-              <span className="badge badge-primary">✨ AI Recommended</span>
+              {intel.live ? (
+                <span className="badge badge-primary">Continue learning</span>
+              ) : (
+                <span className="badge badge-primary">Get started</span>
+              )}
             </div>
             <div className="text-base font-bold text-ink mb-1" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
               {intel.nextAction.title}
             </div>
             <p className="text-sm text-muted leading-relaxed mb-2">{intel.nextAction.body}</p>
-            <div className="text-xs text-muted mb-3">{intel.nextAction.minutes} min · AI Recommended</div>
+            <div className="text-xs text-muted mb-3">{intel.nextAction.minutes} min</div>
             <button type="button" className="btn-primary text-sm" onClick={() => onNav(intel.nextAction.page)}>
-              Continue →
+              {intel.live ? 'Continue →' : 'Browse courses →'}
             </button>
           </div>
 
           <div className="glass rounded-2xl p-5 card-hover">
             <h3 className="text-sm font-bold text-ink mb-1" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
-              🚀 Build Your Next Project
+              {intel.project.catalog ? '🚀 Explore Projects' : '🚀 Build Your Next Project'}
             </h3>
             <div className="text-base font-bold text-ink mb-2" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
               {intel.project.title}
             </div>
-            <div className="flex flex-wrap gap-2 mb-3 text-xs text-muted">
-              <span>Difficulty: {intel.project.difficulty}</span>
-              <span>Estimated time: {intel.project.time}</span>
-            </div>
-            <div className="flex flex-wrap gap-1 mb-3">
-              {intel.project.skills.map(s => (
-                <span key={s} className="badge badge-primary">{s}</span>
-              ))}
-            </div>
+            {intel.project.catalog && (
+              <p className="text-sm text-muted leading-relaxed mb-3">
+                Catalog projects you can try. This is not a project you have started.
+              </p>
+            )}
+            {(intel.project.difficulty || intel.project.time) && (
+              <div className="flex flex-wrap gap-2 mb-3 text-xs text-muted">
+                {intel.project.difficulty ? <span>Difficulty: {intel.project.difficulty}</span> : null}
+                {intel.project.time ? <span>Estimated time: {intel.project.time}</span> : null}
+              </div>
+            )}
+            {intel.project.skills.length > 0 && (
+              <div className="flex flex-wrap gap-1 mb-3">
+                {intel.project.skills.map(s => (
+                  <span key={s} className="badge badge-primary">{s}</span>
+                ))}
+              </div>
+            )}
             <div className="flex flex-wrap gap-1 mb-4">
               {intel.project.badges.map(b => (
                 <span key={b} className="badge badge-green">{b}</span>
               ))}
             </div>
             <button className="btn-primary text-sm" onClick={() => onNav('projects')}>
-              Start Building →
+              {intel.project.catalog ? 'Explore Projects →' : 'Start Building →'}
             </button>
           </div>
 
@@ -743,32 +785,22 @@ export default function Dashboard({ onNav }: Props) {
             <div className="space-y-3">
               {bookings.length === 0 && (
                 <div className="glass rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-4">
-                  <TutorAvatar name="Dr. Sarah Kim" imageKey={null} />
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-bold text-ink truncate" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
-                      Dr. Sarah Kim
+                    <div className="text-sm font-bold text-ink" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
+                      Book your first tutor session
                     </div>
-                    <div className="text-sm text-muted leading-relaxed">Full Stack Development · React · Node.js</div>
-                    <div className="text-xs text-muted mt-0.5">{formatSessionWhen()}</div>
+                    <div className="text-sm text-muted leading-relaxed mt-0.5">
+                      No upcoming sessions yet. Browse tutors when you want live help.
+                    </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
-                    <span className="badge badge-green">Confirmed</span>
-                    <button
-                      type="button"
-                      className="btn-glass text-sm py-2 px-3"
-                      onClick={() => setPrepOpen(true)}
-                    >
-                      Prepare with AI
-                    </button>
-                    <button type="button" className="btn-primary text-sm py-2 px-3" onClick={() => onNav('live')}>
-                      Join Session
-                    </button>
-                  </div>
+                  <button type="button" className="btn-primary text-sm py-2 px-3 flex-shrink-0" onClick={() => onNav('tutors')}>
+                    Find a tutor →
+                  </button>
                 </div>
               )}
               {bookings.slice(0, 4).map(s => {
-                const tutorName = s.listing?.name || 'Dr. Sarah Kim'
-                const expertise = s.listing?.expertise || 'Full Stack Development · React · Node.js'
+                const tutorName = s.listing?.name || 'Tutor'
+                const expertise = s.listing?.expertise || ''
                 return (
                 <div
                   key={s.id}
@@ -782,7 +814,9 @@ export default function Dashboard({ onNav }: Props) {
                     >
                       {tutorName}
                     </div>
-                    <div className="text-sm text-muted truncate leading-relaxed">{expertise}</div>
+                    {expertise ? (
+                      <div className="text-sm text-muted truncate leading-relaxed">{expertise}</div>
+                    ) : null}
                     <div className="text-xs text-muted mt-0.5">{formatSessionWhen(s.created_at)}</div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
@@ -790,7 +824,10 @@ export default function Dashboard({ onNav }: Props) {
                     <button
                       type="button"
                       className="btn-glass text-sm py-2 px-3"
-                      onClick={() => setPrepOpen(true)}
+                      onClick={() => {
+                        setPrepBooking(s)
+                        setPrepOpen(true)
+                      }}
                     >
                       Prepare with AI
                     </button>
@@ -831,7 +868,7 @@ export default function Dashboard({ onNav }: Props) {
 
         {/* Right - 1/3 */}
         <div className="space-y-7">
-          <AIPanel onNav={onNav} firstName={firstName} topic={intel.tutor.currentLesson} weakSkill={intel.tutor.weakSkill} />
+          <AIPanel onNav={onNav} firstName={firstName} topic={intel.tutor.currentLesson} />
 
           <TutorHandoff topic={intel.tutor.topic} onFindTutor={() => onNav('tutors')} />
 
@@ -847,7 +884,7 @@ export default function Dashboard({ onNav }: Props) {
               >
                 Career Readiness
               </div>
-              <span className="badge badge-green">{stats.careerScore}% ready</span>
+              <span className="badge badge-green">{intel.careerScore}% ready</span>
             </div>
             <div className="flex items-center gap-4">
               <div className="relative w-20 h-20 flex-shrink-0">
@@ -856,7 +893,7 @@ export default function Dashboard({ onNav }: Props) {
                   <circle
                     cx="18" cy="18" r="15.9" fill="none"
                     stroke="url(#grad)" strokeWidth="3"
-                    strokeDasharray={`${stats.careerScore} ${100 - stats.careerScore}`}
+                    strokeDasharray={`${intel.careerScore} ${100 - intel.careerScore}`}
                     strokeLinecap="round"
                   />
                   <defs>
@@ -871,7 +908,7 @@ export default function Dashboard({ onNav }: Props) {
                     className="text-lg font-black text-ink"
                     style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}
                   >
-                    {stats.careerScore}%
+                    {intel.careerScore}%
                   </span>
                 </div>
               </div>
@@ -896,7 +933,7 @@ export default function Dashboard({ onNav }: Props) {
               </div>
             </div>
             <div className="mt-4 rounded-xl px-3 py-2.5 text-sm text-muted leading-relaxed" style={{ background: 'rgba(108,92,231,0.08)' }}>
-              <span className="font-semibold text-ink">AI Recommendation </span>
+              <span className="font-semibold text-ink">{intel.live ? 'Next step ' : 'Get started '}</span>
               {intel.careerTip}
             </div>
             <button
@@ -918,29 +955,57 @@ export default function Dashboard({ onNav }: Props) {
             <h3 className="text-base font-bold text-ink mb-2" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
               💼 Career Match
             </h3>
-            <div className="flex items-start justify-between gap-2 mb-3">
-              <div className="text-sm font-bold text-ink" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
-                {intel.careerMatch.role}
-              </div>
-              <span className={`badge badge-green ${matchSeen ? 'match-in' : ''}`}>
-                {intel.careerMatch.match}% Match
-              </span>
-            </div>
-            <div className="text-sm text-muted mb-1">Skills you already have:</div>
-            <div className="flex flex-wrap gap-x-3 gap-y-1 mb-3">
-              {intel.careerMatch.have.map(s => (
-                <span key={s} className="text-sm text-success">✓ {s}</span>
-              ))}
-            </div>
-            <div className="text-sm text-muted mb-1">Skills to improve:</div>
-            <ul className="text-sm text-muted mb-3 space-y-1 leading-relaxed">
-              {intel.careerMatch.improve.map(s => (
-                <li key={s}>⚠ {s}</li>
-              ))}
-            </ul>
-            <button type="button" className="btn-primary text-sm w-full" onClick={() => onNav('career')}>
-              Prepare for This Role →
-            </button>
+            {intel.careerMatch.role ? (
+              <>
+                <div className="flex items-start justify-between gap-2 mb-3">
+                  <div className="text-sm font-bold text-ink" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
+                    {intel.careerMatch.role}
+                  </div>
+                  {intel.careerMatch.match > 0 ? (
+                    <span className={`badge badge-green ${matchSeen ? 'match-in' : ''}`}>
+                      {intel.careerMatch.match}% Match
+                    </span>
+                  ) : (
+                    <span className="badge">Career goal</span>
+                  )}
+                </div>
+                {intel.careerMatch.have.length > 0 && (
+                  <>
+                    <div className="text-sm text-muted mb-1">Skills on your profile:</div>
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 mb-3">
+                      {intel.careerMatch.have.map(s => (
+                        <span key={s} className="text-sm text-success">✓ {s}</span>
+                      ))}
+                    </div>
+                  </>
+                )}
+                {intel.careerMatch.improve.length > 0 && (
+                  <>
+                    <div className="text-sm text-muted mb-1">Skills to improve:</div>
+                    <ul className="text-sm text-muted mb-3 space-y-1 leading-relaxed">
+                      {intel.careerMatch.improve.map(s => (
+                        <li key={s}>⚠ {s}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                <button type="button" className="btn-primary text-sm w-full" onClick={() => onNav('career')}>
+                  Open Career Center →
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="text-sm font-bold text-ink mb-2" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
+                  Choose a career goal
+                </div>
+                <p className="text-sm text-muted leading-relaxed mb-3">
+                  Career options live in Career Center. No match score until you set a goal and build real activity.
+                </p>
+                <button type="button" className="btn-primary text-sm w-full" onClick={() => onNav('career')}>
+                  Choose a career goal →
+                </button>
+              </>
+            )}
           </div>
 
           <div className="glass rounded-2xl p-5">
@@ -964,7 +1029,7 @@ export default function Dashboard({ onNav }: Props) {
                   <div
                     className="w-full rounded-t-md"
                     style={{
-                      height: `${Math.max(8, (d.hours / maxActivity) * 100)}%`,
+                      height: d.hours > 0 ? `${(d.hours / maxActivity) * 100}%` : '0%',
                       background: hoverDay === d.label ? 'linear-gradient(180deg,#6C5CE7,#22C7D6)' : 'linear-gradient(180deg,#8B5CF6,#6C5CE7)',
                       opacity: 0.9,
                     }}
@@ -974,7 +1039,9 @@ export default function Dashboard({ onNav }: Props) {
               ))}
             </div>
             <div className="text-sm font-bold text-ink">{intel.activity.weekHours} hours this week</div>
-            <div className="text-sm text-success">+{intel.activity.deltaPct}% vs last week</div>
+            {intel.activity.deltaPct !== 0 && (
+              <div className="text-sm text-success">+{intel.activity.deltaPct}% vs last week</div>
+            )}
           </div>
 
           {/* Achievements */}
@@ -1096,11 +1163,14 @@ export default function Dashboard({ onNav }: Props) {
         </div>
       )}
 
-      {prepOpen && (
+      {prepOpen && prepBooking && (
         <div
           className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
           style={{ background: 'rgba(23,32,51,0.32)' }}
-          onClick={() => setPrepOpen(false)}
+          onClick={() => {
+            setPrepOpen(false)
+            setPrepBooking(null)
+          }}
           role="presentation"
         >
           <div
@@ -1118,33 +1188,51 @@ export default function Dashboard({ onNav }: Props) {
                 type="button"
                 className="btn-glass text-sm py-1.5 px-2.5"
                 aria-label="Close preparation panel"
-                onClick={() => setPrepOpen(false)}
+                onClick={() => {
+                  setPrepOpen(false)
+                  setPrepBooking(null)
+                }}
               >
                 ✕
               </button>
             </div>
-            <p className="text-sm text-muted mb-4 leading-relaxed">A short warm-up before Full Stack Development with Dr. Sarah Kim.</p>
-            <div className="text-sm font-semibold text-ink mb-2">Topics to Review</div>
-            <ul className="text-sm text-muted mb-4 space-y-1 leading-relaxed">
-              <li>React Hooks</li>
-              <li>REST APIs</li>
-              <li>Node.js</li>
-            </ul>
-            <div className="text-sm font-semibold text-ink mb-2">Questions to Ask</div>
-            <ul className="text-sm text-muted mb-4 space-y-1 leading-relaxed">
-              <li>"How should I structure my React application?"</li>
-              <li>"When should I use custom hooks?"</li>
-            </ul>
+            <p className="text-sm text-muted mb-4 leading-relaxed">
+              A short warm-up
+              {prepBooking.listing?.expertise ? ` for ${prepBooking.listing.expertise}` : ''}
+              {prepBooking.listing?.name ? ` with ${prepBooking.listing.name}` : ''}.
+            </p>
+            {prepBooking.listing?.expertise ? (
+              <>
+                <div className="text-sm font-semibold text-ink mb-2">Topics to Review</div>
+                <p className="text-sm text-muted mb-4 leading-relaxed">{prepBooking.listing.expertise}</p>
+              </>
+            ) : (
+              <p className="text-sm text-muted mb-4 leading-relaxed">
+                Review your goals for this session, then try a short quiz.
+              </p>
+            )}
             <div className="text-sm font-semibold text-ink mb-1">Quick Practice</div>
             <p className="text-sm text-muted mb-4">5-minute AI quiz</p>
             <div className="flex flex-wrap gap-2">
-              <button type="button" className="btn-glass text-sm" onClick={() => setPrepOpen(false)}>Close</button>
+              <button
+                type="button"
+                className="btn-glass text-sm"
+                onClick={() => {
+                  setPrepOpen(false)
+                  setPrepBooking(null)
+                }}
+              >
+                Close
+              </button>
               <button
                 type="button"
                 className="btn-primary text-sm"
                 onClick={() => {
+                  const name = prepBooking.listing?.name || 'your tutor'
+                  const topic = prepBooking.listing?.expertise || 'this tutoring session'
                   setPrepOpen(false)
-                  setPendingAiPrompt('Give me a 5-minute quiz to prepare for my React & Node.js tutoring session. Cover React Hooks, REST APIs, and Node.js.')
+                  setPrepBooking(null)
+                  setPendingAiPrompt(`Give me a 5-minute quiz to prepare for my session with ${name}. Focus on ${topic}.`, uid)
                   onNav('ai-learning')
                 }}
               >

@@ -127,7 +127,7 @@ export default function CareerResume() {
         headline: profile?.headline || undefined,
         targetRole: snap.targetRole,
         verifiedSkills: snap.haveSkills,
-        suggestedSkills: ['Node.js', 'MongoDB', 'TypeScript'],
+        suggestedSkills: [],
         projects: snap.portfolio.map((p, i) => ({
           projectId: p.id,
           title: p.title,
@@ -146,10 +146,7 @@ export default function CareerResume() {
           official: c.official,
           included: true,
         })),
-        achievements: [
-          { id: uid('ac'), label: 'React Builder', included: true },
-          { id: uid('ac'), label: 'Project Finisher', included: true },
-        ],
+        achievements: [],
       })
 
     Promise.all([getCareerProfile(), getCertificates()])

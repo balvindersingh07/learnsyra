@@ -1,4 +1,5 @@
 import type { CourseRow } from './api'
+import { userStorageKey } from './supabase'
 
 export type CourseBadge =
   | 'AI Recommended'
@@ -69,10 +70,7 @@ export const MARKET_CATEGORIES = [
 
 export const POPULAR_SEARCHES = ['React', 'Python', 'Data Analytics', 'AI', 'Excel', 'Communication']
 
-export const SKILL_GAPS: SkillGapRec[] = [
-  { skill: 'TypeScript', score: 35, courseTitle: 'TypeScript for React Developers' },
-  { skill: 'Testing', score: 22, courseTitle: 'Frontend Testing with Jest' },
-]
+export const SKILL_GAPS: SkillGapRec[] = []
 
 export const CAREER_PATHS: CareerPath[] = [
   {
@@ -96,8 +94,8 @@ export const CAREER_PATHS: CareerPath[] = [
 ]
 
 export const FRONTEND_PATH = [
-  { title: 'JavaScript Fundamentals', state: 'done' as const },
-  { title: 'React Development', state: 'current' as const },
+  { title: 'JavaScript Fundamentals', state: 'next' as const },
+  { title: 'React Development', state: 'next' as const },
   { title: 'TypeScript', state: 'next' as const },
   { title: 'Testing', state: 'next' as const },
   { title: 'Frontend Projects', state: 'next' as const },
@@ -122,8 +120,10 @@ export function formatStudents(n: number | null | undefined) {
 }
 
 export function loadLocalWishlist(): string[] {
+  const key = userStorageKey(WISH_KEY)
+  if (!key) return []
   try {
-    const raw = localStorage.getItem(WISH_KEY)
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as string[]) : []
   } catch {
     return []
@@ -131,7 +131,9 @@ export function loadLocalWishlist(): string[] {
 }
 
 export function saveLocalWishlist(ids: string[]) {
-  localStorage.setItem(WISH_KEY, JSON.stringify(ids))
+  const key = userStorageKey(WISH_KEY)
+  if (!key) return
+  localStorage.setItem(key, JSON.stringify(ids))
 }
 
 function catKey(category: string | null) {
@@ -159,7 +161,7 @@ const MOCK: Omit<CatalogCourse, 'id'>[] = [
     originalPrice: 2999,
     badges: ['AI Recommended', 'Bestseller', 'Premium'],
     aiRecommended: true,
-    aiReason: "You're already strong in React. This course will help you develop backend and API skills needed for your Full Stack Developer goal.",
+    aiReason: 'Recommended catalog course covering React, Node.js, APIs, and MongoDB.',
     tutorSupport: true,
     aiSupport: true,
     projects: true,
@@ -324,7 +326,7 @@ const MOCK: Omit<CatalogCourse, 'id'>[] = [
     originalPrice: 1799,
     badges: ['New', 'AI Recommended', 'Career Relevant'],
     aiRecommended: true,
-    aiReason: 'TypeScript is your current skill gap at 35%. This course maps types directly onto the React you already know.',
+    aiReason: 'Recommended catalog course for adding TypeScript to React projects.',
     tutorSupport: true,
     aiSupport: true,
     projects: true,
@@ -346,7 +348,7 @@ const MOCK: Omit<CatalogCourse, 'id'>[] = [
     originalPrice: 1499,
     badges: ['New', 'AI Recommended'],
     aiRecommended: true,
-    aiReason: 'Testing is at 22%. Coverage here unblocks interview-ready frontend work.',
+    aiReason: 'Recommended catalog course for frontend testing with Jest.',
     tutorSupport: true,
     aiSupport: true,
     projects: true,

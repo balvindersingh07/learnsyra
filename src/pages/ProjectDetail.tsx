@@ -163,10 +163,12 @@ export default function ProjectDetail() {
 
       <section className="glass rounded-2xl p-6 mb-6" style={{ borderColor: 'rgba(108,92,231,0.2)' }}>
         <h2 className="text-xl font-bold text-ink mb-3" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
-          ✨ Why LearnSyra Recommends This
+          Explore this project
         </h2>
-        <p className="text-sm text-muted leading-relaxed mb-4">&ldquo;{project.aiReason}&rdquo;</p>
-        <div className="text-sm font-bold text-ink mb-3">Skill Match — {project.skillMatch}%</div>
+        <p className="text-sm text-muted leading-relaxed mb-4">{project.aiReason}</p>
+        {project.skillMatch > 0 && (
+          <div className="text-sm font-bold text-ink mb-3">Skill Match — {project.skillMatch}%</div>
+        )}
         <ul className="space-y-1.5 text-sm">
           {project.requiredSkills.map(s => (
             <li key={s.name} className="flex items-center gap-2">

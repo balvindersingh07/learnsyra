@@ -53,6 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
       setSession(next)
       if (next?.user) {
+        setProfile(null)
         loadProfile(next.user.id)
       } else {
         setProfile(null)
@@ -94,6 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut: AuthContextValue['signOut'] = async () => {
     await supabase.auth.signOut()
+    setSession(null)
     setProfile(null)
   }
 

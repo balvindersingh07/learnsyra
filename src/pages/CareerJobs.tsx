@@ -66,7 +66,7 @@ export default function CareerJobs() {
   const [aiReady, setAiReady] = useState(false)
   const [tab, setTab] = useState<'Recommended' | 'Saved' | 'Applied'>('Recommended')
   const [sort, setSort] = useState<JobSort>('Recommended')
-  const [filters, setFilters] = useState<JobFilters>(() => loadFilters() ?? { ...EMPTY_FILTERS, experience: [defaultExperience(initialSnap.readinessScore)] })
+  const [filters, setFilters] = useState<JobFilters>(() => loadFilters() ?? { ...EMPTY_FILTERS })
   const [apps, setApps] = useState<Record<string, JobApplication>>(() => loadApps())
   const { snap, resume, profile } = useMemo(() => currentProfile(targetRole), [targetRole])
   const ranked = useMemo(() => rankCatalog(profile), [profile])
@@ -119,7 +119,7 @@ export default function CareerJobs() {
   const almost = ranked.filter(j => j.matchScore >= 70 && j.matchScore < 85).slice(0, 4)
   const stretch = ranked.filter(j => j.matchScore >= 60 && j.matchScore < 70).slice(0, 4)
   const interviewOk = profile.interviewScore >= 80
-  const gapCourse = profile.gapSkills[0] || 'TypeScript'
+  const gapCourse = profile.gapSkills[0] || ''
 
   const refreshApps = () => setApps({ ...loadApps() })
 
@@ -191,26 +191,39 @@ export default function CareerJobs() {
       <div className="grid lg:grid-cols-2 gap-4 mb-5">
         <section className="glass rounded-3xl p-5">
           <h2 className="text-sm font-semibold text-muted mb-1">🎯 Target Role</h2>
-          <div className="text-2xl font-black text-ink">{targetRole}</div>
-          <p className="text-sm font-bold text-primary mb-1">{careerMatch}% Career Match</p>
+          <div className="text-2xl font-black text-ink">{targetRole || 'Choose a target role'}</div>
+          {careerMatch > 0 && typeof careerMatch === 'number' ? (
+            <p className="text-sm font-bold text-primary mb-1">{careerMatch}% Career Match</p>
+          ) : (
+            <p className="text-sm font-bold text-muted mb-1">Set your career goal</p>
+          )}
           <p className="text-[10px] font-semibold uppercase tracking-wide text-muted mb-4">LearnSyra Match · not a hiring probability</p>
           <div className="flex flex-wrap gap-2">
             <button type="button" className="btn-glass text-sm" onClick={() => setRoleOpen(true)}>Change Career Goal</button>
-            <button type="button" className="btn-primary text-sm" onClick={() => navigate(`/courses?q=${encodeURIComponent(gapCourse)}`)}>Improve My Match</button>
+            <button type="button" className="btn-primary text-sm" onClick={() => navigate(gapCourse ? `/courses?q=${encodeURIComponent(gapCourse)}` : '/courses')}>Improve My Match</button>
           </div>
         </section>
         <section className={`glass rounded-3xl p-5 ${aiReady ? 'job-ai-in' : ''}`}>
-          <h2 className="text-lg font-black text-ink mb-1">✨ Your Job Match</h2>
-          <div className="text-4xl font-black text-ink career-count">{aiReady ? `${readyPct}%` : '…'}</div>
-          <p className="text-xs font-semibold uppercase text-muted mb-2">Ready · AI Match Estimate</p>
-          <p className="text-sm text-muted mb-3">You currently match {matchedSkills.length} of {Math.max(important.length, matchedSkills.length + profile.gapSkills.length)} important skills across your recommended roles.</p>
+          <h2 className="text-lg font-black text-ink mb-1">Your Job Match</h2>
+          {targetRole.trim() && readyPct > 0 ? (
+            <>
+              <div className="text-4xl font-black text-ink career-count">{aiReady ? `${readyPct}%` : '…'}</div>
+              <p className="text-xs font-semibold uppercase text-muted mb-2">Ready · AI Match Estimate</p>
+              <p className="text-sm text-muted mb-3">You currently match {matchedSkills.length} of {Math.max(important.length, matchedSkills.length + profile.gapSkills.length)} important skills across your recommended roles.</p>
+            </>
+          ) : (
+            <>
+              <div className="text-lg font-black text-ink mb-2">Set your career goal</div>
+              <p className="text-sm text-muted mb-3">Personalized match percentages appear after you add a role, skills, or projects.</p>
+            </>
+          )}
           <div className="flex flex-wrap gap-1.5 mb-2">
             {matchedSkills.slice(0, 6).map(s => <span key={s} className="text-xs font-semibold" style={{ color: '#0F8A68' }}>✓ {s}</span>)}
           </div>
           <div className="flex flex-wrap gap-1.5 mb-3">
             {profile.gapSkills.map(s => <span key={s} className="job-gap text-xs font-semibold px-2 py-0.5 rounded-lg" style={{ background: 'rgba(245,158,11,0.12)', color: '#B45309' }}>⚠ {s}</span>)}
           </div>
-          <button type="button" className="btn-primary text-sm" onClick={() => navigate(`/courses?q=${encodeURIComponent(gapCourse)}`)}>Close My Skill Gaps →</button>
+          <button type="button" className="btn-primary text-sm" onClick={() => navigate(gapCourse ? `/courses?q=${encodeURIComponent(gapCourse)}` : '/courses')}>Explore courses →</button>
         </section>
       </div>
 
@@ -218,10 +231,12 @@ export default function CareerJobs() {
         <h2 className="text-lg font-black text-ink mb-2">🤖 AI Recommendation</h2>
         {!aiReady ? (
           <p className="text-sm text-muted">Estimating your match from skills, projects, resume, and interview practice…</p>
+        ) : !targetRole.trim() || ranked.every(j => j.matchScore === 0) ? (
+          <p className="text-sm text-muted">Set your career goal to see personalized job matches. Catalog listings below are for exploration.</p>
         ) : (
           <>
             <blockquote className="text-sm text-ink mb-4 pl-3" style={{ borderLeft: '3px solid #6C5CE7' }}>
-              You are strongest for junior-to-mid {targetRole} roles. Your {profile.skills.slice(0, 2).join(' and ') || 'core'} skills are strong, but {profile.gapSkills.join(' and ') || 'a few advanced topics'} are still your biggest gaps.
+              Roles matching {targetRole}. Your listed skills: {profile.skills.slice(0, 2).join(' and ') || 'none yet'}. Gaps: {profile.gapSkills.join(' and ') || 'none listed'}.
             </blockquote>
             <h3 className="text-sm font-bold text-ink mb-2">Recommended Strategy</h3>
             <ol className="text-sm space-y-1 mb-4 list-decimal pl-5">
@@ -240,23 +255,24 @@ export default function CareerJobs() {
           <h2 className="text-lg font-black text-ink mb-3">👤 Your Profile</h2>
           <ul className="text-sm space-y-1 mb-4">
             <li>{resume ? '✓' : '⚠'} Resume {resume ? 'selected' : 'not saved yet'}</li>
-            <li>✓ Skills</li>
-            <li>✓ Projects</li>
-            <li>{interviewOk ? '✓' : '⚠'} Interview</li>
-            <li>✓ Portfolio</li>
+            <li>{profile.skills.length ? '✓' : '○'} Skills {profile.skills.length ? 'loaded' : 'not set'}</li>
+            <li>{profile.projects.length ? '✓' : '○'} Projects {profile.projects.length ? 'loaded' : 'not added'}</li>
+            <li>{interviewOk ? '✓' : '○'} Interview</li>
+            <li>{profile.projects.length ? '✓' : '○'} Portfolio</li>
           </ul>
           <button type="button" className="btn-glass text-sm" onClick={() => navigate('/profile')}>Complete Profile →</button>
         </section>
         <section className="glass rounded-3xl p-5">
-          <h2 className="text-lg font-black text-ink mb-2">Close This Gap</h2>
-          <p className="font-bold text-ink">{gapCourse === 'Testing' ? 'Frontend Testing with Jest' : gapCourse === 'Accessibility' ? 'Accessible UI practice' : 'TypeScript for React Developers'}</p>
-          <p className="text-sm text-muted">Estimated 4 hours · +8% estimated match</p>
-          <button type="button" className="btn-primary text-sm mt-3" onClick={() => navigate(`/courses?q=${encodeURIComponent(gapCourse)}`)}>Start Learning →</button>
+          <h2 className="text-lg font-black text-ink mb-2">Explore a related course</h2>
+          <p className="font-bold text-ink">{gapCourse || 'Available courses'}</p>
+          <p className="text-sm text-muted">Catalog recommendation — not a personal skill percentage.</p>
+          <button type="button" className="btn-primary text-sm mt-3" onClick={() => navigate(gapCourse ? `/courses?q=${encodeURIComponent(gapCourse)}` : '/courses')}>Explore courses →</button>
         </section>
         <section className="glass rounded-3xl p-5">
-          <h2 className="text-lg font-black text-ink mb-2">🚀 Build This To Strengthen Your Application</h2>
+          <h2 className="text-lg font-black text-ink mb-2">Explore a related project</h2>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted mb-1">Available Project</p>
           <p className="font-bold text-ink">React Admin Dashboard</p>
-          <p className="text-sm text-muted">React · TypeScript · Testing · Estimated 3 hours</p>
+          <p className="text-sm text-muted">Catalog project · React · TypeScript · Testing</p>
           <button type="button" className="btn-primary text-sm mt-3" onClick={() => navigate('/projects')}>Start Project →</button>
         </section>
       </div>

@@ -32,7 +32,6 @@ import {
   saveNotes,
   saveWatched,
   sectionProgress,
-  seedDemoDone,
 } from '../lib/lessonWorkspace'
 import { lessonPath } from '../lib/paths'
 import './lesson-player.css'
@@ -206,7 +205,6 @@ export default function LessonPlayer() {
         const found =
           (l && (flat.some(x => x.id === l.id) || curr.length > 0) ? l : null) ||
           flat.find(x => x.id === lessonId) ||
-          flat.find(x => /useeffect/i.test(x.title)) ||
           flat[0]
         setLesson(found ?? null)
         if (!l && found && found.id !== lessonId) navigate(lessonPath(id, found.id), { replace: true })
@@ -223,7 +221,6 @@ export default function LessonPlayer() {
         } else {
           setEnrolled(loadLocalEnroll().includes(id) || mockRef.current)
         }
-        if (mockRef.current && doneIds.length === 0) doneIds = seedDemoDone(mods, found?.id)
         setCompleted(new Set(doneIds))
         if (found) {
           setNotes(loadNotes(id, found.id))
@@ -243,7 +240,7 @@ export default function LessonPlayer() {
           setPlaying(false)
         }
         setSaved(loadSavedLessons().some(s => s.title === (found?.title ?? '')))
-        getStudentStats().then(s => setStreak(s.streak || 7)).catch(() => {})
+        getStudentStats().then(s => setStreak(s.streak ?? 0)).catch(() => {})
       } catch (e) {
         if (alive) setError(e instanceof Error ? e.message : 'Failed to load lesson')
       } finally {
@@ -725,33 +722,35 @@ export default function LessonPlayer() {
             <button type="button" className="btn-glass text-sm py-2" onClick={() => navigate('/tutors')}>Ask a Tutor</button>
           </div>
         </div>
+        {ws.insight ? (
         <div className="glass rounded-2xl p-4 mb-3">
-          <div className="text-sm font-bold text-ink mb-1">🧠 AI Insight</div>
+          <div className="text-sm font-bold text-ink mb-1">AI Insight</div>
           <p className="text-sm text-muted leading-relaxed mb-3">"{ws.insight}"</p>
           <button type="button" className="btn-primary text-sm w-full" onClick={() => setTab('practice')}>Practice This →</button>
         </div>
+        ) : null}
         <div className="glass rounded-2xl p-4 mb-3">
-          <div className="text-sm font-bold text-ink mb-1">👨‍🏫 Need Help?</div>
-          <div className="text-sm font-semibold text-ink">Dr. Sarah Kim</div>
-          <div className="text-xs text-muted mb-2">React · Node.js · ⭐ 4.9</div>
+          <div className="text-sm font-bold text-ink mb-1">Need Help?</div>
           <p className="text-xs text-muted mb-3">Get one-on-one help with this lesson.</p>
-          <button type="button" className="btn-primary text-sm w-full mb-2" onClick={() => navigate('/tutors')}>Ask Sarah →</button>
-          <button type="button" className="btn-glass text-sm w-full" onClick={() => navigate('/tutors')}>Find a Tutor →</button>
+          <button type="button" className="btn-primary text-sm w-full mb-2" onClick={() => navigate('/tutors')}>Find a Tutor →</button>
         </div>
         {stuck && (
           <div className="glass rounded-2xl p-4 mb-3" style={{ borderColor: 'rgba(108,92,231,0.28)' }}>
             <div className="text-sm font-bold text-ink">Still stuck?</div>
             <p className="text-sm text-muted mb-3">A human tutor can help you work through this concept.</p>
-            <div className="text-sm font-semibold text-ink mb-2">Dr. Sarah Kim</div>
             <button type="button" className="btn-primary text-sm w-full" onClick={() => navigate('/tutors')}>Book Session →</button>
           </div>
         )}
         <div className="glass rounded-2xl p-4 mb-3">
-          <div className="text-sm font-semibold text-ink">🔥 {streak} Day Learning Streak</div>
-          <p className="text-xs text-muted mt-1">You are on track. Keep learning today.</p>
+          <div className="text-sm font-semibold text-ink">
+            {streak > 0 ? `${streak} Day Learning Streak` : 'Start a learning streak'}
+          </div>
+          <p className="text-xs text-muted mt-1">
+            {streak > 0 ? 'You are on track. Keep learning today.' : 'Complete a lesson to start your streak.'}
+          </p>
         </div>
         <div className="text-xs text-muted px-1">
-          Next milestone: React Fundamentals
+          {ws.nextTitle && ws.nextTitle !== 'Next lesson' ? `Next: ${ws.nextTitle}` : 'Keep going — pick another lesson when you are ready.'}
         </div>
       </aside>
 

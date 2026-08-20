@@ -1,6 +1,6 @@
-import type { CareerProfile, JobRow, ProjectRow } from './api'
-import { jobMatch } from './api'
+import type { CareerProfile } from './api'
 import type { Page } from './paths'
+import { peekAuthUserId } from './supabase'
 
 export interface MissionTask {
   id: string
@@ -13,6 +13,7 @@ export interface MissionTask {
 export interface DailyMission {
   focus: string
   subtitle: string
+  personalized: boolean
   tasks: MissionTask[]
 }
 
@@ -46,6 +47,7 @@ export interface RecommendedProject {
   time: string
   skills: string[]
   badges: string[]
+  catalog: boolean
 }
 
 export interface CareerMatchPreview {
@@ -90,26 +92,17 @@ function clamp(n: number, min = 0, max = 100) {
   return Math.max(min, Math.min(max, Math.round(n)))
 }
 
-function detectPath(enrolled: { title: string; category: string | null }[]) {
-  const blob = enrolled.map(c => `${c.title} ${c.category ?? ''}`).join(' ').toLowerCase()
-  if (/machine learning|tensorflow|data science|python|ai & ml/.test(blob) && !/react|full.?stack|web/.test(blob)) {
-    return 'ml' as const
-  }
-  return 'fullstack' as const
-}
-
-function topicFromCourses(enrolled: { title: string; category: string | null }[]) {
-  if (detectPath(enrolled) === 'ml') {
-    return { topic: 'Python for data', lesson: 'pandas basics', stack: 'Python', course: enrolled[0]?.title || 'Data Science' }
-  }
-  const title = enrolled.find(c => /full.?stack|web|react/i.test(c.title))?.title
-    || enrolled[0]?.title
-    || 'Full Stack Web Development'
-  return { topic: 'React Hooks', lesson: 'useEffect', stack: 'React', course: title }
+function hasCareerSignal(career: CareerProfile | null) {
+  return Boolean(
+    career?.target_role?.trim() ||
+      (career?.skills?.length ?? 0) > 0 ||
+      career?.resume_text?.trim(),
+  )
 }
 
 export function formatActivityLabel(hours: number) {
   const mins = Math.round(hours * 60)
+  if (mins <= 0) return '0 min'
   if (mins < 60) return `${mins} min`
   const h = Math.floor(mins / 60)
   const m = mins % 60
@@ -124,19 +117,19 @@ export function buildRoadmap(input: {
 }): RoadmapStep[] {
   const { enrolledCount, avgProgress, careerScore, submittedProjects } = input
   const beginnerPct = enrolledCount > 0 ? 100 : 0
-  const fundPct = enrolledCount > 0 ? (avgProgress > 0 ? avgProgress : 17) : 0
+  const fundPct = enrolledCount > 0 ? avgProgress : 0
   const projPct = clamp(submittedProjects * 40)
-  const advPct = avgProgress >= 50 ? avgProgress : avgProgress >= 25 ? clamp(avgProgress - 10) : 0
+  const advPct = avgProgress >= 50 ? avgProgress : 0
   const interviewPct = careerScore
   const jobPct = careerScore >= 90 ? 100 : careerScore >= 70 ? clamp(careerScore - 15) : 0
 
   const steps: Omit<RoadmapStep, 'done' | 'current' | 'locked'>[] = [
-    { label: 'Beginner', icon: '🌱', pct: beginnerPct, page: 'courses', hint: 'Your starting point' },
-    { label: 'Fundamentals', icon: '📖', pct: fundPct, page: 'courses', hint: 'Complete Beginner to unlock' },
-    { label: 'Projects', icon: '🔨', pct: projPct, page: 'projects', hint: 'Complete Fundamentals to unlock' },
-    { label: 'Advanced', icon: '⚡', pct: advPct, page: 'courses', hint: 'Complete Projects to unlock' },
-    { label: 'Interview Ready', icon: '🎯', pct: interviewPct, page: 'career', hint: 'Complete Advanced to unlock' },
-    { label: 'Job Ready', icon: '💼', pct: jobPct, page: 'career', hint: 'Complete Interview Ready to unlock' },
+    { label: 'Start learning', icon: '🌱', pct: beginnerPct, page: 'courses', hint: 'Enroll in a course to begin' },
+    { label: 'Keep learning', icon: '📖', pct: fundPct, page: 'courses', hint: 'Complete lessons in your course' },
+    { label: 'Build a project', icon: '🔨', pct: projPct, page: 'projects', hint: 'Submit a project after you start learning' },
+    { label: 'Go deeper', icon: '⚡', pct: advPct, page: 'courses', hint: 'Keep going after your first projects' },
+    { label: 'Practice interview', icon: '🎯', pct: interviewPct, page: 'career', hint: 'Try a mock interview when you are ready' },
+    { label: 'Get job-ready', icon: '💼', pct: jobPct, page: 'career', hint: 'Career Center uses your real activity' },
   ]
 
   const firstOpen = steps.findIndex(s => s.pct < 100)
@@ -147,14 +140,19 @@ export function buildRoadmap(input: {
     const hint = done
       ? 'Completed · 100%'
       : current
-        ? `${s.pct}% complete · 4 lessons remaining`
+        ? s.pct > 0
+          ? `${s.pct}% complete`
+          : s.hint
         : s.hint
     return { ...s, done, current, locked, hint }
   })
 }
 
-export function formatSessionWhen(_iso?: string, durationMin = 45) {
-  return `Today · 6:30 PM · ${durationMin} min`
+export function formatSessionWhen(iso?: string) {
+  if (!iso) return 'Scheduled'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return 'Scheduled'
+  return d.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 export function buildDashboardIntel(input: {
@@ -162,156 +160,155 @@ export function buildDashboardIntel(input: {
   enrolled: { title: string; category: string | null; progress: number }[]
   stats: { streak: number; level: number; weekHours: number; careerScore: number; completedLessons: number }
   career: CareerProfile | null
-  projects: ProjectRow[]
   submittedCount: number
-  jobs: JobRow[]
 }) {
-  const { firstName, enrolled, stats, career, projects, submittedCount, jobs } = input
+  const { firstName, enrolled, stats, career, submittedCount } = input
   const avgProgress = enrolled.length
     ? Math.round(enrolled.reduce((s, c) => s + c.progress, 0) / enrolled.length)
     : 0
-  const ctx = topicFromCourses(enrolled)
-  const path = detectPath(enrolled)
-  const tsScore = 35
+  const live = Boolean(
+    enrolled.length ||
+      submittedCount > 0 ||
+      stats.completedLessons > 0 ||
+      stats.weekHours > 0 ||
+      hasCareerSignal(career),
+  )
+  const careerScore = hasCareerSignal(career) ? stats.careerScore : 0
+  const currentCourse = enrolled[0]?.title ?? ''
 
-  const skillDna: SkillDnaItem[] =
-    path === 'ml'
-      ? [
-          { name: 'Python', score: 78 },
-          { name: 'SQL', score: 64 },
-          { name: 'Statistics', score: 51 },
-          { name: 'TensorFlow', score: 28 },
-          { name: 'System Design', score: 21 },
-        ]
-      : [
-          { name: 'React', score: 88 },
-          { name: 'JavaScript', score: 76 },
-          { name: 'Node.js', score: 58 },
-          { name: 'TypeScript', score: tsScore },
-          { name: 'System Design', score: 21 },
-        ]
-
-  const strongest = skillDna.reduce((a, b) => (a.score >= b.score ? a : b))
-  const weakest = skillDna.reduce((a, b) => (a.score <= b.score ? a : b))
+  const skillDna: SkillDnaItem[] = (career?.skills ?? [])
+    .map(name => name.trim())
+    .filter(Boolean)
+    .map(name => ({ name, score: 0 }))
+  const measured = skillDna.filter(s => s.score > 0)
+  const strongest = measured[0]?.name ?? ''
+  const weakest = measured.length > 1 ? measured[measured.length - 1]?.name ?? '' : ''
 
   const breakdown: CareerBreakdown = {
-    skills: clamp(avgProgress || 72),
-    projects: clamp(submittedCount * 22 + (projects.length ? 8 : 0) || 45),
-    resume: career?.resume_text && career.resume_text.length > 80 ? 70 : career?.resume_text ? 30 : 30,
-    interview: clamp(stats.careerScore * 0.45 || 18),
-    communication: 60,
+    skills: live ? clamp(avgProgress) : 0,
+    projects: live ? clamp(submittedCount * 22) : 0,
+    resume: career?.resume_text
+      ? career.resume_text.trim().length > 80
+        ? 70
+        : career.resume_text.trim()
+          ? 30
+          : 0
+      : 0,
+    interview: live ? clamp(careerScore * 0.45) : 0,
+    communication: 0,
   }
 
-  const ecom = projects.find(p => /e-?comm|shop|store|full.?stack/i.test(p.title))
-  const project: RecommendedProject =
-    path === 'ml'
-      ? {
-          title: projects.find(p => /ml|data|python/i.test(p.title))?.title || 'ML Classification Lab',
-          difficulty: 'Intermediate',
-          time: '2h 30m',
-          skills: ['Python', 'pandas', 'SQL'],
-          badges: ['AI Assistance', 'Tutor Support'],
-        }
-      : {
-          title: ecom?.title || 'E-commerce Website',
-          difficulty: ecom?.difficulty || 'Intermediate',
-          time: '2h 30m',
-          skills: (ecom?.skills?.length ? ecom.skills : ['React', 'JavaScript', 'REST API']).slice(0, 3),
-          badges: ['AI Assistance', 'Tutor Support'],
-        }
+  const project: RecommendedProject = {
+    title: 'Explore Projects',
+    difficulty: '',
+    time: '',
+    skills: [],
+    badges: ['Catalog'],
+    catalog: true,
+  }
 
-  const mlJob = jobs.find(j => /ml|machine|data scientist|tensorflow/i.test(`${j.title} ${(j.tags ?? []).join(' ')}`))
-  const careerMatch: CareerMatchPreview =
-    path === 'ml'
-      ? {
-          role: mlJob?.title || career?.target_role || 'Junior ML Engineer',
-          match: mlJob ? jobMatch(mlJob, skillDna.map(s => s.name)) : 74,
-          have: ['Python', 'SQL', 'Statistics'],
-          improve: ['TensorFlow', 'System Design'],
-        }
-      : {
-          role: 'Frontend Developer',
-          match: 82,
-          have: ['React', 'JavaScript', 'REST APIs'],
-          improve: ['TypeScript', 'Testing'],
-        }
+  const careerMatch: CareerMatchPreview = {
+    role: career?.target_role?.trim() || '',
+    match: 0,
+    have: career?.skills ?? [],
+    improve: [],
+  }
 
-  const mins = [45, 70, 35, 90, 40, 35, 5]
+  const labels = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
   const activity: WeeklyActivity = {
-    weekHours: Math.round((mins.reduce((a, b) => a + b, 0) / 60) * 10) / 10,
-    deltaPct: 34,
-    days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((label, i) => ({
-      label,
-      hours: mins[i] / 60,
-    })),
+    weekHours: stats.weekHours,
+    deltaPct: 0,
+    days: labels.map(label => ({ label, hours: 0 })),
   }
 
+  const xp = stats.completedLessons * 25 + submittedCount * 50
   const xpTarget = 1000
-  const xp = 255
 
-  const mission: DailyMission = {
-    focus: `Become better at ${ctx.topic}`,
-    subtitle: 'Your personalized learning plan for today',
-    tasks: [
-      { id: 'learn', icon: '📖', title: path === 'ml' ? `Learn ${ctx.lesson}` : 'Learn useEffect', minutes: 10, page: 'courses' },
-      { id: 'practice', icon: '🧠', title: 'AI Practice', minutes: 10, page: 'ai-learning' },
-      { id: 'build', icon: '💻', title: 'Build Mini Task', minutes: 20, page: 'projects' },
-      { id: 'quiz', icon: '🎯', title: 'Quick Quiz', minutes: 5, page: 'ai-learning' },
-    ],
-  }
+  const mission: DailyMission = live
+    ? {
+        focus: currentCourse ? `Continue ${currentCourse}` : 'Keep building from your activity',
+        subtitle: 'Based on your enrollments and progress',
+        personalized: true,
+        tasks: [
+          { id: 'learn', icon: '📖', title: currentCourse ? 'Continue your course' : 'Choose a course', minutes: 15, page: 'courses' },
+          { id: 'lesson', icon: '✅', title: 'Complete a lesson', minutes: 15, page: 'courses' },
+          { id: 'build', icon: '💻', title: 'Explore a project', minutes: 20, page: 'projects' },
+        ],
+      }
+    : {
+        focus: 'Start your learning journey',
+        subtitle: 'Generic first steps — not a personalized plan yet',
+        personalized: false,
+        tasks: [
+          { id: 'learn', icon: '📖', title: 'Choose a course', minutes: 5, page: 'courses' },
+          { id: 'lesson', icon: '✅', title: 'Complete your first lesson', minutes: 15, page: 'courses' },
+          { id: 'build', icon: '💻', title: 'Explore a project', minutes: 10, page: 'projects' },
+        ],
+      }
 
-  const nextAction: NextBestAction =
-    path === 'ml'
-      ? {
-          title: 'Complete Statistics Fundamentals',
-          body: `You are currently at ${skillDna[2]?.score ?? 51}% proficiency. Completing this lesson will unlock your next data project.`,
-          minutes: 15,
-          page: 'courses',
-        }
-      : {
-          title: 'Complete TypeScript Fundamentals',
-          body: `You are currently at ${tsScore}% proficiency. Completing this lesson will unlock your next Full Stack project.`,
-          minutes: 15,
-          page: 'courses',
-        }
+  const nextAction: NextBestAction = currentCourse
+    ? {
+        title: `Continue ${currentCourse}`,
+        body: `You're at ${enrolled[0].progress}% in this course. Pick up where you left off.`,
+        minutes: 15,
+        page: 'courses',
+      }
+    : {
+        title: 'Choose a course to start learning',
+        body: 'Browse available courses. Nothing here is marked as already in progress until you enroll.',
+        minutes: 5,
+        page: 'courses',
+      }
 
-  const insights: LearningInsight[] = [
-    { label: 'React skill growth', value: '+18% this week' },
-    { label: 'Focus next', value: path === 'ml' ? 'Statistics' : 'TypeScript' },
-    { label: 'Estimated roadmap progress', value: '42 hours remaining' },
-  ]
+  const insights: LearningInsight[] = live
+    ? [
+        { label: 'This week', value: `${stats.weekHours} hours` },
+        { label: 'Lessons completed', value: String(stats.completedLessons) },
+        { label: 'Projects submitted', value: String(submittedCount) },
+      ]
+    : [
+        { label: 'This week', value: '0 hours' },
+        { label: 'Focus next', value: 'Choose a course' },
+        { label: 'Roadmap', value: 'Get started' },
+      ]
 
   const tutor: TutorContext = {
-    topic: ctx.topic,
-    weakSkill: ctx.lesson,
-    currentLesson: ctx.topic,
+    topic: currentCourse,
+    weakSkill: '',
+    currentLesson: currentCourse,
   }
 
   return {
     firstName,
-    courseTitle: ctx.course,
+    courseTitle: currentCourse,
+    live,
     tutor,
     mission,
     nextAction,
     insights,
     skillDna,
-    strongest: strongest.name,
-    weakest: weakest.name,
-    skillInsight: `Your strongest skill is ${strongest.name}. ${weakest.name} needs attention.`,
+    strongest,
+    weakest,
+    skillInsight: skillDna.length
+      ? 'These skills are listed on your career profile. Scores appear after real coursework or assessments.'
+      : 'Skill DNA stays empty until you add skills or complete real coursework.',
     roadmap: buildRoadmap({
       enrolledCount: enrolled.length,
       avgProgress,
-      careerScore: stats.careerScore,
+      careerScore,
       submittedProjects: submittedCount,
     }),
     breakdown,
-    careerTip: 'Complete 2 projects + 1 mock interview to improve your career readiness.',
+    careerTip: live
+      ? 'Complete a project and a mock interview to improve your career readiness.'
+      : 'Set a target role and complete a lesson to start a real career score.',
     project,
     careerMatch,
     activity,
     xp,
     xpTarget,
-    levelLabel: `Level ${stats.level} — Skill Builder`,
+    careerScore,
+    levelLabel: xp > 0 ? `Level ${stats.level} — Skill Builder` : 'Level 1 — Getting Started',
     badges: [
       { icon: '🏆', label: 'First Course', earned: enrolled.length > 0, hint: enrolled.length > 0 ? 'Earned when you enrolled' : 'Enroll in your first course' },
       { icon: '🔥', label: 'Learning Streak', earned: stats.streak > 0, hint: stats.streak > 0 ? `${stats.streak}-day streak` : 'Complete a lesson today' },
@@ -320,43 +317,71 @@ export function buildDashboardIntel(input: {
   }
 }
 
-const MISSION_KEY = () => `learnsyra_mission_${new Date().toISOString().slice(0, 10)}`
-const MISSION_ACTIVE_KEY = () => `learnsyra_mission_active_${new Date().toISOString().slice(0, 10)}`
+function missionDay() {
+  return new Date().toISOString().slice(0, 10)
+}
 
-export function loadMissionDone(): string[] {
+function missionDoneKey(userId?: string | null) {
+  const uid = userId || peekAuthUserId()
+  return uid ? `learnsyra_mission_${uid}_${missionDay()}` : null
+}
+
+function missionActiveKey(userId?: string | null) {
+  const uid = userId || peekAuthUserId()
+  return uid ? `learnsyra_mission_active_${uid}_${missionDay()}` : null
+}
+
+export function loadMissionDone(userId?: string | null): string[] {
+  const key = missionDoneKey(userId)
+  if (!key) return []
   try {
-    const raw = localStorage.getItem(MISSION_KEY())
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as string[]) : []
   } catch {
     return []
   }
 }
 
-export function saveMissionDone(ids: string[]) {
-  localStorage.setItem(MISSION_KEY(), JSON.stringify(ids))
+export function saveMissionDone(ids: string[], userId?: string | null) {
+  const key = missionDoneKey(userId)
+  if (!key) return
+  localStorage.setItem(key, JSON.stringify(ids))
 }
 
-export function loadMissionActive(): string | null {
+export function loadMissionActive(userId?: string | null): string | null {
+  const key = missionActiveKey(userId)
+  if (!key) return null
   try {
-    return localStorage.getItem(MISSION_ACTIVE_KEY())
+    return localStorage.getItem(key)
   } catch {
     return null
   }
 }
 
-export function saveMissionActive(id: string | null) {
-  if (id) localStorage.setItem(MISSION_ACTIVE_KEY(), id)
-  else localStorage.removeItem(MISSION_ACTIVE_KEY())
+export function saveMissionActive(id: string | null, userId?: string | null) {
+  const key = missionActiveKey(userId)
+  if (!key) return
+  if (id) localStorage.setItem(key, id)
+  else localStorage.removeItem(key)
 }
 
 const AI_PROMPT_KEY = 'learnsyra_pending_prompt'
 
-export function setPendingAiPrompt(prompt: string) {
-  sessionStorage.setItem(AI_PROMPT_KEY, prompt)
+function promptStorageKey(userId?: string | null) {
+  const uid = userId || peekAuthUserId()
+  return uid ? `${AI_PROMPT_KEY}:${uid}` : null
 }
 
-export function takePendingAiPrompt() {
-  const v = sessionStorage.getItem(AI_PROMPT_KEY)
-  if (v) sessionStorage.removeItem(AI_PROMPT_KEY)
+export function setPendingAiPrompt(prompt: string, userId?: string | null) {
+  const key = promptStorageKey(userId)
+  if (!key) return
+  sessionStorage.setItem(key, prompt)
+}
+
+export function takePendingAiPrompt(userId?: string | null) {
+  const key = promptStorageKey(userId)
+  if (!key) return null
+  const v = sessionStorage.getItem(key)
+  if (v) sessionStorage.removeItem(key)
   return v
 }

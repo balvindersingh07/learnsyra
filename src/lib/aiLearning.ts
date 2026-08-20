@@ -1,4 +1,5 @@
 import type { CourseRow, TutorListing } from './api'
+import { userStorageKey } from './supabase'
 
 export type AiRole = 'user' | 'ai'
 
@@ -111,109 +112,48 @@ export function buildAiStudentContext(input: {
   enrolled: (CourseRow & { progress: number })[]
   careerGoal?: string | null
 }): AiStudentContext {
-  const course = input.enrolled.find(c => /full.?stack|web|react/i.test(c.title)) || input.enrolled[0]
+  const course = input.enrolled[0]
+  const goal = input.careerGoal?.trim() || ''
   return {
-    firstName: input.firstName || 'Alex',
-    courseTitle: course?.title || 'Full Stack Web Development',
-    lesson: 'React Hooks',
-    topic: 'React Hooks',
-    progress: course?.progress || 17,
-    skills: [
-      { name: 'React', score: 88 },
-      { name: 'JavaScript', score: 76 },
-      { name: 'Node.js', score: 58 },
-      { name: 'TypeScript', score: 35 },
-      { name: 'System Design', score: 21 },
-    ],
-    focusSkill: 'TypeScript',
-    focusScore: 35,
-    insight: 'You understand React components well, but you frequently struggle with asynchronous state updates.',
-    careerGoal: input.careerGoal || 'Junior Frontend Developer',
+    firstName: input.firstName.trim() || 'there',
+    courseTitle: course?.title || '',
+    lesson: '',
+    topic: course?.title || '',
+    progress: course?.progress ?? 0,
+    skills: [],
+    focusSkill: '',
+    focusScore: 0,
+    insight: '',
+    careerGoal: goal,
   }
 }
 
 export function welcomeMessage(ctx: AiStudentContext): ChatMsg {
+  const greeting = ctx.firstName && ctx.firstName !== 'there' ? `Hey ${ctx.firstName}` : 'Hey'
+  if (!ctx.courseTitle && !ctx.careerGoal) {
+    return {
+      id: uid(),
+      role: 'ai',
+      text: `${greeting} 👋
+
+Start your AI learning journey.
+
+Ask me to explain a topic, quiz you, or help you pick a first course.`,
+    }
+  }
+  const courseLine = ctx.courseTitle ? `\n\nYou're currently working on **${ctx.courseTitle}**.` : ''
+  const goalLine = ctx.careerGoal ? `\n\nTarget role: **${ctx.careerGoal}**.` : ''
   return {
     id: uid(),
     role: 'ai',
-    text: `Hey ${ctx.firstName} 👋
-
-You're currently working on **${ctx.lesson}**.
-
-I noticed you had some difficulty with \`useEffect\` in your recent practice.
+    text: `${greeting} 👋${courseLine}${goalLine}
 
 What would you like to do?`,
   }
 }
 
 export function seedConversations(): SeedConversation[] {
-  return [
-    {
-      id: 'seed-hooks',
-      title: 'React Hooks Explained',
-      messages: [
-        { id: 's1', role: 'user', text: "Explain React useEffect like I'm a beginner." },
-        { id: 's2', role: 'ai', text: explainUseEffectReply() },
-      ],
-    },
-    {
-      id: 'seed-rest',
-      title: 'REST API Practice',
-      messages: [
-        { id: 's3', role: 'user', text: 'Give me a beginner exercise for REST APIs.' },
-        {
-          id: 's4',
-          role: 'ai',
-          text: `**REST API practice**
-
-Build a tiny client that:
-
-1. \`GET /posts\` and list titles
-2. \`POST /posts\` with a title + body
-3. Handle a loading and error state
-
-**Hint:** start with \`fetch\` and \`useEffect\`, then extract a \`usePosts()\` hook.`,
-        },
-      ],
-    },
-    {
-      id: 'seed-closures',
-      title: 'JavaScript Closures',
-      messages: [
-        { id: 's5', role: 'user', text: 'Explain closures simply.' },
-        {
-          id: 's6',
-          role: 'ai',
-          text: `A **closure** is a function that remembers variables from the place it was created.
-
-\`\`\`javascript
-function makeCounter() {
-  let n = 0
-  return () => ++n
-}
-\`\`\`
-
-Each counter keeps its own \`n\`. That private memory is the closure.`,
-        },
-      ],
-    },
-    {
-      id: 'seed-node',
-      title: 'Node.js Interview Questions',
-      messages: [
-        { id: 's7', role: 'user', text: 'Interview me on Node.js.' },
-        {
-          id: 's8',
-          role: 'ai',
-          text: `**Question 1**
-
-What is the event loop, and why does it matter when handling many HTTP requests?
-
-Answer in 4–6 sentences, then I will score technical depth and clarity.`,
-        },
-      ],
-    },
-  ]
+  return []
 }
 
 export function explainUseEffectReply() {
@@ -249,7 +189,7 @@ export function contextualCoachReply(question: string, ctx: AiStudentContext): s
 Empty \`[]\` = do it once. No array = do it after every render. Put values in the array = do it when those values change.`
   }
   if (/beginner exercise|give me a (beginner )?exercise|practice/.test(q) && !/typescript|interview/.test(q)) {
-    return `**Beginner exercise — ${ctx.lesson}**
+    return `**Beginner exercise**${ctx.lesson ? ` — ${ctx.lesson}` : ''}
 
 Build a counter with \`useState\`: increment, decrement, and reset.
 
@@ -264,7 +204,7 @@ Open **Practice** in the sidebar when you are ready to try it with a starter fil
 * List notes
 * Delete a note
 
-Use \`useState\` for the list and \`useEffect\` to save to \`localStorage\`. This maps directly to ${ctx.courseTitle}.`
+Use \`useState\` for the list and \`useEffect\` to save to \`localStorage\`.${ctx.courseTitle ? ` This can pair with **${ctx.courseTitle}**.` : ''}`
   }
   if (/debug/.test(q)) {
     return `Paste the component and the error.
@@ -283,16 +223,19 @@ Share your snippet and I will walk through it line by line.`
 Open **Quizzes** or click **Quiz me** below. We will cover \`useState\`, \`useEffect\`, and dependency arrays.`
   }
   if (/interview/.test(q)) {
-    return `I can run a **Junior Frontend Developer** mock interview on React.
+    return `I can run a mock interview${ctx.careerGoal ? ` for **${ctx.careerGoal}**` : ''}.
 
 Open **Interview Practice** for a timed session, or answer this now:
 
 **What is the difference between state and props in React?**`
   }
   if (/next skill|choose my next/.test(q)) {
-    return `Your snapshot says **${ctx.focusSkill}** is the gap (${ctx.focusScore}%).
+    if (ctx.focusSkill && ctx.focusScore > 0) {
+      return `Based on your snapshot, **${ctx.focusSkill}** is ${ctx.focusScore}%.${ctx.careerGoal ? ` That is a useful next step for ${ctx.careerGoal}.` : ''}`
+    }
+    return `Set a career goal or enroll in a course so I can suggest a next skill from your actual progress.
 
-React is already strong. Fifteen focused minutes on TypeScript fundamentals will unlock your next Full Stack project.`
+Meanwhile, pick a topic you want to learn and I will outline a short plan.`
   }
   if (/typescript/.test(q)) {
     return `**TypeScript fundamentals (15 min)**
@@ -301,21 +244,31 @@ React is already strong. Fifteen focused minutes on TypeScript fundamentals will
 2. Type a \`useState\` value: \`useState<number>(0)\`
 3. Type an event: \`React.ChangeEvent<HTMLInputElement>\`
 
-You are at **${ctx.focusScore}%**. Practice this next — it is the fastest lift for ${ctx.careerGoal}.`
+Practice this next if you want stronger frontend types.`
   }
   if (/asynchronous state|async state/.test(q)) {
-    return ctx.insight + '\n\nTry updating state from a fetch inside `useEffect`, and never use the old count like `count + 1` after an await — use the functional updater: `setCount(c => c + 1)`.'
+    return `Try updating state from a fetch inside \`useEffect\`, and never use the old count like \`count + 1\` after an await — use the functional updater: \`setCount(c => c + 1)\`.${ctx.insight ? `\n\n${ctx.insight}` : ''}`
   }
   return null
 }
 
 export function coachPrompt(ctx: AiStudentContext, question: string) {
-  return `Student: ${ctx.firstName}. Course: ${ctx.courseTitle}. Current lesson: ${ctx.lesson}. Progress: ${ctx.progress}%. Weak area: ${ctx.focusSkill} (${ctx.focusScore}%). Career goal: ${ctx.careerGoal}. Insight: ${ctx.insight}. Question: ${question}`
+  const parts = [`Student: ${ctx.firstName}.`]
+  if (ctx.courseTitle) parts.push(`Course: ${ctx.courseTitle}.`)
+  if (ctx.lesson) parts.push(`Current lesson: ${ctx.lesson}.`)
+  if (ctx.progress > 0) parts.push(`Progress: ${ctx.progress}%.`)
+  if (ctx.focusSkill && ctx.focusScore > 0) parts.push(`Focus skill: ${ctx.focusSkill} (${ctx.focusScore}%).`)
+  if (ctx.careerGoal) parts.push(`Career goal: ${ctx.careerGoal}.`)
+  if (ctx.insight) parts.push(`Insight: ${ctx.insight}.`)
+  parts.push(`Question: ${question}`)
+  return parts.join(' ')
 }
 
 export function loadSavedLessons(): SavedLesson[] {
+  const key = userStorageKey(SAVED_KEY)
+  if (!key) return []
   try {
-    const raw = localStorage.getItem(SAVED_KEY)
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as SavedLesson[]) : []
   } catch {
     return []
@@ -323,11 +276,13 @@ export function loadSavedLessons(): SavedLesson[] {
 }
 
 export function saveLesson(item: Omit<SavedLesson, 'id' | 'savedAt'>): SavedLesson[] {
+  const key = userStorageKey(SAVED_KEY)
+  if (!key) return []
   const next = [
     { ...item, id: uid(), savedAt: new Date().toISOString() },
     ...loadSavedLessons(),
   ].slice(0, 40)
-  localStorage.setItem(SAVED_KEY, JSON.stringify(next))
+  localStorage.setItem(key, JSON.stringify(next))
   return next
 }
 
@@ -430,37 +385,11 @@ export const INTERVIEW_QUESTIONS = [
 ]
 
 export const INTERVIEW_FEEDBACK = {
-  score: 78,
-  breakdown: [
-    { label: 'Technical Knowledge', v: 82 },
-    { label: 'Communication', v: 76 },
-    { label: 'Problem Solving', v: 80 },
-    { label: 'Confidence', v: 72 },
-  ],
-  rec: 'Practice React architecture questions.',
+  score: 0,
+  breakdown: [] as { label: string; v: number }[],
+  rec: 'Review your answers and practice again when you are ready.',
 }
 
 export function pickTutor(list: TutorListing[]): TutorListing | null {
-  return (
-    list.find(t => /sarah kim/i.test(t.name)) ||
-    list.find(t => /react|node|full.?stack/i.test(`${t.name} ${t.expertise ?? ''} ${t.subject ?? ''}`)) ||
-    list[0] ||
-    null
-  )
-}
-
-export const MOCK_TUTOR: TutorListing = {
-  id: 'mock-sarah',
-  profile_id: null,
-  name: 'Dr. Sarah Kim',
-  expertise: 'React & Node.js',
-  intro: null,
-  subject: 'Programming',
-  tags: ['React', 'Node.js'],
-  hourly_rate_cents: 80000,
-  rating: 4.9,
-  reviews: 128,
-  students_taught: 320,
-  available: true,
-  image_key: null,
+  return list[0] || null
 }

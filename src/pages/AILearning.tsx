@@ -24,10 +24,8 @@ import {
   contextualCoachReply,
   EMPTY_PROMPTS,
   loadSavedLessons,
-  MOCK_TUTOR,
   pickTutor,
   saveLesson,
-  seedConversations,
   SIDEBAR_CAREER,
   SIDEBAR_LEARN,
   SIDEBAR_PRACTICE,
@@ -55,18 +53,33 @@ function TutorCard({
   stuck,
   onFind,
 }: {
-  tutor: TutorListing
+  tutor: TutorListing | null
   stuck: boolean
   onFind: () => void
 }) {
+  if (!tutor) {
+    return (
+      <div className="glass rounded-2xl p-4">
+        <div className="text-sm font-bold text-ink mb-1" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
+          Still stuck?
+        </div>
+        <p className="text-sm text-muted leading-relaxed mb-3">
+          Book a tutor session if you want human help.
+        </p>
+        <button type="button" className="btn-primary text-sm w-full" onClick={onFind}>
+          Find a Tutor →
+        </button>
+      </div>
+    )
+  }
   const first = tutor.name.split(' ')[0]
   return (
     <div className="glass rounded-2xl p-4" style={{ borderColor: stuck ? 'rgba(108,92,231,0.28)' : undefined }}>
       <div className="text-sm font-bold text-ink mb-1" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
-        👨‍🏫 Still Stuck?
+        Still stuck?
       </div>
       <p className="text-sm text-muted leading-relaxed mb-3">
-        I have noticed you are having difficulty with React Hooks. Would you like help from a human tutor?
+        Recommended tutor from the marketplace — not a personal assignment unless you book them.
       </p>
       <div className="flex items-center gap-3 mb-3">
         <div
@@ -77,9 +90,9 @@ function TutorCard({
         </div>
         <div className="min-w-0">
           <div className="text-sm font-bold text-ink truncate">{tutor.name}</div>
-          <div className="text-xs text-muted truncate">{tutor.expertise || 'React & Node.js'}</div>
+          <div className="text-xs text-muted truncate">{tutor.expertise || 'Tutor'}</div>
           <div className="text-xs text-muted">
-            ⭐ {tutor.rating} · ₹{/sarah/i.test(tutor.name) ? 800 : Math.round(tutor.hourly_rate_cents / 100)}/hr
+            ⭐ {tutor.rating} · ₹{Math.round(tutor.hourly_rate_cents / 100)}/hr
           </div>
         </div>
       </div>
@@ -101,7 +114,7 @@ function ContextPanel({
   onFindTutor,
 }: {
   ctx: AiStudentContext
-  tutor: TutorListing
+  tutor: TutorListing | null
   stuck: boolean
   onPractice: () => void
   onFindTutor: () => void
@@ -113,9 +126,9 @@ function ContextPanel({
           🎯 Your Learning Context
         </h3>
         <div className="text-xs text-muted mb-0.5">Course</div>
-        <div className="text-sm font-semibold text-ink mb-2">{ctx.courseTitle}</div>
+        <div className="text-sm font-semibold text-ink mb-2">{ctx.courseTitle || 'No course yet'}</div>
         <div className="text-xs text-muted mb-0.5">Current Lesson</div>
-        <div className="text-sm font-semibold text-ink mb-2">{ctx.lesson}</div>
+        <div className="text-sm font-semibold text-ink mb-2">{ctx.lesson || 'Not started'}</div>
         <div className="text-xs text-muted mb-1">Progress</div>
         <div className="flex items-center gap-2">
           <div className="progress-bar flex-1">
@@ -130,6 +143,7 @@ function ContextPanel({
           🧬 Skill Snapshot
         </h3>
         <div className="space-y-2.5">
+          {ctx.skills.length === 0 && <p className="text-sm text-muted">Skill snapshot appears after you enroll or set a career goal.</p>}
           {ctx.skills.map(sk => (
             <div key={sk.name}>
               <div className="flex justify-between text-sm mb-1">
@@ -148,10 +162,10 @@ function ContextPanel({
         <h3 className="text-sm font-bold text-ink mb-1" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
           ⚠️ Focus Area
         </h3>
-        <div className="text-sm font-bold text-ink">{ctx.focusSkill}</div>
-        <div className="text-sm text-muted mb-2">{ctx.focusScore}% proficiency</div>
+        <div className="text-sm font-bold text-ink">{ctx.focusSkill || 'Not set'}</div>
+        <div className="text-sm text-muted mb-2">{ctx.focusScore > 0 ? `${ctx.focusScore}% proficiency` : 'No focus score yet'}</div>
         <p className="text-sm text-muted leading-relaxed mb-3">
-          Spend 15 minutes practicing TypeScript fundamentals.
+          {ctx.focusSkill ? `Practice ${ctx.focusSkill} next.` : 'Choose a topic to practice when you are ready.'}
         </p>
         <button type="button" className="btn-primary text-sm w-full" onClick={onPractice}>
           Practice Now →
@@ -162,7 +176,9 @@ function ContextPanel({
         <h3 className="text-sm font-bold text-ink mb-2" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
           ✨ AI Insight
         </h3>
-        <p className="text-sm text-muted leading-relaxed mb-3">"{ctx.insight}"</p>
+        <p className="text-sm text-muted leading-relaxed mb-3">
+          {ctx.insight || 'Insights appear from your actual lessons and practice — nothing is pre-seeded.'}
+        </p>
         <button type="button" className="btn-primary text-sm w-full" onClick={onPractice}>
           Practice This →
         </button>
@@ -174,13 +190,13 @@ function ContextPanel({
 }
 
 export default function AILearning() {
-  const { profile } = useAuth()
+  const { profile, session } = useAuth()
   const nav = useNav()
-  const firstName = (profile?.full_name || 'Alex').split(' ')[0]
+  const firstName = (profile?.full_name || '').split(' ')[0]
   const [view, setView] = useState<NavId>('tutor')
   const [enrolled, setEnrolled] = useState<(CourseRow & { progress: number; last_lesson_id: string | null })[]>([])
   const [careerGoal, setCareerGoal] = useState<string | null>(null)
-  const [tutor, setTutor] = useState<TutorListing>(MOCK_TUTOR)
+  const [tutor, setTutor] = useState<TutorListing | null>(null)
   const [convos, setConvos] = useState<AiConversation[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMsg[]>([])
@@ -196,7 +212,6 @@ export default function AILearning() {
   const [navOpen, setNavOpen] = useState(false)
   const [ctxOpen, setCtxOpen] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
-  const seeds = useMemo(() => seedConversations(), [])
   const ctx = useMemo(
     () => buildAiStudentContext({ firstName, enrolled, careerGoal }),
     [firstName, enrolled, careerGoal],
@@ -214,21 +229,22 @@ export default function AILearning() {
   }
 
   useEffect(() => {
+    setSaved(loadSavedLessons())
     loadList()
     getMyEnrolledCourses().then(setEnrolled).catch(() => setEnrolled([]))
     getCareerProfile()
       .then(p => setCareerGoal(p?.target_role ?? null))
       .catch(() => setCareerGoal(null))
     getTutorListings()
-      .then(list => setTutor(pickTutor(list) || MOCK_TUTOR))
-      .catch(() => setTutor(MOCK_TUTOR))
+      .then(list => setTutor(pickTutor(list)))
+      .catch(() => setTutor(null))
     const pending = takePendingAiPrompt()
     if (pending) {
       setPhase('welcome')
       setMessages([welcomeMessage(buildAiStudentContext({ firstName, enrolled: [], careerGoal: null }))])
       setInput(pending)
     }
-  }, [])
+  }, [session?.user.id])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -270,13 +286,6 @@ export default function AILearning() {
   const openConvo = async (id: string) => {
     setView('tutor')
     setNavOpen(false)
-    const seed = seeds.find(s => s.id === id)
-    if (seed) {
-      setActiveId(id)
-      setMessages(seed.messages)
-      setPhase('chat')
-      return
-    }
     setActiveId(id)
     try {
       const rows = await getConversationMessages(id)
@@ -407,10 +416,7 @@ export default function AILearning() {
     send('Explain useEffect simpler')
   }
 
-  const recentRows = [
-    ...convos.map(c => ({ id: c.id, title: c.title })),
-    ...seeds.filter(s => !convos.some(c => c.title === s.title)).map(s => ({ id: s.id, title: s.title })),
-  ]
+  const recentRows = convos.map(c => ({ id: c.id, title: c.title }))
   const visibleRecent = showAllRecent ? recentRows : recentRows.slice(0, 4)
 
   return (
@@ -553,7 +559,7 @@ export default function AILearning() {
         {view === 'practice' && <PracticeStudio variant="practice" onAskTutor={() => nav('tutors')} />}
         {view === 'coding' && <PracticeStudio variant="coding" onAskTutor={() => nav('tutors')} />}
         {view === 'quizzes' && <QuizStudio onPractice={() => setView('practice')} />}
-        {view === 'interview' && <InterviewStudio onPractice={() => setView('practice')} />}
+        {view === 'interview' && <InterviewStudio targetRole={careerGoal} onPractice={() => setView('practice')} />}
 
         {view === 'saved' && (
           <div className="flex-1 overflow-y-auto p-5 md:p-6">
@@ -578,7 +584,11 @@ export default function AILearning() {
             <h2 className="text-lg font-bold text-ink mb-4" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>My Courses</h2>
             {enrolled.length === 0 && (
               <div className="glass rounded-2xl p-6 max-w-lg">
-                <p className="text-sm text-muted mb-3">You are not enrolled yet. Your AI tutor still knows you are aiming at Full Stack Web Development.</p>
+                <p className="text-sm text-muted mb-3">
+                  {enrolled.length === 0
+                    ? 'You are not enrolled yet. Explore courses to start a real learning path.'
+                    : 'Continue from your enrolled courses.'}
+                </p>
                 <button type="button" className="btn-primary text-sm" onClick={() => nav('courses')}>Explore Courses →</button>
               </div>
             )}
@@ -606,7 +616,11 @@ export default function AILearning() {
             <div className="glass rounded-2xl p-6 max-w-xl">
               <h2 className="text-lg font-bold text-ink mb-2" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>💼 Career Prep</h2>
               <p className="text-sm text-muted leading-relaxed mb-4">
-                Target role: <span className="font-semibold text-ink">{ctx.careerGoal}</span>. Your strongest skill is React. TypeScript is the gap to close next.
+                Target role:{' '}
+                <span className="font-semibold text-ink">{ctx.careerGoal || 'Choose a target role'}</span>
+                {ctx.skills.length === 0
+                  ? '. Skill gaps appear after you add career data or course progress.'
+                  : '.'}
               </p>
               <div className="flex flex-wrap gap-2">
                 <button type="button" className="btn-primary text-sm" onClick={() => setView('interview')}>Start mock interview →</button>
@@ -621,9 +635,15 @@ export default function AILearning() {
           <>
             <div className="px-4 md:px-6 pt-3 flex-shrink-0">
               <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span className="text-muted">Currently learning</span>
-                <span className="badge badge-primary">{ctx.courseTitle}</span>
-                <span className="badge badge-accent">{ctx.lesson}</span>
+                <span className="text-muted">{ctx.courseTitle ? 'Currently learning' : 'Get started'}</span>
+                {ctx.courseTitle ? (
+                  <>
+                    <span className="badge badge-primary">{ctx.courseTitle}</span>
+                    {ctx.lesson ? <span className="badge badge-accent">{ctx.lesson}</span> : null}
+                  </>
+                ) : (
+                  <span className="badge badge-primary">Start your AI learning journey</span>
+                )}
               </div>
             </div>
 
@@ -634,7 +654,7 @@ export default function AILearning() {
               {phase === 'empty' && messages.length === 0 && (
                 <div className="h-full flex flex-col items-center justify-center text-center px-4">
                   <h2 className="text-2xl font-bold text-ink mb-2" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
-                    ✨ What do you want to learn today?
+                    Start your AI learning journey
                   </h2>
                   <p className="text-sm text-muted mb-6 max-w-md">
                     Ask LearnSyra to explain, practice, build, or prepare you.
