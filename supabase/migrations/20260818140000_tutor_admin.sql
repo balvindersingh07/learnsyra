@@ -116,14 +116,3 @@ create policy "lessons write tutor" on public.course_lessons
 
 grant select, insert, update, delete on public.course_modules, public.course_lessons to authenticated;
 grant select, insert, update, delete on public.tutor_listings to authenticated;
-
--- Attach demo tutor to listings + catalog so the tutor dashboard has work
-update public.tutor_listings
-set profile_id = p.id
-from public.profiles p
-where p.role = 'tutor' and public.tutor_listings.profile_id is null;
-
-update public.courses
-set tutor_id = p.id
-from public.profiles p
-where p.role = 'tutor' and public.courses.tutor_id is null;

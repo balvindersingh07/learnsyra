@@ -167,39 +167,3 @@ grant select on public.course_modules, public.course_lessons, public.tutor_listi
 grant select, insert, update, delete on public.lesson_progress, public.student_projects, public.bookings,
   public.career_profiles, public.notifications, public.bookmarks to authenticated;
 grant select, insert on public.certificates to authenticated;
-
--- Seed curriculum for existing courses (idempotent-ish)
-insert into public.course_modules (course_id, title, sort_order)
-select c.id, m.title, m.ord
-from public.courses c
-cross join (values
-  (1, 'Module 1: Foundations'),
-  (2, 'Module 2: Core Skills'),
-  (3, 'Module 3: Projects & Career')
-) as m(ord, title)
-where not exists (select 1 from public.course_modules cm where cm.course_id = c.id);
-
-insert into public.course_lessons (module_id, title, lesson_type, duration_min, sort_order, is_free)
-select cm.id, l.title, l.typ, l.dur, l.ord, l.free
-from public.course_modules cm
-join public.courses c on c.id = cm.course_id
-cross join lateral (
-  select * from (values
-    (1, 'Welcome & overview', 'video', 12, true),
-    (2, 'Core concepts explained', 'video', 28, cm.sort_order = 1),
-    (3, 'Hands-on practice', 'project', 45, false),
-    (4, 'Knowledge check', 'quiz', 15, false)
-  ) as x(ord, title, typ, dur, free)
-) l
-where not exists (select 1 from public.course_lessons cl where cl.module_id = cm.id);
-
-insert into public.tutor_listings (name, expertise, intro, subject, tags, hourly_rate_cents, rating, reviews, students_taught, available, image_key)
-select * from (values
-  ('Dr. Sarah Kim', 'Full Stack Development · React · Node.js', 'Ex-Google engineer. I make complex concepts simple.', 'Programming', array['React','Node.js','TypeScript'], 6500, 4.98, 342, 1840, true, 'photo-1494790108755-2616b612b786'),
-  ('Prof. James Wright', 'Machine Learning · Python · Data Science', 'PhD CS. Helped 2000+ students break into data careers.', 'Data Science', array['Python','TensorFlow','SQL'], 8000, 4.95, 289, 2100, true, 'photo-1472099645785-5658abf4ff4e'),
-  ('Emma Clarke', 'Business English · Communication', '8 years teaching executives at Fortune 500 companies.', 'English', array['Business English','Presentation'], 4500, 4.92, 198, 890, false, 'photo-1438761681033-6461ffad8d80'),
-  ('Ravi Patel', 'Finance · MBA · Business Analytics', 'Former banker. I simplify finance and MBA cases.', 'Business', array['Finance','Excel','MBA'], 5500, 4.88, 156, 670, true, 'photo-1507003211169-0a1dd7228f2d'),
-  ('Priya Sharma', 'iOS · Swift · Mobile Design', 'Shipped apps used by millions. Patient iOS mentor.', 'Programming', array['Swift','SwiftUI','iOS'], 7000, 4.91, 112, 445, true, 'photo-1534528741775-53994a69daeb'),
-  ('Carlos Rivera', 'Career Coaching · Resume · Interviews', 'Ex-FAANG recruiter. I help you tell your story.', 'Career', array['Resume','Interviews','LinkedIn'], 5000, 4.96, 420, 2100, true, 'photo-1506794778202-cad84cf45f1d')
-) as v(name, expertise, intro, subject, tags, hourly_rate_cents, rating, reviews, students_taught, available, image_key)
-where not exists (select 1 from public.tutor_listings t where t.name = v.name);

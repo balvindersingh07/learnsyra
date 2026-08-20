@@ -58,36 +58,3 @@ create policy "attendance write own" on public.live_class_attendance
 
 grant select, insert, update, delete on public.live_classes to authenticated;
 grant select, insert on public.live_class_attendance to authenticated;
-
--- Demo: one ended class with a recording, one upcoming session
-insert into public.live_classes (tutor_id, course_id, title, description, status, starts_at, ended_at, meeting_url, recording_url)
-select
-  p.id,
-  c.id,
-  'Live: React Hooks crash course',
-  'Replay of a live session. Missed it? Watch the recording here.',
-  'ended',
-  now() - interval '2 days',
-  now() - interval '2 days' + interval '1 hour',
-  'https://meet.jit.si/LearnSyraDemoReplay',
-  'https://www.youtube.com/watch?v=O6P86uwfdR0'
-from public.profiles p
-join public.courses c on c.tutor_id = p.id
-where p.role = 'tutor'
-  and not exists (select 1 from public.live_classes x where x.title = 'Live: React Hooks crash course')
-limit 1;
-
-insert into public.live_classes (tutor_id, course_id, title, description, status, starts_at, meeting_url)
-select
-  p.id,
-  c.id,
-  'Live office hours',
-  'Bring questions from your current course. Tutor will go live from the tutor dashboard.',
-  'scheduled',
-  now() + interval '1 day',
-  'https://meet.jit.si/LearnSyraDemoOfficeHours'
-from public.profiles p
-join public.courses c on c.tutor_id = p.id
-where p.role = 'tutor'
-  and not exists (select 1 from public.live_classes x where x.title = 'Live office hours')
-limit 1;
