@@ -1,9 +1,19 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import CareerHubNav from '../components/career/CareerHubNav'
-import { getCareerProfile, getCertificates } from '../lib/api'
+import { useAuth } from '../context/AuthContext'
 import {
+  computeReadiness,
+  getCareerProfile,
+  getCertificates,
+  getMyEnrollments,
+  getMyStudentProjects,
+  getProjects,
+} from '../lib/api'
+import {
+  emptyCareerSnapshot,
   getCareerSnapshot,
+  getDemoCareerSnapshot,
   loadWeeklyActions,
   saveWeeklyActions,
   statusFor,
@@ -57,35 +67,87 @@ function MiniBar({ value, label }: { value: number; label?: string }) {
 
 export default function CareerCenter() {
   const navigate = useNavigate()
+  const { session } = useAuth()
+  const uid = session?.user.id ?? null
   const ringId = useId()
-  const [data, setData] = useState<CareerSnapshot>(() => getCareerSnapshot())
-  const [week, setWeek] = useState(() => loadWeeklyActions(getCareerSnapshot().weeklyActions))
+  const [previewDemo, setPreviewDemo] = useState(false)
+  const [data, setData] = useState<CareerSnapshot>(() => emptyCareerSnapshot())
+  const [week, setWeek] = useState(() => emptyCareerSnapshot().weeklyActions)
   const [openMatch, setOpenMatch] = useState<CareerMatch | null>(null)
   const [certNote, setCertNote] = useState<string | null>(null)
   const shown = useCountUp(data.readinessScore)
 
   useEffect(() => {
-    getCareerProfile()
-      .then(p => {
-        if (!p) return
-        setData(getCareerSnapshot({ targetRole: p.target_role }))
+    if (previewDemo) {
+      const demo = getDemoCareerSnapshot()
+      setData(demo)
+      setWeek(demo.weeklyActions)
+      return
+    }
+
+    let alive = true
+    const load = async () => {
+      const [profile, certs, mine, catalog, enrollments] = await Promise.all([
+        getCareerProfile().catch(() => null),
+        getCertificates().catch(() => []),
+        getMyStudentProjects().catch(() => []),
+        getProjects().catch(() => []),
+        getMyEnrollments().catch(() => []),
+      ])
+      if (!alive) return
+      const titleById = new Map(catalog.map(p => [p.id, p.title]))
+      const portfolio = mine.map(row => ({
+        id: row.id,
+        title: titleById.get(row.project_id) || 'Project',
+        score: 0,
+        skills: catalog.find(p => p.id === row.project_id)?.skills ?? [],
+        status: (row.status === 'completed' ? 'Portfolio Ready' : 'Needs Review') as 'Portfolio Ready' | 'Needs Review',
+        href: `/projects/${row.project_id}`,
+      }))
+      const certificates = certs.map(r => ({
+        title: r.title,
+        completed: new Date(r.issued_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+        official: true,
+      }))
+      const hasActivity =
+        Boolean(profile?.target_role?.trim()) ||
+        (profile?.skills?.length ?? 0) > 0 ||
+        certs.length > 0 ||
+        mine.length > 0 ||
+        enrollments.length > 0
+      const readiness = hasActivity
+        ? computeReadiness({
+            enrolledCount: enrollments.length,
+            avgProgress:
+              enrollments.length > 0
+                ? enrollments.reduce((s, e) => s + (e.progress ?? 0), 0) / enrollments.length
+                : 0,
+            submittedProjects: mine.filter(p => p.status === 'submitted' || p.status === 'completed').length,
+            resumeLength: profile?.resume_text?.trim().length ?? 0,
+            targetRole: profile?.target_role ?? '',
+          })
+        : 0
+      const snap = getCareerSnapshot({
+        userId: uid,
+        targetRole: profile?.target_role,
+        readiness: hasActivity ? readiness : undefined,
+        skills: profile?.skills,
+        certificates,
+        portfolio,
       })
-      .catch(() => {})
-    getCertificates()
-      .then(rows => {
-        if (!rows.length) return
-        setData(prev => ({
-          ...prev,
-          certificates: rows.map(r => ({
-            title: r.title,
-            completed: new Date(r.issued_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
-            official: true,
-          })),
-          portfolioStats: { ...prev.portfolioStats, certificates: rows.length },
-        }))
-      })
-      .catch(() => {})
-  }, [])
+      setData(snap)
+      setWeek(loadWeeklyActions(snap.weeklyActions, uid))
+    }
+    load().catch(() => {
+      if (!alive) return
+      const snap = getCareerSnapshot({ userId: uid })
+      setData(snap)
+      setWeek(loadWeeklyActions(snap.weeklyActions, uid))
+    })
+    return () => {
+      alive = false
+    }
+  }, [previewDemo, uid])
 
   useEffect(() => {
     if (!openMatch) return
@@ -116,7 +178,7 @@ export default function CareerCenter() {
   const toggleWeek = (id: string) => {
     const next = week.map(w => (w.id === id ? { ...w, done: !w.done } : w))
     setWeek(next)
-    saveWeeklyActions(next)
+    if (!previewDemo) saveWeeklyActions(next, uid)
   }
 
   return (
@@ -129,9 +191,12 @@ export default function CareerCenter() {
         >
           Turn Your Skills Into Your <span className="gradient-text">Career.</span>
         </h1>
-        <p className="text-muted text-base sm:text-lg max-w-2xl leading-relaxed">
+        <p className="text-muted text-base sm:text-lg max-w-2xl leading-relaxed mb-4">
           Learn, build real projects, prepare for interviews, and become job-ready with an AI-guided career plan.
         </p>
+        <button type="button" className="btn-glass text-sm" onClick={() => setPreviewDemo(v => !v)}>
+          {previewDemo ? 'Exit Demo Preview' : 'Preview Demo Career Profile'}
+        </button>
       </header>
 
       <CareerHubNav />
@@ -179,13 +244,15 @@ export default function CareerCenter() {
               <h2 id="readiness-heading" className="text-2xl font-black text-ink mb-1" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
                 🎯 Career Readiness
               </h2>
-              <p className="text-sm font-semibold text-success mb-2">+{data.readinessDelta}% this month</p>
+              <p className="text-sm font-semibold text-success mb-2">
+                {data.readinessDelta > 0 ? `+${data.readinessDelta}% this month` : 'Getting Started'}
+              </p>
               <p className="text-sm text-muted leading-relaxed mb-3">{data.readinessNote}</p>
               <div className="flex flex-wrap gap-2">
-                <span className="badge badge-primary">✨ AI assessed</span>
+                <span className="badge badge-primary">{data.simulated ? '✨ Demo preview' : '✨ Built from your activity'}</span>
                 {data.simulated && (
                   <span className="badge" style={{ background: 'rgba(79,140,255,0.12)', color: '#4F8CFF' }}>
-                    Simulated local snapshot
+                    Sample data — not your profile
                   </span>
                 )}
               </div>
@@ -199,27 +266,37 @@ export default function CareerCenter() {
           </h2>
           <div className="flex items-end justify-between gap-3 mb-2">
             <div className="text-2xl font-black text-ink" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
-              {data.targetRole}
+              {data.targetRole || 'Set your target role'}
             </div>
-            <div className="text-lg font-black text-primary career-count">{data.targetMatch}% Match</div>
+            <div className="text-lg font-black text-primary career-count">
+              {data.targetMatch > 0 ? `${data.targetMatch}% Match` : 'Not personalized yet'}
+            </div>
           </div>
           <p className="text-sm text-muted mb-4 leading-relaxed">
-            Based on your skills, projects, learning activity and career preferences.
+            {data.targetRole
+              ? 'Based on your skills, projects, learning activity and career preferences.'
+              : 'Choose a role to start matching. Nothing here is filled with sample career data.'}
           </p>
-          <div className="flex flex-wrap gap-2 mb-2">
-            {data.haveSkills.map(s => (
-              <span key={s} className="text-xs font-semibold px-2.5 py-1 rounded-lg" style={{ background: 'rgba(32,201,151,0.12)', color: '#0F8A68' }}>
-                ✓ {s}
-              </span>
-            ))}
-          </div>
-          <div className="flex flex-wrap gap-2 mb-5">
-            {data.needSkills.map(s => (
-              <span key={s} className="text-xs font-semibold px-2.5 py-1 rounded-lg" style={{ background: 'rgba(245,158,11,0.12)', color: '#B45309' }}>
-                ⚠ {s}
-              </span>
-            ))}
-          </div>
+          {data.haveSkills.length === 0 && data.needSkills.length === 0 ? (
+            <p className="text-sm text-muted mb-5">No skills on your profile yet. Add a target role or complete a course to start your skill map.</p>
+          ) : (
+            <>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {data.haveSkills.map(s => (
+                  <span key={s} className="text-xs font-semibold px-2.5 py-1 rounded-lg" style={{ background: 'rgba(32,201,151,0.12)', color: '#0F8A68' }}>
+                    ✓ {s}
+                  </span>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-2 mb-5">
+                {data.needSkills.map(s => (
+                  <span key={s} className="text-xs font-semibold px-2.5 py-1 rounded-lg" style={{ background: 'rgba(245,158,11,0.12)', color: '#B45309' }}>
+                    ⚠ {s}
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
           <button type="button" className="btn-primary text-sm" onClick={() => document.getElementById('skill-gaps')?.scrollIntoView({ behavior: 'smooth' })}>
             Improve My Match →
           </button>
@@ -301,36 +378,51 @@ export default function CareerCenter() {
         <h2 id="skills-heading" className="text-lg font-black text-ink mb-1" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
           🧬 Skills You Need
         </h2>
-        <p className="text-sm text-muted mb-5">Target: {data.targetRole}</p>
-        <div className="grid md:grid-cols-2 gap-6">
-          <div>
-            <h3 className="text-sm font-bold text-ink mb-3">Strong Skills</h3>
-            <div className="space-y-4">
-              {strong.map(s => (
-                <SkillRow key={s.name} skill={s} onImprove={() => navigate(`/courses?q=${encodeURIComponent(s.courseQuery)}`)} />
-              ))}
+        <p className="text-sm text-muted mb-5">
+          {data.targetRole ? `Target: ${data.targetRole}` : 'Set a target role to focus this map. Sample skills are not shown as yours.'}
+        </p>
+        {data.skills.length === 0 ? (
+          <p className="text-sm text-muted">No skills tracked yet. Enroll in a course or save skills on your career profile.</p>
+        ) : (
+          <div className="grid md:grid-cols-2 gap-6">
+            <div>
+              <h3 className="text-sm font-bold text-ink mb-3">Strong Skills</h3>
+              <div className="space-y-4">
+                {strong.map(s => (
+                  <SkillRow key={s.name} skill={s} onImprove={() => navigate(`/courses?q=${encodeURIComponent(s.courseQuery)}`)} />
+                ))}
+                {strong.length === 0 && <p className="text-sm text-muted">None marked strong yet.</p>}
+              </div>
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-ink mb-3">Skills To Improve</h3>
+              <div className="space-y-4">
+                {improve.map(s => (
+                  <SkillRow key={s.name} skill={s} onImprove={() => navigate(`/courses?q=${encodeURIComponent(s.courseQuery)}`)} />
+                ))}
+                {improve.length === 0 && <p className="text-sm text-muted">None listed yet.</p>}
+              </div>
             </div>
           </div>
-          <div>
-            <h3 className="text-sm font-bold text-ink mb-3">Skills To Improve</h3>
-            <div className="space-y-4">
-              {improve.map(s => (
-                <SkillRow key={s.name} skill={s} onImprove={() => navigate(`/courses?q=${encodeURIComponent(s.courseQuery)}`)} />
-              ))}
-            </div>
-          </div>
-        </div>
+        )}
       </section>
 
       <section className="mb-6" aria-labelledby="matches-heading">
         <Heading>🎯 Career Matches</Heading>
+        <p className="text-sm text-muted mb-4">
+          {data.simulated
+            ? 'Demo matches for the sample persona.'
+            : 'Suggested paths to explore — not a personalized score until you add real skills and projects.'}
+        </p>
         <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
           {data.careerMatches.map(m => (
             <article key={m.id} className="glass rounded-2xl p-5 career-card flex flex-col">
               <div className="text-base font-black text-ink" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
                 {m.title}
               </div>
-              <div className="text-2xl font-black text-primary career-count my-2">{m.match}% Match</div>
+              <div className="text-2xl font-black text-primary career-count my-2">
+                {m.match > 0 ? `${m.match}% Match` : 'Explore this path'}
+              </div>
               <p className="text-xs text-muted mb-2">Strong: {m.strong.join(' · ')}</p>
               <p className="text-xs text-muted mb-2">Missing: {m.missing.join(' · ')}</p>
               <p className="text-xs text-ink mb-4 flex-1">{m.nextStep}</p>
@@ -350,19 +442,24 @@ export default function CareerCenter() {
           <p className="text-sm text-muted mb-4">
             {data.portfolioStats.projects} Projects · {data.portfolioStats.certificates} Certificates · {data.portfolioStats.verified} Skills Verified
           </p>
-          <div className="space-y-3 mb-4">
+          {data.portfolio.length === 0 ? (
+            <p className="text-sm text-muted mb-4">No projects in your portfolio yet. Start a catalog project to see it here.</p>
+          ) : (
+            <div className="space-y-3 mb-4">
             {data.portfolio.map(p => (
               <article key={p.id} className="rounded-xl px-4 py-3 career-card" style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(99,102,241,0.12)' }}>
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <div className="text-sm font-bold text-ink">{p.title}</div>
-                    <div className="text-xs text-muted">{p.skills.join(' · ')}</div>
+                    <div className="text-xs text-muted">{p.skills.join(' · ') || 'Skills update as you build'}</div>
                   </div>
                   <div className="text-right">
-                    <div className="text-sm font-black text-ink career-count">{p.score} / 100</div>
-                    <div className="text-xs" style={{ color: p.status === 'Portfolio Ready' ? '#0F8A68' : '#B45309' }}>
-                      {p.status}
-                    </div>
+                    <div className="text-sm font-black text-ink career-count">{p.score > 0 ? `${p.score} / 100` : p.status}</div>
+                    {p.score > 0 && (
+                      <div className="text-xs" style={{ color: p.status === 'Portfolio Ready' ? '#0F8A68' : '#B45309' }}>
+                        {p.status}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <button type="button" className="text-xs font-semibold text-primary mt-2" onClick={() => navigate(p.href)}>
@@ -370,7 +467,8 @@ export default function CareerCenter() {
                 </button>
               </article>
             ))}
-          </div>
+            </div>
+          )}
           <div className="flex flex-wrap gap-2">
             <button type="button" className="btn-glass text-sm" onClick={() => navigate('/profile')}>
               View Portfolio
@@ -385,6 +483,9 @@ export default function CareerCenter() {
           <h2 id="certs-heading" className="text-lg font-black text-ink mb-3" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
             🏆 Your Certificates
           </h2>
+          {data.certificates.length === 0 ? (
+            <p className="text-sm text-muted mb-3">No certificates yet. Finish a course to earn one.</p>
+          ) : (
           <div className="space-y-3 mb-3">
             {data.certificates.map(c => (
               <article key={c.title} className="rounded-xl px-4 py-3" style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(99,102,241,0.12)' }}>
@@ -402,6 +503,7 @@ export default function CareerCenter() {
               </article>
             ))}
           </div>
+          )}
           {certNote && <p className="text-sm text-muted">{certNote}</p>}
         </section>
       </div>
@@ -411,7 +513,10 @@ export default function CareerCenter() {
           <h2 id="impact-heading" className="text-lg font-black text-ink mb-4" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
             🚀 Projects That Strengthen Your Career
           </h2>
-          {data.projectImpact.map(p => (
+          {data.projectImpact.length === 0 ? (
+            <p className="text-sm text-muted">Project impact appears after you start real projects. Sample trackers are not listed here.</p>
+          ) : (
+          data.projectImpact.map(p => (
             <article key={p.title}>
               <div className="text-base font-bold text-ink mb-2">{p.title}</div>
               <div className="flex flex-wrap gap-2 mb-3">
@@ -428,13 +533,16 @@ export default function CareerCenter() {
                 View Project →
               </button>
             </article>
-          ))}
+          ))
+          )}
         </section>
 
         <section className="glass rounded-3xl p-6" aria-labelledby="tutor-heading">
           <h2 id="tutor-heading" className="text-lg font-black text-ink mb-3" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
             👨‍🏫 Expert Guidance
           </h2>
+          {data.tutorImpact.name ? (
+            <>
           <div className="text-base font-bold text-ink">{data.tutorImpact.name}</div>
           <div className="text-sm text-muted mb-3">Session: {data.tutorImpact.session}</div>
           <blockquote className="text-sm text-ink leading-relaxed mb-4 pl-4" style={{ borderLeft: '3px solid #22C7D6' }}>
@@ -450,6 +558,15 @@ export default function CareerCenter() {
           <button type="button" className="btn-primary text-sm" onClick={() => navigate(tutorBookPath(data.tutorImpact.tutorId))}>
             Book Follow-up →
           </button>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-muted mb-4">No tutor sessions yet. Book a mentor when you want expert feedback — sample tutors are not shown as yours.</p>
+              <button type="button" className="btn-primary text-sm" onClick={() => navigate('/tutors')}>
+                Browse Tutors →
+              </button>
+            </>
+          )}
         </section>
       </div>
 
@@ -458,7 +575,9 @@ export default function CareerCenter() {
           <h2 id="iv-heading" className="text-lg font-black text-ink mb-2" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
             🎤 Interview Readiness
           </h2>
-          <div className="text-3xl font-black text-ink career-count mb-4">{data.interview.overall} / 100</div>
+          <div className="text-3xl font-black text-ink career-count mb-4">
+            {data.interview.overall > 0 ? `${data.interview.overall} / 100` : 'Not started'}
+          </div>
           <div className="space-y-2 mb-4">
             {[
               ['Technical', data.interview.technical],
@@ -483,14 +602,20 @@ export default function CareerCenter() {
           <h2 id="resume-heading" className="text-lg font-black text-ink mb-2" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
             📄 Resume Readiness
           </h2>
-          <div className="text-3xl font-black text-ink career-count mb-4">{data.resume.score}%</div>
-          <ul className="space-y-2 mb-5">
-            {data.resume.checks.map(c => (
-              <li key={c.label} className="text-sm">
-                <span style={{ color: c.ok ? '#0F8A68' : '#B45309' }}>{c.ok ? '✓' : '⚠'}</span> {c.label}
-              </li>
-            ))}
-          </ul>
+          <div className="text-3xl font-black text-ink career-count mb-4">
+            {data.resume.score > 0 || data.resume.checks.length > 0 ? `${data.resume.score}%` : 'Not created'}
+          </div>
+          {data.resume.checks.length === 0 ? (
+            <p className="text-sm text-muted mb-5">No resume on file yet. Create one to see completeness checks.</p>
+          ) : (
+            <ul className="space-y-2 mb-5">
+              {data.resume.checks.map(c => (
+                <li key={c.label} className="text-sm">
+                  <span style={{ color: c.ok ? '#0F8A68' : '#B45309' }}>{c.ok ? '✓' : '⚠'}</span> {c.label}
+                </li>
+              ))}
+            </ul>
+          )}
           <button type="button" className="btn-primary text-sm w-full" onClick={() => navigate('/career/resume')}>
             Improve Resume →
           </button>
@@ -500,7 +625,12 @@ export default function CareerCenter() {
           <h2 id="jobs-heading" className="text-lg font-black text-ink mb-2" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
             💼 Job Opportunities
           </h2>
-          <p className="text-sm text-muted mb-4">12 roles match your current skills</p>
+          <p className="text-sm text-muted mb-4">
+            {data.jobMatches.length > 0 ? `${data.jobMatches.length} sample matches` : 'Browse the catalog after you set a role — no sample jobs are marked as yours.'}
+          </p>
+          {data.jobMatches.length === 0 ? (
+            <p className="text-sm text-muted mb-4">No personalized job matches yet.</p>
+          ) : (
           <div className="space-y-3 mb-4">
             {data.jobMatches.map(j => (
               <article key={j.title}>
@@ -512,6 +642,7 @@ export default function CareerCenter() {
               </article>
             ))}
           </div>
+          )}
           <button type="button" className="btn-primary text-sm w-full" onClick={() => navigate('/career/jobs')}>
             View Job Matches →
           </button>
@@ -551,15 +682,19 @@ export default function CareerCenter() {
           <h2 id="activity-heading" className="text-lg font-black text-ink mb-3" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
             Career Activity
           </h2>
-          <ol className="space-y-3 mb-4">
-            {data.activity.map(a => (
-              <li key={a.when} className="text-sm">
-                <div className="text-xs font-semibold text-primary">{a.when}</div>
-                <div className="text-ink">{a.text}</div>
-              </li>
-            ))}
-          </ol>
-          <div className="text-sm font-bold text-ink">+120 Career XP</div>
+          {data.activity.length === 0 ? (
+            <p className="text-sm text-muted mb-4">No career activity yet. Completing lessons, projects, or interviews will show up here.</p>
+          ) : (
+            <ol className="space-y-3 mb-4">
+              {data.activity.map(a => (
+                <li key={a.when} className="text-sm">
+                  <div className="text-xs font-semibold text-primary">{a.when}</div>
+                  <div className="text-ink">{a.text}</div>
+                </li>
+              ))}
+            </ol>
+          )}
+          {data.xp.total > 0 && <div className="text-sm font-bold text-ink">+{Math.min(120, data.xp.total)} Career XP</div>}
         </section>
 
         <section className="glass rounded-3xl p-6 career-xp" aria-labelledby="xp-heading">
@@ -624,7 +759,9 @@ export default function CareerCenter() {
             <h2 id="role-title" className="text-2xl font-black text-ink mb-1" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
               {openMatch.title}
             </h2>
-            <p className="text-sm text-muted mb-4">Match {openMatch.match}%</p>
+            <p className="text-sm text-muted mb-4">
+              {openMatch.match > 0 ? `Match ${openMatch.match}%` : 'Not a personalized match yet'}
+            </p>
             <h3 className="text-sm font-bold text-ink mb-2">Required Skills</h3>
             <div className="flex flex-wrap gap-2 mb-4">
               {openMatch.strong.map(s => (

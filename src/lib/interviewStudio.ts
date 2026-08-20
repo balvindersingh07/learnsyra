@@ -1,3 +1,5 @@
+import { peekAuthUserId } from './supabase'
+
 export type InterviewRole =
   | 'Frontend Developer'
   | 'React Developer'
@@ -133,6 +135,11 @@ const HISTORY_KEY = 'learnsyra_interview_history'
 const LIVE_KEY = 'learnsyra_interview_live'
 const OVERLAY_KEY = 'learnsyra_interview_career'
 const USED_KEY = 'learnsyra_interview_used'
+
+function interviewOverlayKey(userId?: string | null) {
+  const uid = userId || peekAuthUserId()
+  return uid ? `${OVERLAY_KEY}:${uid}` : null
+}
 
 function q(
   partial: Omit<InterviewQuestion, 'clarification'> & { clarification?: string },
@@ -809,17 +816,21 @@ export function saveLive(live: LiveInterview | null) {
   else localStorage.setItem(LIVE_KEY, JSON.stringify(live))
 }
 
-export function loadInterviewCareerOverlay(): InterviewCareerOverlay | null {
+export function loadInterviewCareerOverlay(userId?: string | null): InterviewCareerOverlay | null {
+  const key = interviewOverlayKey(userId)
+  if (!key) return null
   try {
-    const raw = localStorage.getItem(OVERLAY_KEY)
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as InterviewCareerOverlay) : null
   } catch {
     return null
   }
 }
 
-export function saveInterviewCareerOverlay(overlay: InterviewCareerOverlay) {
-  localStorage.setItem(OVERLAY_KEY, JSON.stringify(overlay))
+export function saveInterviewCareerOverlay(overlay: InterviewCareerOverlay, userId?: string | null) {
+  const key = interviewOverlayKey(userId)
+  if (!key) return
+  localStorage.setItem(key, JSON.stringify(overlay))
 }
 
 export function applyInterviewOverlay(record: InterviewRecord) {

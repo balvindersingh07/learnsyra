@@ -1,3 +1,5 @@
+import { peekAuthUserId } from './supabase'
+
 export type ResumeSectionId =
   | 'contact'
   | 'summary'
@@ -171,6 +173,11 @@ export interface ResumeCareerOverlay {
 const STORE_KEY = 'learnsyra_resume_docs'
 const ACTIVE_KEY = 'learnsyra_resume_active'
 const OVERLAY_KEY = 'learnsyra_resume_career'
+
+function resumeOverlayKey(userId?: string | null) {
+  const uid = userId || peekAuthUserId()
+  return uid ? `${OVERLAY_KEY}:${uid}` : null
+}
 
 export const SECTIONS: { id: ResumeSectionId; label: string }[] = [
   { id: 'contact', label: 'Contact' },
@@ -575,13 +582,21 @@ export function saveActiveId(id: string) {
   localStorage.setItem(ACTIVE_KEY, id)
 }
 
-export function loadResumeCareerOverlay(): ResumeCareerOverlay | null {
+export function loadResumeCareerOverlay(userId?: string | null): ResumeCareerOverlay | null {
+  const key = resumeOverlayKey(userId)
+  if (!key) return null
   try {
-    const raw = localStorage.getItem(OVERLAY_KEY)
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as ResumeCareerOverlay) : null
   } catch {
     return null
   }
+}
+
+export function saveResumeCareerOverlay(overlay: ResumeCareerOverlay, userId?: string | null) {
+  const key = resumeOverlayKey(userId)
+  if (!key) return
+  localStorage.setItem(key, JSON.stringify(overlay))
 }
 
 export function applyResumeOverlay(doc: ResumeDoc) {
@@ -600,7 +615,7 @@ export function applyResumeOverlay(doc: ResumeDoc) {
       { label: 'ATS optimization', ok: scores.ats >= 75 },
     ],
   }
-  localStorage.setItem(OVERLAY_KEY, JSON.stringify(overlay))
+  saveResumeCareerOverlay(overlay)
 }
 
 export function relativeWhen(iso: string) {

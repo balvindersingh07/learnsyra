@@ -26,6 +26,27 @@ export const supabase: SupabaseClient = createClient(
   },
 )
 
+/** Logged-in user id from the Supabase auth token in localStorage. Does not change session handling. */
+export function peekAuthUserId(): string | null {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (!key || !key.startsWith('sb-') || !key.includes('auth-token')) continue
+      const raw = localStorage.getItem(key)
+      if (!raw) continue
+      const parsed = JSON.parse(raw) as {
+        user?: { id?: string }
+        currentSession?: { user?: { id?: string } }
+      }
+      const id = parsed.user?.id ?? parsed.currentSession?.user?.id
+      if (typeof id === 'string' && id.length > 0) return id
+    }
+  } catch {
+    /* ignore */
+  }
+  return null
+}
+
 export type UserRole = 'student' | 'tutor' | 'admin'
 
 export type PlanId = 'free' | 'student_pro' | 'career_pro'
