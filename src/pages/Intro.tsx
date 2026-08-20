@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { postLoginPath } from '../lib/roleAccess'
 import { BlobField, Orb3D } from '../components/Soft3D'
 import BrandMark from '../components/BrandMark'
+import PasswordField from '../components/PasswordField'
 
 const stories = [
   {
@@ -200,8 +201,7 @@ export default function Intro() {
               onChange={e => setEmail(e.target.value)}
               className="rounded-xl px-4 py-3.5 text-ink text-sm outline-none field"
             />
-            <input
-              type="password"
+            <PasswordField
               required
               placeholder="Your Password"
               value={password}

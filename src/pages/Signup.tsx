@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import type { UserRole } from '../lib/supabase'
 import BrandMark from '../components/BrandMark'
+import PasswordField from '../components/PasswordField'
 
 const roles: { id: UserRole; label: string; icon: string }[] = [
   { id: 'student', label: 'Student', icon: '🎓' },
@@ -92,8 +93,7 @@ export default function Signup() {
             className="glass rounded-xl px-4 py-3 text-ink text-sm outline-none"
             style={{ border: '1px solid rgba(99,102,241,0.12)' }}
           />
-          <input
-            type="password"
+          <PasswordField
             required
             minLength={6}
             placeholder="Password (min 6 chars)"
