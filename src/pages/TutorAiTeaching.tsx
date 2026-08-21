@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { getLiveClasses, getProjects, getReviewQueue, getTutorBookings, getTutorCourses, getTutorStudents } from '../lib/api'
+import { getTutorLiveClasses, getProjects, getTutorReviewQueue, getTutorBookings, getTutorCourses, getTutorStudents } from '../lib/api'
 import { buildCatalog } from '../lib/courseCatalog'
 import { displayInitials } from '../lib/roleAccess'
 import { tutorCoursePath, tutorProjectPath, tutorSessionPath, tutorStudentPath } from '../lib/paths'
@@ -92,23 +92,23 @@ export default function TutorAiTeaching() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const { session, profile } = useAuth()
-  const tutorId = session?.user.id || profile?.id || 'local-tutor'
-  const publicId = loadTutorHub(tutorId)?.publicId || selfTutorId(tutorId)
+  const tutorId = session?.user.id || profile?.id || null
+  const publicId = tutorId ? (loadTutorHub(tutorId)?.publicId || selfTutorId(tutorId)) : ''
   const [students, setStudents] = useState<TutorStudent[]>([])
-  const [source, setSource] = useState<'live' | 'demo'>('demo')
+  const [source, setSource] = useState<'live' | 'demo'>('live')
   const [sessions, setSessions] = useState<TutorSessionView[]>([])
   const [projects, setProjects] = useState<TutorProjectReview[]>([])
   const [courses, setCourses] = useState<StudioCourse[]>([])
   const [catalog, setCatalog] = useState(buildCatalog([]))
-  const [sel, setSel] = useState<CopilotSelection>(() => loadSelection(tutorId))
+  const [sel, setSel] = useState<CopilotSelection>(EMPTY_SELECTION)
   const [panel, setPanel] = useState<Panel>('home')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [ctxOpen, setCtxOpen] = useState(false)
   const [tab, setTab] = useState<SavedTab>('all')
-  const [resources, setResources] = useState<TeachingResource[]>(() => loadResources(tutorId))
-  const [history, setHistory] = useState<HistoryItem[]>(() => loadHistory(tutorId))
+  const [resources, setResources] = useState<TeachingResource[]>([])
+  const [history, setHistory] = useState<HistoryItem[]>([])
   const [notice, setNotice] = useState<string | null>(null)
   const [confirm, setConfirm] = useState<'assign' | 'send' | null>(null)
   const [difficulty, setDifficulty] = useState<Difficulty>('Intermediate')
@@ -135,25 +135,29 @@ export default function TutorAiTeaching() {
   const gaps = skillGapRows(student, course, project)
   const studioNotes = courseInsights(course)
   const prev = sessionRow ? previousSession(sessions, sessionRow) : null
-  const prevNote = previousSessionNote(prev, prev ? loadSessionExtras(tutorId, prev.id) : null)
+  const prevNote = previousSessionNote(prev, prev && tutorId ? loadSessionExtras(tutorId, prev.id) : null)
   const coach = projectCoachCopy(project, student)
   const next = student?.nextSession
 
   useEffect(() => {
+    if (!tutorId) return
+    setSel(loadSelection(tutorId))
+    setResources(loadResources(tutorId))
+    setHistory(loadHistory(tutorId))
     Promise.all([
       getTutorStudents().catch(() => []),
       getTutorBookings().catch(() => []),
-      getReviewQueue().catch(() => []),
+      getTutorReviewQueue().catch(() => []),
       getTutorCourses().catch(() => []),
       getProjects().catch(() => []),
-      getLiveClasses().catch(() => []),
+      getTutorLiveClasses().catch(() => []),
     ]).then(([enrollments, bookings, queue, apiCourses, apiProjects, liveClasses]) => {
       const roster = buildTutorRoster({ enrollments, bookings, reviews: queue, localBookings: loadTutorBookings(), apiCourses })
       const studio = mergeTutorCourses(apiCourses, tutorId)
       const builtSessions = buildTutorSessions({
         local: loadTutorBookings(),
         api: bookings,
-        liveClasses: liveClasses.filter(c => !profile?.id || c.tutor_id === profile.id),
+        liveClasses,
         roster: roster.students,
         tutorUserId: tutorId,
         tutorPublicId: publicId,
@@ -197,6 +201,7 @@ export default function TutorAiTeaching() {
   }, [tutorId, publicId, profile?.id, params])
 
   useEffect(() => {
+    if (!tutorId) return
     saveSelection(tutorId, sel)
   }, [sel, tutorId])
 
@@ -220,7 +225,7 @@ export default function TutorAiTeaching() {
       if (token !== genRef.current) return
       try {
         fn()
-        setHistory(pushHistory(tutorId, title))
+        setHistory(pushHistory(tutorId || '', title))
       } catch {
         setError('AI teaching assistance is temporarily unavailable.')
       } finally {
@@ -288,8 +293,8 @@ export default function TutorAiTeaching() {
     }
     const nextRows = [row, ...resources]
     setResources(nextRows)
-    saveResources(tutorId, nextRows)
-    setHistory(pushHistory(tutorId, `Saved ${title}`))
+    saveResources(tutorId || '', nextRows)
+    setHistory(pushHistory(tutorId || '', `Saved ${title}`))
     setNotice('Saved as a teaching resource. Nothing was assigned to the student.')
   }
 
@@ -310,7 +315,7 @@ export default function TutorAiTeaching() {
   const removeSaved = (id: string) => {
     const nextRows = resources.filter(r => r.id !== id)
     setResources(nextRows)
-    saveResources(tutorId, nextRows)
+    saveResources(tutorId || '', nextRows)
   }
 
   const copyText = async (text: string) => {
@@ -362,7 +367,7 @@ export default function TutorAiTeaching() {
           patch({ studentId: id, courseId: st?.courses[0]?.id || sel.courseId, focus: st?.currentFocus || st?.focusSkills[0] || sel.focus, sessionId: st?.nextSession?.id || '', projectId: projects.find(p => p.studentId === id)?.id || st?.projects[0]?.id || '' })
         }}>
           <option value="">Select student</option>
-          {students.map(s => <option key={s.id} value={s.id}>{s.name}{s.demo ? ' (Demo)' : ''}</option>)}
+          {students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
       </label>
       <label className="text-xs font-semibold text-muted">Course
@@ -399,7 +404,6 @@ export default function TutorAiTeaching() {
       {student && (
         <section className="glass rounded-2xl p-4">
           <h2 className="text-base font-black text-ink mb-2">Student Context</h2>
-          {student.demo && <div className="badge mb-2">Demo Context</div>}
           <p className="font-semibold text-ink">{student.name}</p>
           <p className="text-xs text-muted">Target: {student.career.target || student.headline || 'Data unavailable.'}</p>
           <p className="text-xs text-muted mt-1">Course progress: {student.overallProgress}%</p>
@@ -495,13 +499,6 @@ export default function TutorAiTeaching() {
         </div>
       </div>
 
-      {source === 'demo' && (
-        <div className="glass rounded-2xl p-4 mb-5 text-sm text-muted">
-          <span className="badge mr-2">Demo Context</span>
-          Sample teaching context is labeled. It is not live student work.
-        </div>
-      )}
-
       <div className="glass rounded-2xl p-4 mb-5">
         {selectors}
         {(student || course) && (
@@ -516,7 +513,7 @@ export default function TutorAiTeaching() {
             <div className="space-y-2 max-h-64 overflow-auto">
               {students.slice(0, 8).map(s => (
                 <button key={s.id} type="button" className="tai-chip w-full text-left rounded-xl px-3 py-2 text-xs" data-on={sel.studentId === s.id} onClick={() => patch({ studentId: s.id, courseId: s.courses[0]?.id || sel.courseId, focus: s.currentFocus || s.focusSkills[0] || '', sessionId: s.nextSession?.id || '', projectId: projects.find(p => p.studentId === s.id)?.id || s.projects[0]?.id || '' })}>
-                  {s.name}{s.demo ? ' · Demo' : ''}
+                  {s.name}
                 </button>
               ))}
             </div>
@@ -562,7 +559,7 @@ export default function TutorAiTeaching() {
             <>
               <section className="tai-hero glass rounded-3xl p-5 mb-5">
                 <h2 className="text-lg font-black text-ink mb-1">✨ Today&apos;s Teaching Brief</h2>
-                <p className="text-sm text-ink mb-4">{source === 'demo' ? 'Sample roster: ' : ''}{brief.count} student{brief.count === 1 ? '' : 's'} need focused attention today.</p>
+                <p className="text-sm text-ink mb-4">{brief.count} student{brief.count === 1 ? '' : 's'} need focused attention today.</p>
                 {brief.student ? (
                   <>
                     <div className="text-xs text-muted">Priority</div>

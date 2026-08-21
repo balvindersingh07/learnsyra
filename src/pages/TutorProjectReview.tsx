@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { getProjects, getReviewQueue, getTutorBookings, getTutorCourses, getTutorStudents, reviewProject } from '../lib/api'
+import { getProjects, getTutorReviewQueue, getTutorBookings, getTutorCourses, getTutorStudents, reviewProject } from '../lib/api'
 import { setPendingAiPrompt } from '../lib/dashboardIntel'
 import { displayInitials } from '../lib/roleAccess'
 import { tutorProjectWorkspacePath, tutorSessionPath, tutorStudentPath } from '../lib/paths'
@@ -35,7 +35,7 @@ export default function TutorProjectReviewPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { session, profile } = useAuth()
-  const tutorId = session?.user.id || profile?.id || 'local-tutor'
+  const tutorId = session?.user.id || profile?.id || null
   const tutorName = profile?.full_name || 'Tutor'
   const [row, setRow] = useState<TutorProjectReview | null>(null)
   const [student, setStudent] = useState<TutorStudent | undefined>()
@@ -54,11 +54,11 @@ export default function TutorProjectReviewPage() {
   const [forbidden, setForbidden] = useState(false)
 
   const reload = () => {
-    if (!id) return
+    if (!id || !tutorId) return
     Promise.all([
       getTutorStudents().catch(() => []),
       getTutorBookings().catch(() => []),
-      getReviewQueue().catch(() => []),
+      getTutorReviewQueue().catch(() => []),
       getTutorCourses().catch(() => []),
       getProjects().catch(() => []),
     ]).then(([enrollments, bookings, queue, apiCourses, apiProjects]) => {

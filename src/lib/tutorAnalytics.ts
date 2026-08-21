@@ -1,4 +1,5 @@
 import type { CourseReview } from './api'
+import { userStorageKey } from './supabase'
 import { chartWindow, formatEarn, formatEarnOrZero, monthCompare, type ChartRange } from './tutorEarnings'
 import type { StudioCourse } from './tutorCourses'
 import type { TutorSessionView } from './tutorSessions'
@@ -33,8 +34,12 @@ export interface CoursePerfRow {
   revenue: number | null
 }
 
-const DISMISS_KEY = (tutorId: string) => `learnsyra_tutor_analytics_dismissed_${tutorId}`
-const FILTER_KEY = 'learnsyra_tutor_analytics_filters'
+function dismissKey(tutorId: string) {
+  return userStorageKey('learnsyra_tutor_analytics_dismissed', tutorId)
+}
+function filtersKey(userId?: string | null) {
+  return userStorageKey('learnsyra_tutor_analytics_filters', userId)
+}
 
 export function analyticsWindow(range: AnalyticsRange, custom?: { from: string; to: string }) {
   if (range === 'custom' && custom?.from && custom?.to) {
@@ -55,8 +60,10 @@ export function inRange(iso: string | null | undefined, from: Date, to: Date) {
 }
 
 export function loadDismissed(tutorId: string): string[] {
+  const key = dismissKey(tutorId)
+  if (!key) return []
   try {
-    const raw = localStorage.getItem(DISMISS_KEY(tutorId))
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as string[]) : []
   } catch {
     return []
@@ -64,25 +71,30 @@ export function loadDismissed(tutorId: string): string[] {
 }
 
 export function saveDismissed(tutorId: string, ids: string[]) {
-  localStorage.setItem(DISMISS_KEY(tutorId), JSON.stringify(ids.slice(0, 80)))
+  const key = dismissKey(tutorId)
+  if (!key) return
+  localStorage.setItem(key, JSON.stringify(ids.slice(0, 80)))
 }
 
-export function loadAnalyticsFilters(): Partial<{ range: AnalyticsRange; from: string; to: string }> {
+export function loadAnalyticsFilters(userId?: string | null): Partial<{ range: AnalyticsRange; from: string; to: string }> {
+  const key = filtersKey(userId)
+  if (!key) return {}
   try {
-    const raw = sessionStorage.getItem(FILTER_KEY)
+    const raw = sessionStorage.getItem(key)
     return raw ? JSON.parse(raw) : {}
   } catch {
     return {}
   }
 }
 
-export function saveAnalyticsFilters(next: object) {
-  sessionStorage.setItem(FILTER_KEY, JSON.stringify(next))
+export function saveAnalyticsFilters(next: object, userId?: string | null) {
+  const key = filtersKey(userId)
+  if (!key) return
+  sessionStorage.setItem(key, JSON.stringify(next))
 }
 
-export function realStudents(rows: TutorStudent[], source: 'live' | 'demo') {
-  if (source === 'live') return rows.filter(s => !s.demo)
-  return rows
+export function realStudents(rows: TutorStudent[], _source: 'live' | 'demo' = 'live') {
+  return rows.filter(s => !s.demo)
 }
 
 export function realSessions(rows: TutorSessionView[]) {
@@ -317,13 +329,12 @@ export function learningSignal(students: TutorStudent[]) {
   return { avgWith, avgWithout }
 }
 
-export function coverageLabel(input: { students: number; sessions: number; courses: number; demo: boolean }) {
-  if (input.demo) return { level: 'Demo', text: 'Analytics are based on labeled sample context, not live tutor performance.' }
+export function coverageLabel(input: { students: number; sessions: number; courses: number; demo?: boolean }) {
   if (input.students >= 8 && input.sessions >= 10) return { level: 'High', text: `Based on ${input.sessions} completed sessions and ${input.courses} published courses.` }
   if (input.students > 0 || input.sessions > 0 || input.courses > 0) {
     return { level: 'Partial', text: `Based on ${input.sessions} completed sessions and ${input.courses} published courses. Analytics are based on limited activity.` }
   }
-  return { level: 'Limited', text: 'Analytics are based on limited activity.' }
+  return { level: 'Limited', text: 'No teaching activity recorded yet.' }
 }
 
 export function buildInsights(input: {

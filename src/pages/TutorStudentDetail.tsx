@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { setPendingAiPrompt } from '../lib/dashboardIntel'
-import { getReviewQueue, getTutorBookings, getTutorCourses, getTutorStudents } from '../lib/api'
+import { getTutorReviewQueue, getTutorBookings, getTutorCourses, getTutorStudents } from '../lib/api'
 import { buildCatalog } from '../lib/courseCatalog'
 import { displayInitials } from '../lib/roleAccess'
 import { loadTutorBookings } from '../lib/tutorMarketplace'
@@ -24,7 +24,7 @@ export default function TutorStudentDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { session, profile } = useAuth()
-  const tutorId = session?.user.id || profile?.id || 'local-tutor'
+  const tutorId = session?.user.id || profile?.id || null
   const [student, setStudent] = useState<TutorStudent | null>(null)
   const [catalogCourses, setCatalogCourses] = useState(buildCatalog([]))
   const [notes, setNotes] = useState<TutorNote[]>([])
@@ -36,13 +36,13 @@ export default function TutorStudentDetail() {
   const [loading, setLoading] = useState(true)
 
   const reloadNotes = () => {
-    if (id) setNotes(notesForStudent(tutorId, id))
+    if (id && tutorId) setNotes(notesForStudent(tutorId, id))
   }
 
   useEffect(() => {
     if (!id) return
     let alive = true
-    Promise.all([getTutorStudents(), getTutorBookings(), getReviewQueue(), getTutorCourses()])
+    Promise.all([getTutorStudents(), getTutorBookings(), getTutorReviewQueue(), getTutorCourses()])
       .then(([enrollments, bookings, reviews, apiCourses]) => {
         if (!alive) return
         const catalog = buildCatalog(apiCourses)

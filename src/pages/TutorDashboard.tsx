@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { categoryStyle, createCourse, createLiveClass, getLiveClasses, getReviewQueue, getTutorBookings, getTutorCourses, getTutorStudents, reviewProject, setBookingStatus, setCoursePublished, setLiveClassStatus, setLiveRecording, type BookingRow, type CourseRow, type LiveClass, type ProfileLite, type ProjectRow, type StudentProjectRow } from '../lib/api'
+import { categoryStyle, createCourse, createLiveClass, getTutorLiveClasses, getTutorReviewQueue, getTutorBookings, getTutorCourses, getTutorStudents, reviewProject, setBookingStatus, setCoursePublished, setLiveClassStatus, setLiveRecording, type BookingRow, type CourseRow, type LiveClass, type ProfileLite, type ProjectRow, type StudentProjectRow } from '../lib/api'
 import { liveClassPath } from '../lib/paths'
 import { tutorPathForTab, tutorTabFromPath } from '../lib/roleAccess'
 
@@ -33,7 +33,7 @@ export default function TutorDashboard() {
 
   const load = async () => {
     try {
-      const [c, s, b, r, live] = await Promise.all([getTutorCourses(), getTutorStudents(), getTutorBookings(), getReviewQueue(), getLiveClasses()])
+      const [c, s, b, r, live] = await Promise.all([getTutorCourses(), getTutorStudents(), getTutorBookings(), getTutorReviewQueue(), getTutorLiveClasses()])
       setCourses(c)
       setStudents(s)
       setBookings(b)

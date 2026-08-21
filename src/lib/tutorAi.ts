@@ -1,4 +1,5 @@
 import { takePendingAiPrompt } from './dashboardIntel'
+import { userStorageKey } from './supabase'
 import type { StudioCourse } from './tutorCourses'
 import type { SessionExtras, TutorSessionView } from './tutorSessions'
 import type { TutorStudent } from './tutorStudents'
@@ -123,9 +124,15 @@ export interface HistoryItem {
   title: string
 }
 
-const CTX_KEY = (tutorId: string) => `learnsyra_tutor_ai_ctx_${tutorId}`
-const RES_KEY = (tutorId: string) => `learnsyra_tutor_ai_resources_${tutorId}`
-const HIST_KEY = (tutorId: string) => `learnsyra_tutor_ai_history_${tutorId}`
+function ctxKey(tutorId: string) {
+  return userStorageKey('learnsyra_tutor_ai_ctx', tutorId)
+}
+function resKey(tutorId: string) {
+  return userStorageKey('learnsyra_tutor_ai_resources', tutorId)
+}
+function histKey(tutorId: string) {
+  return userStorageKey('learnsyra_tutor_ai_history', tutorId)
+}
 
 export const EMPTY_SELECTION: CopilotSelection = {
   studentId: '',
@@ -141,8 +148,10 @@ export function uid(prefix = 'tai') {
 }
 
 export function loadSelection(tutorId: string): CopilotSelection {
+  const key = ctxKey(tutorId)
+  if (!key) return EMPTY_SELECTION
   try {
-    const raw = sessionStorage.getItem(CTX_KEY(tutorId))
+    const raw = sessionStorage.getItem(key)
     return raw ? { ...EMPTY_SELECTION, ...JSON.parse(raw) } : EMPTY_SELECTION
   } catch {
     return EMPTY_SELECTION
@@ -150,12 +159,16 @@ export function loadSelection(tutorId: string): CopilotSelection {
 }
 
 export function saveSelection(tutorId: string, sel: CopilotSelection) {
-  sessionStorage.setItem(CTX_KEY(tutorId), JSON.stringify(sel))
+  const key = ctxKey(tutorId)
+  if (!key) return
+  sessionStorage.setItem(key, JSON.stringify(sel))
 }
 
 export function loadResources(tutorId: string): TeachingResource[] {
+  const key = resKey(tutorId)
+  if (!key) return []
   try {
-    const raw = localStorage.getItem(RES_KEY(tutorId))
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as TeachingResource[]) : []
   } catch {
     return []
@@ -163,12 +176,16 @@ export function loadResources(tutorId: string): TeachingResource[] {
 }
 
 export function saveResources(tutorId: string, rows: TeachingResource[]) {
-  localStorage.setItem(RES_KEY(tutorId), JSON.stringify(rows.slice(0, 80)))
+  const key = resKey(tutorId)
+  if (!key) return
+  localStorage.setItem(key, JSON.stringify(rows.slice(0, 80)))
 }
 
 export function loadHistory(tutorId: string): HistoryItem[] {
+  const key = histKey(tutorId)
+  if (!key) return []
   try {
-    const raw = localStorage.getItem(HIST_KEY(tutorId))
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as HistoryItem[]) : []
   } catch {
     return []
@@ -176,8 +193,10 @@ export function loadHistory(tutorId: string): HistoryItem[] {
 }
 
 export function pushHistory(tutorId: string, title: string) {
+  const key = histKey(tutorId)
+  if (!key) return loadHistory(tutorId)
   const next = [{ id: uid('h'), at: new Date().toISOString(), title }, ...loadHistory(tutorId)].slice(0, 40)
-  localStorage.setItem(HIST_KEY(tutorId), JSON.stringify(next))
+  localStorage.setItem(key, JSON.stringify(next))
   return next
 }
 
@@ -262,8 +281,8 @@ export function takeHandoffPrompt() {
   return takePendingAiPrompt()
 }
 
-export function teachingBrief(students: TutorStudent[], source: 'live' | 'demo') {
-  const list = source === 'demo' ? students : students.filter(s => !s.demo)
+export function teachingBrief(students: TutorStudent[], _source: 'live' | 'demo' = 'live') {
+  const list = students.filter(s => !s.demo)
   const attention = list.filter(s => s.status === 'attention' || s.nextSession?.upcoming)
   const pick = attention[0] || list.find(s => s.focusSkills.length) || list[0]
   const gap = pick?.skills.find(s => s.score != null && s.score < 50)

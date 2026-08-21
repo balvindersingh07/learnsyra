@@ -1,4 +1,5 @@
 import type { ProjectRow, StudentProjectRow, ProfileLite } from './api'
+import { userStorageKey } from './supabase'
 import {
   buildProjectCatalog,
   getProjectById,
@@ -126,8 +127,12 @@ export interface TutorProjectReview {
   catalog: CatalogProject | null
 }
 
-const EXTRAS_KEY = (tutorId: string) => `learnsyra_tutor_project_reviews_${tutorId}`
-const FILTER_KEY = 'learnsyra_tutor_project_filters'
+function extrasKey(tutorId?: string | null) {
+  return userStorageKey('learnsyra_tutor_project_reviews', tutorId)
+}
+function filtersKey(userId?: string | null) {
+  return userStorageKey('learnsyra_tutor_project_filters', userId)
+}
 
 const EMPTY_RUBRIC: RubricScores = {
   functionality: null,
@@ -160,16 +165,18 @@ export const EMPTY_EXTRAS: ReviewExtras = {
   reviewedAt: null,
 }
 
-function loadMap(tutorId: string): Record<string, ReviewExtras> {
+function loadMap(tutorId?: string | null): Record<string, ReviewExtras> {
+  const key = extrasKey(tutorId)
+  if (!key) return {}
   try {
-    const raw = localStorage.getItem(EXTRAS_KEY(tutorId))
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as Record<string, ReviewExtras>) : {}
   } catch {
     return {}
   }
 }
 
-export function loadReviewExtras(tutorId: string, id: string): ReviewExtras {
+export function loadReviewExtras(tutorId: string | null | undefined, id: string): ReviewExtras {
   const stored = loadMap(tutorId)[id]
   return {
     ...EMPTY_EXTRAS,
@@ -184,23 +191,29 @@ export function loadReviewExtras(tutorId: string, id: string): ReviewExtras {
   }
 }
 
-export function saveReviewExtras(tutorId: string, id: string, extras: ReviewExtras) {
+export function saveReviewExtras(tutorId: string | null | undefined, id: string, extras: ReviewExtras) {
+  const key = extrasKey(tutorId)
+  if (!key) return
   const map = loadMap(tutorId)
   map[id] = extras
-  localStorage.setItem(EXTRAS_KEY(tutorId), JSON.stringify(map))
+  localStorage.setItem(key, JSON.stringify(map))
 }
 
-export function loadReviewFilters(): Partial<{ tab: ReviewTab; query: string; sort: ReviewSort; skill: string; course: string; difficulty: string; date: DateFilter }> {
+export function loadReviewFilters(userId?: string | null): Partial<{ tab: ReviewTab; query: string; sort: ReviewSort; skill: string; course: string; difficulty: string; date: DateFilter }> {
+  const key = filtersKey(userId)
+  if (!key) return {}
   try {
-    const raw = sessionStorage.getItem(FILTER_KEY)
+    const raw = sessionStorage.getItem(key)
     return raw ? JSON.parse(raw) : {}
   } catch {
     return {}
   }
 }
 
-export function saveReviewFilters(next: object) {
-  sessionStorage.setItem(FILTER_KEY, JSON.stringify(next))
+export function saveReviewFilters(next: object, userId?: string | null) {
+  const key = filtersKey(userId)
+  if (!key) return
+  sessionStorage.setItem(key, JSON.stringify(next))
 }
 
 export function statusLabel(status: ReviewUiStatus) {
@@ -394,16 +407,13 @@ export function buildReviews(input: {
   queue: (StudentProjectRow & { project: ProjectRow | null; student: ProfileLite | null })[]
   roster: TutorStudent[]
   apiProjects: ProjectRow[]
-  tutorId: string
+  tutorId: string | null
 }): { reviews: TutorProjectReview[]; source: 'live' | 'demo' } {
   const catalog = buildProjectCatalog(input.apiProjects)
-  const liveIds = new Set(input.roster.filter(s => !s.demo).map(s => s.id))
   const extrasMap = loadMap(input.tutorId)
   const out: TutorProjectReview[] = []
 
-  if (liveIds.size) {
-    for (const row of input.queue) {
-      if (!liveIds.has(row.student_id)) continue
+  for (const row of input.queue) {
     const project = getProjectById(catalog, row.project_id) ?? catalog.find(p => p.title === row.project?.title) ?? null
     const student = input.roster.find(s => s.id === row.student_id)
     const extras = { ...EMPTY_EXTRAS, ...(extrasMap[row.id] ?? {}) }
@@ -430,77 +440,14 @@ export function buildReviews(input: {
       priorityReason: null,
       catalog: project,
     }
-      view.priorityReason = priorityReason(view, student, extras)
-      out.push(view)
-    }
-    return { reviews: out, source: 'live' }
+    view.priorityReason = priorityReason(view, student, extras)
+    out.push(view)
   }
-  return { reviews: demoReviews(input.roster, catalog).map(d => {
-    const st = extrasMap[d.id]?.status
-    return st ? { ...d, status: st } : d
-  }), source: 'demo' }
-}
-
-function demoReviews(roster: TutorStudent[], catalog: CatalogProject[]): TutorProjectReview[] {
-  const alex = roster.find(s => s.id === 'demo-alex') || roster[0]
-  const meera = roster.find(s => s.id === 'demo-meera')
-  const expense = catalog.find(p => /expense/i.test(p.title)) || catalog[0]
-  const auth = catalog.find(p => /auth/i.test(p.title))
-  const rows: TutorProjectReview[] = []
-  if (expense && alex) {
-    rows.push({
-      id: 'review-demo-alex',
-      source: 'demo',
-      demo: true,
-      projectId: expense.id,
-      apiRowId: null,
-      studentId: alex.id,
-      studentName: alex.name,
-      studentAvatar: alex.avatarUrl,
-      courseTitle: alex.courses[0]?.title ?? 'Full Stack Web Development',
-      courseId: alex.courses[0]?.id ?? null,
-      title: expense.title,
-      difficulty: expense.difficulty,
-      status: 'needs_review',
-      submittedAt: new Date().toISOString(),
-      skills: expense.skills,
-      progress: 92,
-      submissionUrl: null,
-      reviewNote: null,
-      priorityReason: alex.nextSession?.upcoming ? `Student has a session ${formatWhenShort(alex.nextSession.when)}.` : 'Labeled sample for the review workspace.',
-      catalog: expense,
-    })
-  }
-  if (auth && meera) {
-    rows.push({
-      id: 'review-demo-meera',
-      source: 'demo',
-      demo: true,
-      projectId: auth.id,
-      apiRowId: null,
-      studentId: meera.id,
-      studentName: meera.name,
-      studentAvatar: meera.avatarUrl,
-      courseTitle: meera.courses[0]?.title ?? null,
-      courseId: meera.courses[0]?.id ?? null,
-      title: auth.title,
-      difficulty: auth.difficulty,
-      status: 'changes',
-      submittedAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-      skills: auth.skills,
-      progress: 54,
-      submissionUrl: null,
-      reviewNote: null,
-      priorityReason: 'Project is blocking course completion.',
-      catalog: auth,
-    })
-  }
-  return rows
+  return { reviews: out, source: 'live' as const }
 }
 
 export function reviewStats(rows: TutorProjectReview[]) {
-  const real = rows.filter(r => !r.demo)
-  const list = real.length ? real : []
+  const list = rows.filter(r => !r.demo)
   const count = (s: ReviewUiStatus) => list.filter(r => r.status === s).length
   return {
     needs: count('needs_review'),
@@ -508,7 +455,7 @@ export function reviewStats(rows: TutorProjectReview[]) {
     changes: count('changes'),
     approved: count('approved'),
     portfolio: count('portfolio'),
-    usingDemo: !real.length,
+    usingDemo: false,
   }
 }
 
@@ -545,7 +492,7 @@ export function matchesReviewFilters(
   return true
 }
 
-export function sortReviews(rows: TutorProjectReview[], key: ReviewSort, tutorId: string) {
+export function sortReviews(rows: TutorProjectReview[], key: ReviewSort, tutorId?: string | null) {
   const copy = [...rows]
   copy.sort((a, b) => {
     if (key === 'newest') return +(new Date(b.submittedAt || 0)) - +(new Date(a.submittedAt || 0))

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { getCourseReviews, getLiveClasses, getProjects, getReviewQueue, getTutorBookings, getTutorCourses, getTutorStudents, type CourseReview } from '../lib/api'
+import { getCourseReviews, getTutorLiveClasses, getProjects, getTutorReviewQueue, getTutorBookings, getTutorCourses, getTutorStudents, type CourseReview } from '../lib/api'
 import { setPendingAiPrompt } from '../lib/dashboardIntel'
 import {
   analyticsWindow,
@@ -54,15 +54,15 @@ const RANGES: { id: AnalyticsRange; label: string }[] = [
 export default function TutorAnalytics() {
   const navigate = useNavigate()
   const { session, profile } = useAuth()
-  const tutorId = session?.user.id || profile?.id || 'local-tutor'
-  const publicId = loadTutorHub(tutorId)?.publicId || selfTutorId(tutorId)
-  const saved = loadAnalyticsFilters()
+  const tutorId = session?.user.id || profile?.id || null
+  const publicId = tutorId ? (loadTutorHub(tutorId)?.publicId || selfTutorId(tutorId)) : ''
+  const saved = loadAnalyticsFilters(tutorId)
   const [students, setStudents] = useState<TutorStudent[]>([])
-  const [studentSource, setStudentSource] = useState<'live' | 'demo'>('demo')
+  const [studentSource, setStudentSource] = useState<'live' | 'demo'>('live')
   const [sessions, setSessions] = useState<ReturnType<typeof buildTutorSessions>['sessions']>([])
   const [courses, setCourses] = useState<ReturnType<typeof mergeTutorCourses>['courses']>([])
   const [reviews, setReviews] = useState<CourseReview[]>([])
-  const [projects, setProjects] = useState(buildReviews({ queue: [], roster: [], apiProjects: [], tutorId }).reviews)
+  const [projects, setProjects] = useState<ReturnType<typeof buildReviews>['reviews']>([])
   const [earnRows, setEarnRows] = useState(buildTransactions({ sessions: [], local: [], api: [], tutorPublicId: publicId }))
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -71,17 +71,22 @@ export default function TutorAnalytics() {
   const [to, setTo] = useState(saved.to || '')
   const [drawer, setDrawer] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
-  const [dismissed, setDismissed] = useState(() => loadDismissed(tutorId))
+  const [dismissed, setDismissed] = useState<string[]>([])
 
   const load = () => {
+    if (!tutorId) {
+      setLoading(false)
+      return
+    }
     setError(null)
     setLoading(true)
+    setDismissed(loadDismissed(tutorId))
     Promise.all([
       getTutorStudents().catch(() => []),
       getTutorBookings().catch(() => []),
       getTutorCourses().catch(() => []),
-      getLiveClasses().catch(() => []),
-      getReviewQueue().catch(() => []),
+      getTutorLiveClasses().catch(() => []),
+      getTutorReviewQueue().catch(() => []),
       getProjects().catch(() => []),
     ]).then(async ([enrollments, bookings, apiCourses, liveClasses, queue, apiProjects]) => {
       const roster = buildTutorRoster({ enrollments, bookings, reviews: queue, localBookings: loadTutorBookings(), apiCourses })
@@ -89,7 +94,7 @@ export default function TutorAnalytics() {
       const builtSessions = buildTutorSessions({
         local: loadTutorBookings(),
         api: bookings,
-        liveClasses: liveClasses.filter(c => !profile?.id || c.tutor_id === profile.id),
+        liveClasses,
         roster: roster.students,
         tutorUserId: tutorId,
         tutorPublicId: publicId,
@@ -110,7 +115,7 @@ export default function TutorAnalytics() {
   }
 
   useEffect(() => { load() }, [tutorId, publicId, profile?.id])
-  useEffect(() => { saveAnalyticsFilters({ range, from, to }) }, [range, from, to])
+  useEffect(() => { saveAnalyticsFilters({ range, from, to }, tutorId) }, [range, from, to, tutorId])
   useEffect(() => {
     if (!drawer && !exportOpen) return
     const onKey = (e: KeyboardEvent) => {
@@ -122,7 +127,7 @@ export default function TutorAnalytics() {
 
   const win = analyticsWindow(range, { from, to })
   const prev = previousWindow(win.from, win.to)
-  const demo = studentSource === 'demo'
+  const demo = false
   const roster = realStudents(students, studentSource)
   const sess = realSessions(sessions)
   const done = completedSessions(sessions)
@@ -138,9 +143,9 @@ export default function TutorAnalytics() {
   const counts = periodStudentCounts(roster, win.from, win.to)
   const types = sessionBreakdown(periodDone)
   const repeats = repeatBookings(periodDone)
-  const hub = loadTutorHub(tutorId)
+  const hub = tutorId ? loadTutorHub(tutorId) : null
   const avail = availabilityInsights(sess, hub)
-  const extras = Object.fromEntries(projects.map(p => [p.id, loadReviewExtras(tutorId, p.id)]))
+  const extras = Object.fromEntries(projects.map(p => [p.id, loadReviewExtras(tutorId || '', p.id)]))
   const outcomes = projectOutcomes(projects, extras)
   const revenueMap = useMemo(() => {
     const map: Record<string, number> = {}
@@ -174,7 +179,7 @@ export default function TutorAnalytics() {
   const dismiss = (id: string) => {
     const next = [...dismissed, id]
     setDismissed(next)
-    saveDismissed(tutorId, next)
+    if (tutorId) saveDismissed(tutorId, next)
   }
 
   const take = (row: GrowthInsight) => {
@@ -211,12 +216,6 @@ export default function TutorAnalytics() {
           <label className="text-xs font-semibold text-muted">To<input type="date" className="field ml-2 px-3 py-2 text-sm" value={to} onChange={e => setTo(e.target.value)} /></label>
         </div>
       )}
-      {demo && (
-        <div className="glass rounded-2xl p-4 mb-5 text-sm text-muted">
-          <span className="badge mr-2">Demo Analytics — Not Real Tutor Performance</span>
-          Sample student context is labeled. Earnings and verified ratings are not taken from this sample.
-        </div>
-      )}
       {error && (
         <div className="glass rounded-2xl p-4 mb-5 text-sm" style={{ color: '#e11d48' }}>
           {error}
@@ -231,7 +230,7 @@ export default function TutorAnalytics() {
           { label: 'Active Students', value: loading ? null : String(counts.active || roster.filter(s => s.status === 'active' || s.status === 'attention').length || 0), note: 'Current roster' },
           { label: 'Sessions Completed', value: loading ? null : String(periodDone.length), note: 'Selected period' },
           { label: 'Course Students', value: loading ? null : publishedCount === 0 && roster.every(s => !s.courses.length) ? 'No data yet' : String(roster.filter(s => s.courses.length).length), note: 'Current roster' },
-          { label: 'Average Rating', value: loading ? null : ratings.average != null ? String(ratings.average) : 'No data yet', note: ratings.average != null ? 'Lifetime recorded' : undefined },
+          { label: 'Average Rating', value: loading ? null : ratings.average != null ? String(ratings.average) : '—', note: ratings.average != null ? 'Lifetime recorded' : undefined },
           { label: 'Profile Views', value: loading ? null : 'Not available' },
           { label: 'Teaching Hours', value: loading ? null : hours == null ? 'Not available' : String(hours), note: hours != null ? 'Selected period' : undefined },
         ].map(s => (

@@ -58,7 +58,7 @@ export default function TutorCourseStudio() {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const { session, profile } = useAuth()
-  const tutorId = session?.user.id || profile?.id || 'local-tutor'
+  const tutorId = session?.user.id || profile?.id || null
   const [course, setCourse] = useState<StudioCourse | null>(null)
   const [forbidden, setForbidden] = useState(false)
   const [step, setStep] = useState(Number(params.get('step') || 0))
@@ -83,6 +83,7 @@ export default function TutorCourseStudio() {
   }, [])
 
   useEffect(() => {
+    if (!tutorId) return
     if (isNew) {
       const blank = emptyCourse(tutorId)
       const raw = sessionStorage.getItem('learnsyra_studio_outline')
@@ -109,7 +110,7 @@ export default function TutorCourseStudio() {
   }, [id, isNew, tutorId])
 
   const persist = (next: StudioCourse, silent = false) => {
-    if (next.demo) return next
+    if (!tutorId || next.demo) return next
     if (!silent) setSaveState('saving')
     const saved = saveStudioCourse(next)
     setCourse(saved)
@@ -124,7 +125,7 @@ export default function TutorCourseStudio() {
     persist({ ...course, ...patch })
   }
 
-  const hub = loadTutorHub(tutorId)
+  const hub = tutorId ? loadTutorHub(tutorId) : null
   const profileOk = Boolean(hub && (hub.visibility === 'published' || hub.identity?.name || hub.bio))
   const checks = course ? publishChecklist(course, profileOk) : []
   const missing = checks.filter(c => c.required && !c.ok)

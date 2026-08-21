@@ -1,4 +1,5 @@
 import type { BookingRow } from './api'
+import { userStorageKey } from './supabase'
 import type { StudioCourse } from './tutorCourses'
 import type { TutorBooking } from './tutorMarketplace'
 import type { TutorSessionView } from './tutorSessions'
@@ -57,6 +58,10 @@ export interface SessionTypeRevenue {
 
 export const TX_PAGE_SIZE = 20
 export const FILTER_KEY = 'learnsyra_tutor_earnings_filters'
+
+function earnFiltersKey(userId?: string | null) {
+  return userStorageKey(FILTER_KEY, userId)
+}
 
 export function platformFeeRate(): number | null {
   const raw = import.meta.env.VITE_PLATFORM_FEE_BPS
@@ -468,17 +473,21 @@ export function statementForMonth(rows: TutorTransaction[], year: number, month:
   }
 }
 
-export function loadEarnFilters(): Partial<{ preset: DatePreset; tab: TxTab; query: string; chart: ChartRange }> {
+export function loadEarnFilters(userId?: string | null): Partial<{ preset: DatePreset; tab: TxTab; query: string; chart: ChartRange }> {
+  const key = earnFiltersKey(userId)
+  if (!key) return {}
   try {
-    const raw = sessionStorage.getItem(FILTER_KEY)
+    const raw = sessionStorage.getItem(key)
     return raw ? JSON.parse(raw) : {}
   } catch {
     return {}
   }
 }
 
-export function saveEarnFilters(next: object) {
-  sessionStorage.setItem(FILTER_KEY, JSON.stringify(next))
+export function saveEarnFilters(next: object, userId?: string | null) {
+  const key = earnFiltersKey(userId)
+  if (!key) return
+  sessionStorage.setItem(key, JSON.stringify(next))
 }
 
 export function statusLabel(s: TxStatus) {

@@ -771,9 +771,19 @@ export async function getTutorStudents(): Promise<
 
 export async function getTutorBookings(): Promise<BookingRow[]> {
   if (!isSupabaseConfigured) return []
+  const uid = await currentUserId()
+  if (!uid) return []
+  const { data: listings, error: listingError } = await supabase
+    .from('tutor_listings')
+    .select('id')
+    .eq('profile_id', uid)
+  if (listingError) throw listingError
+  const ids = ((listings as { id: string }[]) ?? []).map(row => row.id)
+  if (!ids.length) return []
   const { data, error } = await supabase
     .from('bookings')
     .select('*, listing:tutor_listings(*), student:profiles!student_id(id, full_name, avatar_url)')
+    .in('tutor_listing_id', ids)
     .order('created_at', { ascending: false })
   if (error) throw error
   return (data as unknown as BookingRow[]) ?? []
@@ -800,6 +810,40 @@ export async function getReviewQueue(): Promise<
     .from('student_projects')
     .select('*, project:projects(*), student:profiles!student_id(id, full_name, avatar_url)')
     .in('status', ['submitted', 'completed'])
+    .order('submitted_at', { ascending: false })
+  if (error) throw error
+  return (data as unknown as (StudentProjectRow & { project: ProjectRow | null; student: ProfileLite | null })[]) ?? []
+}
+
+export async function getTutorReviewQueue(): Promise<
+  (StudentProjectRow & { project: ProjectRow | null; student: ProfileLite | null })[]
+> {
+  if (!isSupabaseConfigured) return []
+  const uid = await currentUserId()
+  if (!uid) return []
+  const related = new Set<string>()
+  const { data: courses } = await supabase.from('courses').select('id').eq('tutor_id', uid)
+  const courseIds = ((courses as { id: string }[]) ?? []).map(row => row.id)
+  if (courseIds.length) {
+    const { data: enrolls } = await supabase.from('enrollments').select('student_id').in('course_id', courseIds)
+    for (const row of (enrolls as { student_id: string | null }[]) ?? []) {
+      if (row.student_id) related.add(row.student_id)
+    }
+  }
+  const { data: listings } = await supabase.from('tutor_listings').select('id').eq('profile_id', uid)
+  const listingIds = ((listings as { id: string }[]) ?? []).map(row => row.id)
+  if (listingIds.length) {
+    const { data: bookings } = await supabase.from('bookings').select('student_id').in('tutor_listing_id', listingIds)
+    for (const row of (bookings as { student_id: string | null }[]) ?? []) {
+      if (row.student_id) related.add(row.student_id)
+    }
+  }
+  if (!related.size) return []
+  const { data, error } = await supabase
+    .from('student_projects')
+    .select('*, project:projects(*), student:profiles!student_id(id, full_name, avatar_url)')
+    .in('status', ['submitted', 'completed'])
+    .in('student_id', [...related])
     .order('submitted_at', { ascending: false })
   if (error) throw error
   return (data as unknown as (StudentProjectRow & { project: ProjectRow | null; student: ProfileLite | null })[]) ?? []
@@ -848,7 +892,7 @@ export async function createCourse(input: {
       price_cents: input.price_cents,
       is_premium: input.price_cents > 0,
       published: false,
-      rating: 5,
+      rating: 0,
     })
     .select('id')
     .single()
@@ -1019,6 +1063,19 @@ export async function getLiveClasses(): Promise<LiveClass[]> {
   const { data, error } = await supabase
     .from('live_classes')
     .select(liveSelect)
+    .order('starts_at', { ascending: false })
+  if (error) throw error
+  return (data as unknown as LiveClass[]) ?? []
+}
+
+export async function getTutorLiveClasses(): Promise<LiveClass[]> {
+  if (!isSupabaseConfigured) return []
+  const uid = await currentUserId()
+  if (!uid) return []
+  const { data, error } = await supabase
+    .from('live_classes')
+    .select(liveSelect)
+    .eq('tutor_id', uid)
     .order('starts_at', { ascending: false })
   if (error) throw error
   return (data as unknown as LiveClass[]) ?? []

@@ -1,4 +1,5 @@
 import type { CatalogTutor, SessionType, TutorSubject } from './tutorMarketplace'
+import { peekAuthUserId, userStorageKey } from './supabase'
 
 export type SkillLevel = 'Beginner' | 'Intermediate' | 'Advanced' | 'Expert'
 export type LangLevel = 'Basic' | 'Conversational' | 'Fluent' | 'Native'
@@ -204,7 +205,6 @@ export interface TutorHub {
 }
 
 const HUBS_KEY = 'learnsyra_tutor_hubs'
-const LEGACY_KEY = 'learnsyra_tutor_settings'
 
 const STYLE_ICONS: Record<TeachingStyleTag, string> = {
   Practical: '🛠️',
@@ -286,7 +286,7 @@ export function emptyHub(userId: string, identity: TutorHubIdentity): TutorHub {
     links: { website: '', linkedin: '' },
     platformCache: { students: 0, courseCount: 0, rating: null, interviewSessions: 0, projectReviews: 0 },
   }
-  return migrateLegacy(hub)
+  return hub
 }
 
 export function normalizeHub(hub: TutorHub): TutorHub {
@@ -333,43 +333,28 @@ export function isDateBlocked(hub: TutorHub, date: Date) {
   return (hub.blockedDates ?? []).some(b => b.from && b.to && key >= b.from && key <= b.to)
 }
 
-function migrateLegacy(hub: TutorHub): TutorHub {
-  try {
-    const raw = localStorage.getItem(LEGACY_KEY)
-    if (!raw) return hub
-    const legacy = JSON.parse(raw) as { availability?: string; rate?: string }
-    const rate = Number(legacy.rate)
-    if (Number.isFinite(rate) && rate > 0 && hub.sessionOffers[0].hourlyRate === 0) {
-      hub.sessionOffers = hub.sessionOffers.map(o => (o.id === '1on1' ? { ...o, enabled: true, hourlyRate: rate } : o))
-    }
-  } catch {
-    /* ignore */
-  }
-  return hub
-}
-
-function loadAllHubs(): Record<string, TutorHub> {
-  try {
-    const raw = localStorage.getItem(HUBS_KEY)
-    return raw ? (JSON.parse(raw) as Record<string, TutorHub>) : {}
-  } catch {
-    return {}
-  }
-}
-
-function saveAllHubs(map: Record<string, TutorHub>) {
-  localStorage.setItem(HUBS_KEY, JSON.stringify(map))
+function hubKey(userId?: string | null) {
+  return userStorageKey(HUBS_KEY, userId)
 }
 
 export function loadTutorHub(userId: string): TutorHub | null {
-  const row = loadAllHubs()[userId]
-  return row ? normalizeHub(row) : null
+  const key = hubKey(userId)
+  if (!key) return null
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as TutorHub
+    if (!parsed || parsed.userId !== userId) return null
+    return normalizeHub(parsed)
+  } catch {
+    return null
+  }
 }
 
 export function saveTutorHub(hub: TutorHub) {
-  const map = loadAllHubs()
-  map[hub.userId] = normalizeHub(hub)
-  saveAllHubs(map)
+  const key = hubKey(hub.userId)
+  if (!key) return
+  localStorage.setItem(key, JSON.stringify(normalizeHub(hub)))
 }
 
 export function loadOrCreateHub(userId: string, identity: TutorHubIdentity): TutorHub {
@@ -387,11 +372,17 @@ export function loadOrCreateHub(userId: string, identity: TutorHubIdentity): Tut
 }
 
 export function findHubByPublicId(publicId: string): TutorHub | null {
-  return Object.values(loadAllHubs()).find(h => h.publicId === publicId) ?? null
+  const uid = peekAuthUserId()
+  if (!uid) return null
+  const hub = loadTutorHub(uid)
+  return hub?.publicId === publicId ? hub : null
 }
 
 export function loadPublishedHubs(): TutorHub[] {
-  return Object.values(loadAllHubs()).filter(h => h.visibility === 'published')
+  const uid = peekAuthUserId()
+  if (!uid) return []
+  const hub = loadTutorHub(uid)
+  return hub?.visibility === 'published' ? [hub] : []
 }
 
 function mapSubject(category?: string): TutorSubject {

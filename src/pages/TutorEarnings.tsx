@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { getLiveClasses, getTutorBookings, getTutorCourses, getTutorStudents } from '../lib/api'
+import { getTutorLiveClasses, getTutorBookings, getTutorCourses, getTutorStudents } from '../lib/api'
 import {
   advisorLines,
   applyFee,
@@ -67,9 +67,9 @@ const TABS: { id: TxTab; label: string }[] = [
 export default function TutorEarnings() {
   const navigate = useNavigate()
   const { session, profile } = useAuth()
-  const tutorId = session?.user.id || profile?.id || 'local-tutor'
-  const publicId = loadTutorHub(tutorId)?.publicId || selfTutorId(tutorId)
-  const saved = loadEarnFilters()
+  const tutorId = session?.user.id || profile?.id || null
+  const publicId = tutorId ? (loadTutorHub(tutorId)?.publicId || selfTutorId(tutorId)) : ''
+  const saved = loadEarnFilters(tutorId)
   const [rows, setRows] = useState<TutorTransaction[]>([])
   const [enrollMap, setEnrollMap] = useState<Record<string, number>>({})
   const [courses, setCourses] = useState<ReturnType<typeof mergeTutorCourses>['courses']>([])
@@ -90,19 +90,23 @@ export default function TutorEarnings() {
   const [tip, setTip] = useState<string | null>(null)
 
   const load = () => {
+    if (!tutorId) {
+      setLoading(false)
+      return
+    }
     setError(null)
     setLoading(true)
     Promise.all([
       getTutorStudents().catch(() => []),
       getTutorBookings().catch(() => []),
       getTutorCourses().catch(() => []),
-      getLiveClasses().catch(() => []),
+      getTutorLiveClasses().catch(() => []),
     ]).then(([enrollments, bookings, apiCourses, liveClasses]) => {
       const roster = buildTutorRoster({ enrollments, bookings, reviews: [], localBookings: loadTutorBookings(), apiCourses })
       const built = buildTutorSessions({
         local: loadTutorBookings(),
         api: bookings,
-        liveClasses: liveClasses.filter(c => !profile?.id || c.tutor_id === profile.id),
+        liveClasses,
         roster: roster.students,
         tutorUserId: tutorId,
         tutorPublicId: publicId,
@@ -121,9 +125,9 @@ export default function TutorEarnings() {
 
   useEffect(() => { load() }, [tutorId, publicId, profile?.id])
   useEffect(() => {
-    saveEarnFilters({ preset, tab, query, chart })
+    saveEarnFilters({ preset, tab, query, chart }, tutorId)
     setPage(1)
-  }, [preset, tab, query, chart, from, to])
+  }, [preset, tab, query, chart, from, to, tutorId])
   useEffect(() => {
     if (!drawer && !detail && !payoutOpen) return
     const onKey = (e: KeyboardEvent) => {

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { setPendingAiPrompt } from '../lib/dashboardIntel'
-import { getLiveClasses, getReviewQueue, getTutorBookings, getTutorCourses, getTutorStudents, setBookingStatus } from '../lib/api'
+import { getTutorLiveClasses, getTutorReviewQueue, getTutorBookings, getTutorCourses, getTutorStudents, setBookingStatus } from '../lib/api'
 import { displayInitials } from '../lib/roleAccess'
 import { getLiveRecord, saveLiveRecord } from '../lib/liveSession'
 import { tutorStudentPath } from '../lib/paths'
@@ -35,8 +35,8 @@ export default function TutorSessionDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { session, profile } = useAuth()
-  const tutorId = session?.user.id || profile?.id || 'local-tutor'
-  const publicId = loadTutorHub(tutorId)?.publicId || selfTutorId(tutorId)
+  const tutorId = session?.user.id || profile?.id || null
+  const publicId = tutorId ? (loadTutorHub(tutorId)?.publicId || selfTutorId(tutorId)) : ''
   const [view, setView] = useState<TutorSessionView | null>(null)
   const [all, setAll] = useState<TutorSessionView[]>([])
   const [roster, setRoster] = useState<TutorStudent[]>([])
@@ -56,15 +56,15 @@ export default function TutorSessionDetail() {
   }, [])
 
   const reload = () => {
-    if (!id) return
-    Promise.all([getTutorStudents(), getTutorBookings(), getReviewQueue(), getTutorCourses(), getLiveClasses()])
+    if (!id || !tutorId) return
+    Promise.all([getTutorStudents(), getTutorBookings(), getTutorReviewQueue(), getTutorCourses(), getTutorLiveClasses()])
       .then(([enrollments, bookings, reviews, apiCourses, liveClasses]) => {
         const builtRoster = buildTutorRoster({ enrollments, bookings, reviews, localBookings: loadTutorBookings(), apiCourses })
         setRoster(builtRoster.students)
         const built = buildTutorSessions({
           local: loadTutorBookings(),
           api: bookings,
-          liveClasses: liveClasses.filter(c => !profile?.id || c.tutor_id === profile.id),
+          liveClasses,
           roster: builtRoster.students,
           tutorUserId: tutorId,
           tutorPublicId: publicId,

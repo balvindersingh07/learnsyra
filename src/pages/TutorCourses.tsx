@@ -39,9 +39,9 @@ const SORTS: { id: StudioSort; label: string }[] = [
 export default function TutorCourses() {
   const navigate = useNavigate()
   const { session, profile } = useAuth()
-  const tutorId = session?.user.id || profile?.id || 'local-tutor'
+  const tutorId = session?.user.id || profile?.id || null
   const [rows, setRows] = useState<StudioCourse[]>([])
-  const [source, setSource] = useState<'live' | 'demo'>('demo')
+  const [source, setSource] = useState<'live' | 'demo'>('live')
   const [students, setStudents] = useState<Record<string, number>>({})
   const [ratings, setRatings] = useState<Record<string, number>>({})
   const [tab, setTab] = useState<StudioTab>('all')
@@ -54,6 +54,7 @@ export default function TutorCourses() {
   const [loading, setLoading] = useState(true)
 
   const reload = () => {
+    if (!tutorId) return
     Promise.all([getTutorCourses().catch(() => []), getTutorStudents().catch(() => [])])
       .then(([apiCourses, enrollments]) => {
         const merged = mergeTutorCourses(apiCourses, tutorId)
@@ -127,12 +128,6 @@ export default function TutorCourses() {
         ))}
       </div>
 
-      {source === 'demo' && !loading && (
-        <div className="glass rounded-2xl p-4 mb-5 text-sm text-muted">
-          You have no courses yet. The card below is a <span className="font-semibold text-ink">labeled sample</span> so you can explore Course Studio. It is not published and has no real students or revenue.
-        </div>
-      )}
-
       <div className="flex flex-wrap gap-2 mb-4" role="tablist" aria-label="Course status">
         {TABS.map(t => (
           <button
@@ -170,7 +165,7 @@ export default function TutorCourses() {
       {filtered.length === 0 ? (
         <div className="glass rounded-2xl p-8 max-w-xl">
           <h2 className="text-xl font-black text-ink mb-2">No courses yet</h2>
-          <p className="text-sm text-muted mb-4">Your next course will appear here. Start from a blank studio or generate an outline to edit.</p>
+          <p className="text-sm text-muted mb-4">Create your first course</p>
           <div className="flex flex-wrap gap-2">
             <button type="button" className="btn-primary text-sm" onClick={() => navigate('/tutor/courses/new')}>+ Create Course</button>
             <button type="button" className="btn-glass text-sm" onClick={() => setCopilot(true)}>AI Course Copilot</button>
@@ -185,15 +180,11 @@ export default function TutorCourses() {
               students={students[course.apiId || course.id] ?? null}
               rating={ratings[course.apiId || course.id] ?? null}
               onEdit={() => {
-                if (course.demo) {
-                  const copy = duplicateCourse(course, tutorId)
-                  navigate(`/tutor/courses/${copy.id}`)
-                  return
-                }
+                if (!tutorId || course.demo) return
                 navigate(`/tutor/courses/${course.id}`)
               }}
               onDuplicate={() => {
-                if (course.demo) return
+                if (!tutorId || course.demo) return
                 const copy = duplicateCourse(course, tutorId)
                 navigate(`/tutor/courses/${copy.id}`)
               }}

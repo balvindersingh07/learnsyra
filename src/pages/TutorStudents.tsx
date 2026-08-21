@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import StudentCard from '../components/tutor-students/StudentCard'
 import { useAuth } from '../context/AuthContext'
 import { setPendingAiPrompt } from '../lib/dashboardIntel'
-import { getReviewQueue, getTutorBookings, getTutorCourses, getTutorStudents } from '../lib/api'
+import { getTutorReviewQueue, getTutorBookings, getTutorCourses, getTutorStudents } from '../lib/api'
 import { tutorStudentPath } from '../lib/paths'
 import { loadTutorBookings } from '../lib/tutorMarketplace'
 import {
@@ -58,7 +58,7 @@ export default function TutorStudents() {
   const navigate = useNavigate()
   const { session } = useAuth()
   const [rows, setRows] = useState<TutorStudent[]>([])
-  const [source, setSource] = useState<'live' | 'demo'>('demo')
+  const [source, setSource] = useState<'live' | 'demo'>('live')
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<StudentStatus | 'all'>('all')
   const [course, setCourse] = useState('all')
@@ -73,7 +73,7 @@ export default function TutorStudents() {
 
   useEffect(() => {
     let alive = true
-    Promise.all([getTutorStudents(), getTutorBookings(), getReviewQueue(), getTutorCourses()])
+    Promise.all([getTutorStudents(), getTutorBookings(), getTutorReviewQueue(), getTutorCourses()])
       .then(([enrollments, bookings, reviews, apiCourses]) => {
         if (!alive) return
         const built = buildTutorRoster({
@@ -240,20 +240,7 @@ export default function TutorStudents() {
         ))}
       </div>
 
-      {source === 'demo' && !loading && (
-        <div className="glass rounded-2xl p-4 mb-5 text-sm text-muted">
-          You have no enrolled students yet. The roster below is <span className="font-semibold text-ink">demo data</span> so you can explore the Success Center.
-          <div className="flex flex-wrap gap-2 mt-3">
-            <button type="button" className="btn-primary text-xs" onClick={() => navigate('/tutor/profile')}>
-              Complete Tutor Profile
-            </button>
-            <button type="button" className="btn-glass text-xs" onClick={() => navigate('/tutor/profile')}>
-              Explore how students find you
-            </button>
-          </div>
-        </div>
-      )}
-
+      {rows.length > 0 && (
       <section className="ts-hero glass rounded-3xl p-5 md:p-6 mb-6">
         <h2 className="text-lg font-black text-ink mb-1">✨ AI Student Insights</h2>
         <p className="text-sm text-ink mb-3">{summary.headline}</p>
@@ -267,6 +254,7 @@ export default function TutorStudents() {
           View Priority Students →
         </button>
       </section>
+      )}
 
       {priority.length > 0 && (
         <section className="glass rounded-2xl p-5 mb-6">
@@ -319,10 +307,10 @@ export default function TutorStudents() {
           {loading && <p className="text-sm text-muted mb-4">Loading students…</p>}
           {!loading && slice.length === 0 && (
             <div className="glass rounded-3xl p-8 text-center">
-              <h2 className="text-2xl font-black text-ink mb-2">{rows.length === 0 ? 'Start Building Your Student Community' : 'No matching students'}</h2>
+              <h2 className="text-2xl font-black text-ink mb-2">{rows.length === 0 ? 'No students yet' : 'No matching students'}</h2>
               <p className="text-muted mb-4">
                 {rows.length === 0
-                  ? "Once students book a session or enroll in your course, they'll appear here."
+                  ? 'Students will appear here when they enroll in your courses.'
                   : 'Try a different search or filter.'}
               </p>
               {rows.length === 0 && (

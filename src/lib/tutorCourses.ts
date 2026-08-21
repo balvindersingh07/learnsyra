@@ -1,5 +1,6 @@
 import type { CourseLesson, CourseModule, CourseRow } from './api'
 import type { CatalogCourse } from './courseCatalog'
+import { userStorageKey } from './supabase'
 import { SUGGESTED_SKILLS, LANGUAGE_OPTIONS, PRIMARY_CATEGORIES } from './tutorProfile'
 import { TUTOR_SKILLS } from './tutorMarketplace'
 import { PROJECT_SKILLS } from './projectWorkspace'
@@ -240,11 +241,11 @@ export function emptyPractice(): StudioPractice {
   }
 }
 
-export function emptyCourse(tutorId: string): StudioCourse {
+export function emptyCourse(tutorId: string | null | undefined): StudioCourse {
   const t = nowIso()
   return {
     id: nid('studio'),
-    tutorId,
+    tutorId: tutorId || '',
     apiId: null,
     demo: false,
     status: 'draft',
@@ -276,22 +277,31 @@ export function emptyCourse(tutorId: string): StudioCourse {
   }
 }
 
-function loadAll(): Record<string, StudioCourse> {
+function studioKey(tutorId?: string | null) {
+  return userStorageKey(STORE_KEY, tutorId)
+}
+
+function loadAll(tutorId?: string | null): Record<string, StudioCourse> {
+  const key = studioKey(tutorId)
+  if (!key) return {}
   try {
-    const raw = localStorage.getItem(STORE_KEY)
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as Record<string, StudioCourse>) : {}
   } catch {
     return {}
   }
 }
 
-function saveAll(map: Record<string, StudioCourse>) {
-  localStorage.setItem(STORE_KEY, JSON.stringify(map))
+function saveAll(map: Record<string, StudioCourse>, tutorId?: string | null) {
+  const uid = tutorId || Object.values(map)[0]?.tutorId
+  const key = studioKey(uid)
+  if (!key) return
+  localStorage.setItem(key, JSON.stringify(map))
 }
 
 export function loadStudioCourses(tutorId: string): StudioCourse[] {
-  return Object.values(loadAll())
-    .filter(c => c.tutorId === tutorId)
+  return Object.values(loadAll(tutorId))
+    .filter(c => c.tutorId === tutorId && !c.demo)
     .sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt))
 }
 
@@ -300,23 +310,25 @@ export function getStudioCourse(id: string): StudioCourse | null {
 }
 
 export function saveStudioCourse(course: StudioCourse) {
-  const map = loadAll()
+  if (course.demo) return course
+  const map = loadAll(course.tutorId)
   map[course.id] = { ...course, updatedAt: nowIso() }
-  saveAll(map)
+  saveAll(map, course.tutorId)
   return map[course.id]
 }
 
-export function deleteStudioCourse(id: string, tutorId: string) {
-  const map = loadAll()
+export function deleteStudioCourse(id: string, tutorId: string | null | undefined) {
+  if (!tutorId) return false
+  const map = loadAll(tutorId)
   const row = map[id]
   if (!row || row.tutorId !== tutorId) return false
   if (row.status === 'published') return false
   delete map[id]
-  saveAll(map)
+  saveAll(map, tutorId)
   return true
 }
 
-export function ownsStudioCourse(course: StudioCourse | null, tutorId: string) {
+export function ownsStudioCourse(course: StudioCourse | null, tutorId: string | null | undefined) {
   return Boolean(course && course.tutorId === tutorId)
 }
 
@@ -325,7 +337,7 @@ export function publishedStudioCourses(): StudioCourse[] {
 }
 
 export function studioFromApiRow(row: CourseRow & { students?: number }, tutorId: string): StudioCourse {
-  const existing = Object.values(loadAll()).find(c => c.apiId === row.id || c.id === row.id)
+  const existing = Object.values(loadAll(tutorId)).find(c => c.apiId === row.id || c.id === row.id)
   if (existing) return existing
   const course = emptyCourse(tutorId)
   course.id = row.id
@@ -350,7 +362,8 @@ export function studioFromApiRow(row: CourseRow & { students?: number }, tutorId
   return saveStudioCourse(course)
 }
 
-export function duplicateCourse(course: StudioCourse, tutorId: string): StudioCourse {
+export function duplicateCourse(course: StudioCourse, tutorId: string | null | undefined): StudioCourse {
+  if (!tutorId || course.demo) return course
   const copy: StudioCourse = JSON.parse(JSON.stringify(course)) as StudioCourse
   copy.id = nid('studio')
   copy.apiId = null
@@ -363,96 +376,11 @@ export function duplicateCourse(course: StudioCourse, tutorId: string): StudioCo
   return saveStudioCourse(copy)
 }
 
-export function demoStudioCourses(tutorId: string): StudioCourse[] {
-  const base = emptyCourse(tutorId)
-  base.id = `studio-demo-${tutorId.slice(0, 8)}`
-  base.demo = true
-  base.title = 'React Fundamentals (Sample)'
-  base.subtitle = 'A labeled sample so you can explore Course Studio.'
-  base.shortDescription = 'Sample outline for teaching React basics. Not a live marketplace listing.'
-  base.description =
-    'This sample shows how a practical React course can be structured. It is demo content for the tutor workspace and is not published to students.'
-  base.category = 'Programming'
-  base.subcategory = 'React'
-  base.level = 'Beginner'
-  base.primarySkills = ['React', 'JavaScript']
-  base.secondarySkills = ['TypeScript']
-  base.outcomes = [
-    'Build React applications',
-    'Work with component state',
-    'Use props to pass data',
-    'Prepare a small practice project',
-  ]
-  base.modules = [
-    {
-      id: 'demo-mod-1',
-      title: 'React Fundamentals',
-      description: 'Components, JSX, and rendering.',
-      objective: 'Students can create a simple React component.',
-      durationMin: 90,
-      requireComplete: true,
-      lessons: [
-        { ...emptyLesson('Introduction to React'), id: 'demo-les-1', kind: 'article', body: 'What React is and why components matter.', durationMin: 10 },
-        { ...emptyLesson('Components'), id: 'demo-les-2', kind: 'article', body: 'Function components and JSX.', durationMin: 18 },
-        { ...emptyLesson('Props'), id: 'demo-les-3', kind: 'article', body: 'Passing data into components.', durationMin: 16 },
-      ],
-    },
-    {
-      id: 'demo-mod-2',
-      title: 'React Hooks',
-      description: 'State and effects.',
-      objective: 'Students can use useState and useEffect.',
-      durationMin: 80,
-      requireComplete: true,
-      lessons: [
-        { ...emptyLesson('useState'), id: 'demo-les-4', kind: 'code', language: 'JavaScript', instructions: 'Build a counter.', starterCode: 'import { useState } from "react"\n', durationMin: 20 },
-        { ...emptyLesson('useEffect'), id: 'demo-les-5', kind: 'article', body: 'Synchronize with systems outside React.', durationMin: 18 },
-      ],
-    },
-  ]
-  base.practices = [
-    {
-      id: 'demo-prac-1',
-      title: 'Build a React Todo application',
-      instructions: 'Create, complete, and filter todos using component state.',
-      difficulty: 'Beginner',
-      skills: ['React', 'JavaScript', 'State Management'],
-      expected: 'A working todo list with add and complete actions.',
-      hints: ['Lift filter state to the parent component.'],
-      resources: [],
-    },
-  ]
-  base.quizzes = [
-    {
-      id: 'demo-quiz-1',
-      title: 'React basics',
-      passingScore: 70,
-      attempts: 3,
-      randomize: false,
-      questions: [
-        {
-          id: 'demo-q1',
-          kind: 'mcq',
-          prompt: 'What does useState return?',
-          options: ['A DOM node', 'State value and setter', 'A CSS class', 'A router'],
-          answers: [1],
-          explanation: 'useState returns the current value and a setter function.',
-          difficulty: 'Beginner',
-          points: 1,
-        },
-      ],
-    },
-  ]
-  base.projectTitle = 'React Expense Tracker'
-  base.projectIds = ['catalog-react-expense']
-  base.projectHours = 4
-  return [base]
-}
-
 export function mergeTutorCourses(
   apiRows: (CourseRow & { students?: number })[],
-  tutorId: string,
+  tutorId: string | null | undefined,
 ): { courses: StudioCourse[]; source: 'live' | 'demo' } {
+  if (!tutorId) return { courses: [], source: 'live' as const }
   const local = loadStudioCourses(tutorId)
   const seen = new Set(local.map(c => c.apiId || c.id))
   const merged = [...local]
@@ -462,12 +390,7 @@ export function mergeTutorCourses(
     seen.add(row.id)
   }
   const real = merged.filter(c => !c.demo)
-  if (real.length) return { courses: real, source: 'live' }
-  const demos = demoStudioCourses(tutorId)
-  for (const d of demos) {
-    if (!loadAll()[d.id]) saveStudioCourse(d)
-  }
-  return { courses: demos, source: 'demo' }
+  return { courses: real, source: 'live' as const }
 }
 
 export function studioToCourseRow(course: StudioCourse): CourseRow {

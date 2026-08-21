@@ -2,24 +2,21 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ReviewCard from '../components/tutor-projects/ReviewCard'
 import { useAuth } from '../context/AuthContext'
-import { getProjects, getReviewQueue, getTutorBookings, getTutorCourses, getTutorStudents } from '../lib/api'
+import { getProjects, getTutorReviewQueue, getTutorBookings, getTutorCourses, getTutorStudents } from '../lib/api'
 import { setPendingAiPrompt } from '../lib/dashboardIntel'
 import { tutorProjectPath } from '../lib/paths'
 import { loadTutorBookings } from '../lib/tutorMarketplace'
 import {
-  EMPTY_EXTRAS,
   REVIEW_PAGE_SIZE,
   REVIEW_SKILLS,
   aiQueueBreakdown,
   availableFiles,
   buildAiPreReview,
   buildReviews,
-  loadReviewExtras,
   loadReviewFilters,
   matchesQuery,
   matchesReviewFilters,
   reviewStats,
-  saveReviewExtras,
   saveReviewFilters,
   sortReviews,
   type DateFilter,
@@ -60,10 +57,11 @@ const DATES: { id: DateFilter; label: string }[] = [
 export default function TutorProjects() {
   const navigate = useNavigate()
   const { session, profile } = useAuth()
-  const tutorId = session?.user.id || profile?.id || 'local-tutor'
-  const saved = loadReviewFilters()
+  const tutorId = session?.user.id || profile?.id || null
+  const scopedId = tutorId || ''
+  const saved = loadReviewFilters(tutorId)
   const [rows, setRows] = useState<TutorProjectReview[]>([])
-  const [source, setSource] = useState<'live' | 'demo'>('demo')
+  const [source, setSource] = useState<'live' | 'demo'>('live')
   const [tab, setTab] = useState<ReviewTab>(saved.tab || 'needs_review')
   const [query, setQuery] = useState(saved.query || '')
   const [sort, setSort] = useState<ReviewSort>(saved.sort || 'priority')
@@ -76,35 +74,23 @@ export default function TutorProjects() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!tutorId) return
     Promise.all([
       getTutorStudents().catch(() => []),
       getTutorBookings().catch(() => []),
-      getReviewQueue().catch(() => []),
+      getTutorReviewQueue().catch(() => []),
       getTutorCourses().catch(() => []),
       getProjects().catch(() => []),
     ]).then(([enrollments, bookings, queue, apiCourses, apiProjects]) => {
       const roster = buildTutorRoster({ enrollments, bookings, reviews: queue, localBookings: loadTutorBookings(), apiCourses })
       const built = buildReviews({ queue, roster: roster.students, apiProjects, tutorId })
-      if (built.source === 'demo') {
-        const meera = loadReviewExtras(tutorId, 'review-demo-meera')
-        if (!meera.actionItems.length) {
-          saveReviewExtras(tutorId, 'review-demo-meera', {
-            ...EMPTY_EXTRAS,
-            ...meera,
-            status: 'changes',
-            improve: 'Add error handling and tests before the next review.',
-            actionItems: ['Add API error handling', 'Write a README with setup steps'],
-            history: [{ at: new Date(Date.now() - 86400000 * 2).toISOString(), status: 'changes', summary: 'Changes requested', score: null }],
-          })
-        }
-      }
       setRows(built.reviews)
       setSource(built.source)
     }).finally(() => setLoading(false))
   }, [tutorId])
 
   useEffect(() => {
-    saveReviewFilters({ tab, query, sort, skill, course, difficulty, date })
+    saveReviewFilters({ tab, query, sort, skill, course, difficulty, date }, tutorId)
     setPage(1)
   }, [tab, query, sort, skill, course, difficulty, date])
 
@@ -120,8 +106,8 @@ export default function TutorProjects() {
   const courses = useMemo(() => Array.from(new Set(rows.map(r => r.courseTitle).filter(Boolean))) as string[], [rows])
   const filtered = useMemo(() => {
     const list = rows.filter(r => matchesQuery(r, query) && matchesReviewFilters(r, { tab, skill, course, difficulty, date }))
-    return sortReviews(list, sort, tutorId)
-  }, [rows, query, tab, skill, course, difficulty, date, sort, tutorId])
+    return sortReviews(list, sort, scopedId)
+  }, [rows, query, tab, skill, course, difficulty, date, sort, scopedId])
 
   const stats = reviewStats(rows)
   const queueAi = aiQueueBreakdown(rows)
@@ -197,11 +183,11 @@ export default function TutorProjects() {
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
         {[
-          { label: 'Needs Review', value: stats.usingDemo ? '—' : stats.needs },
-          { label: 'In Review', value: stats.usingDemo ? '—' : stats.inReview },
-          { label: 'Changes Requested', value: stats.usingDemo ? '—' : stats.changes },
-          { label: 'Approved', value: stats.usingDemo ? '—' : stats.approved },
-          { label: 'Portfolio Ready', value: stats.usingDemo ? '—' : stats.portfolio },
+          { label: 'Needs Review', value: stats.needs },
+          { label: 'In Review', value: stats.inReview },
+          { label: 'Changes Requested', value: stats.changes },
+          { label: 'Approved', value: stats.approved },
+          { label: 'Portfolio Ready', value: stats.portfolio },
         ].map(s => (
           <div key={s.label} className="glass rounded-2xl p-4">
             <div className="text-xs text-muted">{s.label}</div>
@@ -210,16 +196,10 @@ export default function TutorProjects() {
         ))}
       </div>
 
-      {source === 'demo' && !loading && (
-        <div className="glass rounded-2xl p-4 mb-5 text-sm text-muted">
-          No live submissions for your students yet. Cards below are a <span className="font-semibold text-ink">labeled sample review environment</span> — not real student work.
-        </div>
-      )}
-
       {queueAi.waiting > 0 && (
         <section className="tp-hero glass rounded-3xl p-5 mb-6">
           <h2 className="text-lg font-black text-ink mb-1">✨ AI Review Queue</h2>
-          <p className="text-sm text-ink mb-3">{queueAi.waiting} submission{queueAi.waiting === 1 ? '' : 's'} {source === 'demo' ? 'in this sample queue' : 'are waiting for your review'}.</p>
+          <p className="text-sm text-ink mb-3">{queueAi.waiting} submission{queueAi.waiting === 1 ? '' : 's'} are waiting for your review.</p>
           <ul className="text-sm text-muted mb-4 space-y-1">
             <li>🔴 {queueAi.quality} need code-quality review</li>
             <li>🟡 {queueAi.testing} need testing feedback</li>
@@ -282,7 +262,7 @@ export default function TutorProjects() {
             </div>
           ) : slice.length === 0 && !query && tab === 'all' && rows.length === 0 ? (
             <div className="glass rounded-2xl p-8">
-              <h2 className="text-xl font-black text-ink mb-2">No Project Submissions Yet</h2>
+              <h2 className="text-xl font-black text-ink mb-2">No student projects to review yet.</h2>
               <p className="text-sm text-muted mb-4">Student submissions will appear here when they request a review.</p>
               <div className="flex flex-wrap gap-2">
                 <button type="button" className="btn-primary text-sm" onClick={() => navigate('/tutor/students')}>View Students</button>

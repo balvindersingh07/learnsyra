@@ -11,6 +11,7 @@ import {
   type StudentLevel,
   type TutorHub,
 } from './tutorProfile'
+import { userStorageKey } from './supabase'
 import { upcomingDates } from './tutorMarketplace'
 
 export type SettingsSection =
@@ -86,7 +87,9 @@ export interface NotifyPrefs {
   platform: NotifyChannel
 }
 
-const NOTIFY_KEY = (userId: string) => `learnsyra_tutor_notify_${userId}`
+function notifyKey(userId: string) {
+  return userStorageKey('learnsyra_tutor_notify', userId)
+}
 
 const DEFAULT_CHANNEL: NotifyChannel = { email: true, inApp: true }
 
@@ -102,8 +105,10 @@ export function defaultNotifyPrefs(): NotifyPrefs {
 }
 
 export function loadNotifyPrefs(userId: string): NotifyPrefs {
+  const key = notifyKey(userId)
+  if (!key) return defaultNotifyPrefs()
   try {
-    const raw = localStorage.getItem(NOTIFY_KEY(userId))
+    const raw = localStorage.getItem(key)
     if (!raw) return defaultNotifyPrefs()
     return { ...defaultNotifyPrefs(), ...(JSON.parse(raw) as NotifyPrefs) }
   } catch {
@@ -112,7 +117,9 @@ export function loadNotifyPrefs(userId: string): NotifyPrefs {
 }
 
 export function saveNotifyPrefs(userId: string, prefs: NotifyPrefs) {
-  localStorage.setItem(NOTIFY_KEY(userId), JSON.stringify(prefs))
+  const key = notifyKey(userId)
+  if (!key) return
+  localStorage.setItem(key, JSON.stringify(prefs))
 }
 
 export const NOTIFY_CATEGORIES: { id: keyof NotifyPrefs; title: string; items: string }[] = [

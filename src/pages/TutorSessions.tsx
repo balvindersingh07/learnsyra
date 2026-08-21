@@ -3,14 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import SessionCard from '../components/tutor-sessions/SessionCard'
 import { useAuth } from '../context/AuthContext'
 import { setPendingAiPrompt } from '../lib/dashboardIntel'
-import { getLiveClasses, getReviewQueue, getTutorBookings, getTutorCourses, getTutorStudents } from '../lib/api'
+import { getTutorLiveClasses, getTutorReviewQueue, getTutorBookings, getTutorCourses, getTutorStudents } from '../lib/api'
 import { formatClock } from '../lib/liveSession'
 import { tutorSessionPath, tutorStudentPath } from '../lib/paths'
 import { loadTutorHub, selfTutorId } from '../lib/tutorProfile'
 import { loadTutorBookings } from '../lib/tutorMarketplace'
 import { buildTutorRoster, type TutorStudent } from '../lib/tutorStudents'
 import {
-  EMPTY_EXTRAS,
   SESSION_PAGE_SIZE,
   buildTutorSessions,
   formatTime,
@@ -23,7 +22,6 @@ import {
   needsFollowUp,
   preparePrompt,
   previousSession,
-  saveSessionExtras,
   sessionStats,
   sortSessions,
   type DateFilter,
@@ -76,11 +74,12 @@ function dateName(d: DateFilter) {
 export default function TutorSessions() {
   const navigate = useNavigate()
   const { session, profile } = useAuth()
-  const tutorId = session?.user.id || profile?.id || 'local-tutor'
-  const publicId = loadTutorHub(tutorId)?.publicId || selfTutorId(tutorId)
+  const tutorId = session?.user.id || profile?.id || null
+  const scopedId = tutorId || ''
+  const publicId = tutorId ? (loadTutorHub(tutorId)?.publicId || selfTutorId(tutorId)) : ''
   const [rows, setRows] = useState<TutorSessionView[]>([])
   const [roster, setRoster] = useState<TutorStudent[]>([])
-  const [source, setSource] = useState<'live' | 'demo'>('demo')
+  const [source, setSource] = useState<'live' | 'demo'>('live')
   const [query, setQuery] = useState('')
   const [kind, setKind] = useState<SessionKind | 'all'>('all')
   const [status, setStatus] = useState<StatusFilter>('all')
@@ -103,8 +102,9 @@ export default function TutorSessions() {
   }, [])
 
   useEffect(() => {
+    if (!tutorId) return
     let alive = true
-    Promise.all([getTutorStudents(), getTutorBookings(), getReviewQueue(), getTutorCourses(), getLiveClasses()])
+    Promise.all([getTutorStudents(), getTutorBookings(), getTutorReviewQueue(), getTutorCourses(), getTutorLiveClasses()])
       .then(([enrollments, bookings, reviews, apiCourses, liveClasses]) => {
         if (!alive) return
         const rosterBuilt = buildTutorRoster({ enrollments, bookings, reviews, localBookings: loadTutorBookings(), apiCourses })
@@ -112,28 +112,11 @@ export default function TutorSessions() {
         const built = buildTutorSessions({
           local: loadTutorBookings(),
           api: bookings,
-          liveClasses: liveClasses.filter(c => !profile?.id || c.tutor_id === profile.id),
+          liveClasses,
           roster: rosterBuilt.students,
           tutorUserId: tutorId,
           tutorPublicId: publicId,
         })
-        if (built.source === 'demo') {
-          const past = loadSessionExtras(tutorId, 'demo-sess-past')
-          if (!past.actionItems.length) {
-            saveSessionExtras(tutorId, 'demo-sess-past', {
-              ...EMPTY_EXTRAS,
-              covered: 'Reviewed REST API structure and error handling.',
-              actionItems: [
-                { id: 'a1', label: 'Build GET/POST endpoints', done: true },
-                { id: 'a2', label: 'Add error handling', done: false },
-                { id: 'a3', label: 'Write tests', done: false },
-              ],
-              followUp: true,
-              nextTopic: 'Testing + Error Handling',
-              completedAt: built.sessions.find(s => s.id === 'demo-sess-past')?.scheduledAt ?? null,
-            })
-          }
-        }
         setRows(built.sessions)
         setSource(built.source)
       })
@@ -161,9 +144,9 @@ export default function TutorSessions() {
   }, [tutorId, publicId, profile?.id])
 
   const filtered = useMemo(() => {
-    const list = rows.filter(s => matchesQuery(s, query) && matchesFilters(s, { kind, status, date, custom, student, tutorId }))
-    return sortSessions(list, sort, tutorId)
-  }, [rows, query, kind, status, date, custom, student, sort, tutorId])
+    const list = rows.filter(s => matchesQuery(s, query) && matchesFilters(s, { kind, status, date, custom, student, tutorId: scopedId }))
+    return sortSessions(list, sort, scopedId)
+  }, [rows, query, kind, status, date, custom, student, sort, scopedId])
 
   useEffect(() => {
     setPage(1)
@@ -178,12 +161,12 @@ export default function TutorSessions() {
     return () => window.removeEventListener('keydown', onKey)
   }, [drawer])
 
-  const stats = sessionStats(rows, tutorId)
+  const stats = sessionStats(rows, scopedId)
   const today = rows.filter(s => isToday(s.scheduledAt) && s.status !== 'cancelled').sort((a, b) => +new Date(a.scheduledAt) - +new Date(b.scheduledAt))
   const liveNow = rows.filter(s => s.status === 'in_progress')
   const upcoming = rows.filter(s => +new Date(s.scheduledAt) >= Date.now() && s.status !== 'completed' && s.status !== 'cancelled' && !isToday(s.scheduledAt))
-  const follow = rows.filter(s => needsFollowUp(s, loadSessionExtras(tutorId, s.id)))
-  const history = sortSessions(rows.filter(s => s.status === 'completed'), 'completed', tutorId)
+  const follow = rows.filter(s => needsFollowUp(s, loadSessionExtras(scopedId, s.id)))
+  const history = sortSessions(rows.filter(s => s.status === 'completed'), 'completed', scopedId)
     .filter(s => (histKind === 'all' || s.kind === histKind) && (!histStudent || s.studentName.toLowerCase().includes(histStudent.toLowerCase())))
     .sort((a, b) => {
       if (histSort === 'oldest') return +new Date(a.scheduledAt) - +new Date(b.scheduledAt)
@@ -288,9 +271,10 @@ export default function TutorSessions() {
         ))}
       </div>
 
-      {source === 'demo' && !loading && (
-        <div className="glass rounded-2xl p-4 mb-5 text-sm text-muted">
-          You have no booked sessions yet. The timeline below is <span className="font-semibold text-ink">demo data</span> so you can explore the Command Center.
+      {!loading && rows.length === 0 && (
+        <div className="glass rounded-2xl p-8 mb-5">
+          <h2 className="text-xl font-black text-ink mb-2">No sessions yet</h2>
+          <p className="text-sm text-muted">Your real bookings and sessions will appear here.</p>
         </div>
       )}
 
@@ -334,7 +318,7 @@ export default function TutorSessions() {
           <h2 className="text-lg font-black text-ink mb-3">⚡ Needs Follow-up</h2>
           <div className="space-y-3">
             {follow.slice(0, 6).map(s => {
-              const extras = loadSessionExtras(tutorId, s.id)
+              const extras = loadSessionExtras(scopedId, s.id)
               const open = extras.actionItems.find(a => !a.done)
               return (
                 <div key={s.id} className="flex flex-wrap justify-between gap-3">
@@ -464,7 +448,7 @@ export default function TutorSessions() {
         ) : (
           <div className="space-y-3">
             {histSlice.map(s => {
-              const extras = loadSessionExtras(tutorId, s.id)
+              const extras = loadSessionExtras(scopedId, s.id)
               return (
                 <article key={s.id} className="glass rounded-2xl p-4 flex flex-wrap justify-between gap-3">
                   <div>

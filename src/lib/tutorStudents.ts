@@ -1,6 +1,7 @@
 import type { BookingRow, CourseRow, ProfileLite, ProjectRow, StudentProjectRow } from './api'
 import { buildCatalog, type CatalogCourse } from './courseCatalog'
 import { getCourseDetailPack } from './courseDetail'
+import { userStorageKey } from './supabase'
 import { liveClassPath, projectPath, sessionPath } from './paths'
 import type { TutorBooking } from './tutorMarketplace'
 
@@ -102,28 +103,35 @@ export interface TutorStudent {
   relationship: 'Active Student' | 'Completed' | 'Inactive'
 }
 
-const NOTES_KEY = (tutorId: string) => `learnsyra_tutor_notes_${tutorId}`
+function notesKey(tutorId?: string | null) {
+  return userStorageKey('learnsyra_tutor_notes', tutorId)
+}
 
-export function loadTutorNotes(tutorId: string): TutorNote[] {
+export function loadTutorNotes(tutorId?: string | null): TutorNote[] {
+  const key = notesKey(tutorId)
+  if (!key) return []
   try {
-    const raw = localStorage.getItem(NOTES_KEY(tutorId))
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as TutorNote[]) : []
   } catch {
     return []
   }
 }
 
-export function saveTutorNotes(tutorId: string, notes: TutorNote[]) {
-  localStorage.setItem(NOTES_KEY(tutorId), JSON.stringify(notes))
+export function saveTutorNotes(tutorId: string | null | undefined, notes: TutorNote[]) {
+  const key = notesKey(tutorId)
+  if (!key) return
+  localStorage.setItem(key, JSON.stringify(notes))
 }
 
-export function notesForStudent(tutorId: string, studentId: string) {
+export function notesForStudent(tutorId: string | null | undefined, studentId: string) {
   return loadTutorNotes(tutorId)
     .filter(n => n.studentId === studentId)
     .sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt))
 }
 
-export function upsertNote(tutorId: string, studentId: string, body: string, id?: string) {
+export function upsertNote(tutorId: string | null | undefined, studentId: string, body: string, id?: string) {
+  if (!tutorId) return
   const all = loadTutorNotes(tutorId)
   const now = new Date().toISOString()
   if (id) {
@@ -137,7 +145,8 @@ export function upsertNote(tutorId: string, studentId: string, body: string, id?
   ])
 }
 
-export function deleteNote(tutorId: string, noteId: string) {
+export function deleteNote(tutorId: string | null | undefined, noteId: string) {
+  if (!tutorId) return
   saveTutorNotes(tutorId, loadTutorNotes(tutorId).filter(n => n.id !== noteId))
 }
 
@@ -234,199 +243,6 @@ function actionFor(status: StudentStatus, reasons: string[], weak: string[]) {
   if (status === 'inactive') return 'Check in on learning goals'
   if (status === 'completed') return 'Suggest a next project or interview session'
   return 'Continue the current learning path'
-}
-
-export function demoRoster(): TutorStudent[] {
-  const today = new Date()
-  const iso = (days: number, hour = 18, minute = 30) => {
-    const d = new Date(today)
-    d.setDate(d.getDate() + days)
-    d.setHours(hour, minute, 0, 0)
-    return d.toISOString()
-  }
-  const session = (id: string, label: string, days: number, upcoming: boolean, status: string, duration = 45): StudentSessionLink => ({
-    id,
-    label,
-    when: iso(days),
-    duration,
-    status,
-    href: sessionPath(id),
-    joinHref: upcoming ? liveClassPath(id) : null,
-    upcoming,
-    notes: null,
-  })
-  const rows: Array<Partial<TutorStudent> & { id: string; name: string; headline: string; progress: number; course: string; skills: StudentSkill[]; reasons?: string[]; enrolledDays: number; activityDays: number }> = [
-    {
-      id: 'demo-alex',
-      name: 'Alex Rivera',
-      headline: 'Frontend Developer',
-      progress: 67,
-      course: 'Full Stack Web Development',
-      skills: [
-        { name: 'React', score: 88, source: 'course' },
-        { name: 'JavaScript', score: 84, source: 'course' },
-        { name: 'REST APIs', score: 78, source: 'course' },
-        { name: 'Node.js', score: 72, source: 'course' },
-        { name: 'TypeScript', score: 35, source: 'course' },
-        { name: 'Testing', score: 22, source: 'course' },
-      ],
-      reasons: ['Course progress stalled'],
-      enrolledDays: 28,
-      activityDays: 16,
-    },
-    {
-      id: 'demo-priya',
-      name: 'Priya Shah',
-      headline: 'Full Stack learner',
-      progress: 82,
-      course: 'Full Stack Web Development',
-      skills: [
-        { name: 'React', score: 90, source: 'course' },
-        { name: 'JavaScript', score: 86, source: 'course' },
-        { name: 'TypeScript', score: 70, source: 'course' },
-      ],
-      enrolledDays: 20,
-      activityDays: 0,
-    },
-    {
-      id: 'demo-jordan',
-      name: 'Jordan Lee',
-      headline: 'Career switcher',
-      progress: 100,
-      course: 'Interview Preparation',
-      skills: [
-        { name: 'Interview Preparation', score: 92, source: 'course' },
-        { name: 'Communication', score: 80, source: 'course' },
-      ],
-      enrolledDays: 60,
-      activityDays: 3,
-    },
-    {
-      id: 'demo-sam',
-      name: 'Sam Okonkwo',
-      headline: 'Python beginner',
-      progress: 8,
-      course: 'Python Fundamentals',
-      skills: [{ name: 'Python', score: 12, source: 'course' }],
-      enrolledDays: 40,
-      activityDays: 32,
-    },
-    {
-      id: 'demo-meera',
-      name: 'Meera Kapoor',
-      headline: 'Project-focused learner',
-      progress: 54,
-      course: 'Full Stack Web Development',
-      skills: [
-        { name: 'React', score: 74, source: 'project' },
-        { name: 'REST APIs', score: 40, source: 'project' },
-      ],
-      reasons: ['Project milestone awaiting review'],
-      enrolledDays: 18,
-      activityDays: 2,
-    },
-    {
-      id: 'demo-dev',
-      name: 'Dev Patel',
-      headline: 'Backend track',
-      progress: 41,
-      course: 'Node.js APIs',
-      skills: [
-        { name: 'Node.js', score: 55, source: 'course' },
-        { name: 'REST APIs', score: 48, source: 'course' },
-        { name: 'Testing', score: 20, source: 'course' },
-      ],
-      reasons: ['Upcoming session requires preparation'],
-      enrolledDays: 12,
-      activityDays: 1,
-    },
-  ]
-
-  return rows.map(row => {
-    const enrolledAt = iso(-row.enrolledDays, 10, 0)
-    const lastActivityAt = iso(-row.activityDays, 16, 0)
-    const upcoming = row.id === 'demo-alex' || row.id === 'demo-dev'
-    const needsReview = row.id === 'demo-meera'
-    const cls = classify({
-      progress: row.progress,
-      enrolledAt,
-      lastActivityAt,
-      hasUpcoming: upcoming,
-      needsReview,
-    })
-    const status = row.progress >= 100 ? 'completed' : row.id === 'demo-sam' ? 'inactive' : cls.status
-    const reasons = row.reasons ?? cls.reasons
-    const nextSession = upcoming
-      ? session(`${row.id}-next`, row.id === 'demo-alex' ? 'React Architecture' : 'API review', 0, true, 'Confirmed')
-      : null
-    const projects: StudentProjectLink[] =
-      row.id === 'demo-alex' || row.id === 'demo-meera' || row.id === 'demo-priya'
-        ? [
-            {
-              id: 'catalog-react-expense',
-              title: 'React Expense Tracker',
-              status: row.id === 'demo-priya' ? 'completed' : 'in_progress',
-              href: projectPath('catalog-react-expense'),
-              skills: ['React', 'REST API', 'JavaScript'],
-              score: row.id === 'demo-priya' ? 86 : undefined,
-              progress: row.id === 'demo-priya' ? 100 : row.id === 'demo-meera' ? 72 : 72,
-              needsReview: needsReview,
-              stallNote: needsReview ? 'Student has not completed the API integration milestone.' : null,
-            },
-          ]
-        : []
-    const student: TutorStudent = {
-      id: row.id,
-      name: row.name,
-      headline: row.headline,
-      avatarUrl: null,
-      demo: true,
-      status,
-      courses: [{ id: `demo-course-${row.id}`, title: row.course, progress: row.progress, enrolledAt, lastLessonId: null }],
-      overallProgress: row.progress,
-      currentFocus: row.skills[0]?.name ?? row.course,
-      skills: row.skills,
-      focusSkills: row.skills.filter(s => s.score != null && s.score < 50).map(s => s.name),
-      nextSession,
-      lastActivityAt,
-      lastSessionAt: iso(-7, 18, 0),
-      enrolledAt,
-      attentionReasons: reasons,
-      recommendedAction: '',
-      insight: '',
-      projects,
-      sessions: [
-        ...(nextSession ? [nextSession] : []),
-        session(`${row.id}-h1`, 'React Hooks', -10, false, 'Completed'),
-        session(`${row.id}-h2`, 'REST API Architecture', -18, false, 'Completed', 60),
-      ],
-      activity: [
-        { at: lastActivityAt, text: `Course progress at ${row.progress}% in ${row.course}` },
-        ...(needsReview ? [{ at: iso(-2, 15, 0), text: 'Submitted Expense Tracker milestone' }] : []),
-      ],
-      achievements: [
-        { id: 'react', label: 'React Builder', earned: row.skills.some(s => s.name === 'React' && (s.score ?? 0) >= 70), hint: 'Shown when React course/project progress is strong' },
-        { id: 'project', label: 'Project Finisher', earned: projects.some(p => p.status === 'completed'), hint: 'Complete a project' },
-        { id: 'streak', label: 'Learning Streak', earned: false, hint: 'Streak data is not shared with tutors yet' },
-      ],
-      career: {
-        target: row.headline,
-        skills: row.progress,
-        projects: projects.length ? (projects[0].status === 'completed' ? 78 : 55) : null,
-        resume: null,
-        interview: row.course.includes('Interview') ? 72 : null,
-        overall: null,
-        support: row.skills.some(s => s.name === 'TypeScript' && (s.score ?? 100) < 50)
-          ? 'May benefit from a TypeScript-focused session before the next project.'
-          : null,
-      },
-      relationship: status === 'completed' ? 'Completed' : status === 'inactive' ? 'Inactive' : 'Active Student',
-    }
-    student.career.overall = average([student.career.skills, student.career.projects, student.career.interview])
-    student.recommendedAction = actionFor(status, reasons, student.focusSkills)
-    student.insight = insightFor(student)
-    return student
-  })
 }
 
 function average(ns: Array<number | null>) {
@@ -567,8 +383,7 @@ export function buildTutorRoster(input: RosterInput): { students: TutorStudent[]
   }
 
   const students = [...byId.values()].map(row => finalizeStudent(row, catalog))
-  if (!students.length) return { students: demoRoster(), source: 'demo' }
-  return { students, source: 'live' }
+  return { students, source: 'live' as const }
 }
 
 function finalizeStudent(row: TutorStudent, catalog: CatalogCourse[]): TutorStudent {
@@ -655,11 +470,12 @@ export function rosterStats(students: TutorStudent[]) {
   }
 }
 
-export function aiSummary(students: TutorStudent[], source: 'live' | 'demo') {
+export function aiSummary(students: TutorStudent[], _source: 'live' | 'demo' = 'live') {
   const stats = rosterStats(students)
-  const prefix = source === 'demo' ? 'Demo roster: ' : ''
   return {
-    headline: `${prefix}${stats.attention} student${stats.attention === 1 ? '' : 's'} may need attention this week.`,
+    headline: students.length
+      ? `${stats.attention} student${stats.attention === 1 ? '' : 's'} may need attention this week.`
+      : 'No students yet. Students will appear here when they enroll in your courses.',
     stalled: stats.stalled,
     skillGaps: stats.skillGaps,
     nextProject: stats.nextProject,

@@ -1,4 +1,5 @@
 import type { BookingRow, LiveClass } from './api'
+import { userStorageKey } from './supabase'
 import {
   elapsedSeconds,
   getLiveRecord,
@@ -68,7 +69,9 @@ export interface TutorSessionView {
   rating: number | null
 }
 
-const EXTRAS_KEY = (tutorId: string) => `learnsyra_tutor_session_extras_${tutorId}`
+function extrasKey(tutorId?: string | null) {
+  return userStorageKey('learnsyra_tutor_session_extras', tutorId)
+}
 export const SESSION_PAGE_SIZE = 20
 
 const EMPTY_EXTRAS: SessionExtras = {
@@ -83,23 +86,27 @@ const EMPTY_EXTRAS: SessionExtras = {
   completedAt: null,
 }
 
-export function loadSessionExtrasMap(tutorId: string): Record<string, SessionExtras> {
+export function loadSessionExtrasMap(tutorId?: string | null): Record<string, SessionExtras> {
+  const key = extrasKey(tutorId)
+  if (!key) return {}
   try {
-    const raw = localStorage.getItem(EXTRAS_KEY(tutorId))
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as Record<string, SessionExtras>) : {}
   } catch {
     return {}
   }
 }
 
-export function loadSessionExtras(tutorId: string, sessionId: string): SessionExtras {
+export function loadSessionExtras(tutorId: string | null | undefined, sessionId: string): SessionExtras {
   return { ...EMPTY_EXTRAS, ...(loadSessionExtrasMap(tutorId)[sessionId] ?? {}) }
 }
 
-export function saveSessionExtras(tutorId: string, sessionId: string, extras: SessionExtras) {
+export function saveSessionExtras(tutorId: string | null | undefined, sessionId: string, extras: SessionExtras) {
+  const key = extrasKey(tutorId)
+  if (!key) return
   const map = loadSessionExtrasMap(tutorId)
   map[sessionId] = extras
-  localStorage.setItem(EXTRAS_KEY(tutorId), JSON.stringify(map))
+  localStorage.setItem(key, JSON.stringify(map))
 }
 
 export function statusDot(status: SessionUiStatus) {
@@ -254,7 +261,7 @@ export function needsFollowUp(view: TutorSessionView, extras: SessionExtras) {
   return false
 }
 
-export function needsPrep(view: TutorSessionView, extras: SessionExtras, tutorId: string) {
+export function needsPrep(view: TutorSessionView, extras: SessionExtras, tutorId?: string | null) {
   if (view.status !== 'confirmed' && view.status !== 'needs_prep') return false
   if (view.status === 'needs_prep') return true
   const notes = view.studentId ? notesForStudent(tutorId, view.studentId) : []
@@ -266,7 +273,7 @@ export interface SessionBuildInput {
   api: BookingRow[]
   liveClasses: LiveClass[]
   roster: TutorStudent[]
-  tutorUserId: string
+  tutorUserId: string | null
   tutorPublicId: string
 }
 
@@ -384,170 +391,16 @@ export function buildTutorSessions(input: SessionBuildInput): { sessions: TutorS
     out.push(view)
   }
 
-  if (!out.length) return { sessions: demoSessions(), source: 'demo' }
   out.sort((a, b) => +new Date(a.scheduledAt) - +new Date(b.scheduledAt))
-  return { sessions: out, source: 'live' }
+  return { sessions: out, source: 'live' as const }
 }
 
-function at(days: number, hour: number, minute = 30) {
-  const d = new Date()
-  d.setDate(d.getDate() + days)
-  d.setHours(hour, minute, 0, 0)
-  return d.toISOString()
-}
-
-function demoSessions(): TutorSessionView[] {
-  const rows: TutorSessionView[] = [
-    {
-      id: 'demo-sess-alex',
-      source: 'demo',
-      demo: true,
-      studentId: 'demo-alex',
-      studentName: 'Alex Rivera',
-      studentAvatar: null,
-      topic: 'React Architecture',
-      kind: '1on1',
-      kindLabel: kindLabel('1on1'),
-      scheduledAt: at(0, 18, 30),
-      duration: 60,
-      status: 'confirmed',
-      bookingStatus: 'confirmed',
-      goal: 'Help student understand REST API authentication and complete the project milestone.',
-      price: 1500,
-      courseTitle: 'Full Stack Web Development',
-      courseId: 'catalog-full-stack-web-development',
-      lessonTitle: 'Building REST APIs',
-      projectTitle: 'React Expense Tracker',
-      projectId: 'catalog-react-expense',
-      studentProgress: 67,
-      joinHref: '/live?session=demo-sess-alex',
-      createdAt: at(-2, 10, 0),
-      aiSummary: 'Student is strong in React fundamentals but TypeScript remains a gap.',
-      aiFocus: ['TypeScript types', 'Custom hooks', 'API architecture'],
-      rating: null,
-    },
-    {
-      id: 'demo-sess-dev',
-      source: 'demo',
-      demo: true,
-      studentId: 'demo-dev',
-      studentName: 'Dev Patel',
-      studentAvatar: null,
-      topic: 'API review',
-      kind: 'project',
-      kindLabel: kindLabel('project'),
-      scheduledAt: at(0, 20, 0),
-      duration: 45,
-      status: 'needs_prep',
-      bookingStatus: 'pending',
-      goal: '',
-      price: 1200,
-      courseTitle: 'Node.js APIs',
-      courseId: null,
-      lessonTitle: 'Error handling',
-      projectTitle: null,
-      projectId: null,
-      studentProgress: 41,
-      joinHref: '/live?session=demo-sess-dev',
-      createdAt: at(-1, 9, 0),
-      aiSummary: 'Needs more practice with API error handling before the next milestone.',
-      aiFocus: ['Error handling', 'Status codes', 'Request validation'],
-      rating: null,
-    },
-    {
-      id: 'demo-sess-priya',
-      source: 'demo',
-      demo: true,
-      studentId: 'demo-priya',
-      studentName: 'Priya Shah',
-      studentAvatar: null,
-      topic: 'TypeScript review',
-      kind: '1on1',
-      kindLabel: kindLabel('1on1'),
-      scheduledAt: at(2, 17, 0),
-      duration: 45,
-      status: 'confirmed',
-      bookingStatus: 'confirmed',
-      goal: 'Tighten TypeScript types before the next project.',
-      price: 1200,
-      courseTitle: 'Full Stack Web Development',
-      courseId: null,
-      lessonTitle: null,
-      projectTitle: null,
-      projectId: null,
-      studentProgress: 82,
-      joinHref: '/live?session=demo-sess-priya',
-      createdAt: at(-3, 12, 0),
-      aiSummary: 'Strong course progress; TypeScript types are the listed focus for this session.',
-      aiFocus: ['TypeScript interfaces', 'Generics', 'Project types'],
-      rating: null,
-    },
-    {
-      id: 'demo-sess-past',
-      source: 'demo',
-      demo: true,
-      studentId: 'demo-alex',
-      studentName: 'Alex Rivera',
-      studentAvatar: null,
-      topic: 'REST API Architecture',
-      kind: 'project',
-      kindLabel: kindLabel('project'),
-      scheduledAt: at(-2, 18, 0),
-      duration: 60,
-      status: 'completed',
-      bookingStatus: 'completed',
-      goal: 'Review REST API structure and error handling.',
-      price: 1500,
-      courseTitle: 'Full Stack Web Development',
-      courseId: null,
-      lessonTitle: 'REST APIs',
-      projectTitle: 'React Expense Tracker',
-      projectId: 'catalog-react-expense',
-      studentProgress: 67,
-      joinHref: '/live?session=demo-sess-past',
-      createdAt: at(-8, 10, 0),
-      aiSummary: null,
-      aiFocus: [],
-      rating: 5,
-    },
-    {
-      id: 'demo-sess-jordan',
-      source: 'demo',
-      demo: true,
-      studentId: 'demo-jordan',
-      studentName: 'Jordan Lee',
-      studentAvatar: null,
-      topic: 'Interview Preparation',
-      kind: 'interview',
-      kindLabel: kindLabel('interview'),
-      scheduledAt: at(-10, 16, 0),
-      duration: 45,
-      status: 'completed',
-      bookingStatus: 'completed',
-      goal: 'Behavioral plus system-design warm-up.',
-      price: 1500,
-      courseTitle: 'Interview Preparation',
-      courseId: null,
-      lessonTitle: null,
-      projectTitle: null,
-      projectId: null,
-      studentProgress: 100,
-      joinHref: '/live?session=demo-sess-jordan',
-      createdAt: at(-12, 11, 0),
-      aiSummary: null,
-      aiFocus: [],
-      rating: 5,
-    },
-  ]
-  return rows
-}
-
-export function sessionStats(rows: TutorSessionView[], tutorId: string) {
+export function sessionStats(rows: TutorSessionView[], tutorId?: string | null) {
   const extras = loadSessionExtrasMap(tutorId)
   return {
-    today: rows.filter(s => isToday(s.scheduledAt) && s.status !== 'cancelled').length,
-    upcoming: rows.filter(s => +new Date(s.scheduledAt) >= Date.now() && s.status !== 'completed' && s.status !== 'cancelled').length,
-    completed: rows.filter(s => s.status === 'completed').length,
+    today: rows.filter(s => !s.demo && isToday(s.scheduledAt) && s.status !== 'cancelled').length,
+    upcoming: rows.filter(s => !s.demo && +new Date(s.scheduledAt) >= Date.now() && s.status !== 'completed' && s.status !== 'cancelled').length,
+    completed: rows.filter(s => !s.demo && s.status === 'completed').length,
     followup: rows.filter(s => needsFollowUp(s, { ...EMPTY_EXTRAS, ...(extras[s.id] ?? {}) })).length,
   }
 }
@@ -560,7 +413,7 @@ export function matchesQuery(s: TutorSessionView, q: string) {
 
 export function matchesFilters(
   s: TutorSessionView,
-  opts: { kind: SessionKind | 'all'; status: StatusFilter; date: DateFilter; custom: string; student: string; tutorId: string },
+  opts: { kind: SessionKind | 'all'; status: StatusFilter; date: DateFilter; custom: string; student: string; tutorId?: string | null },
 ) {
   if (opts.kind !== 'all' && s.kind !== opts.kind) return false
   if (opts.student && !s.studentName.toLowerCase().includes(opts.student.toLowerCase())) return false
@@ -579,7 +432,7 @@ export function matchesFilters(
   return true
 }
 
-export function sortSessions(rows: TutorSessionView[], key: SortKey, tutorId: string) {
+export function sortSessions(rows: TutorSessionView[], key: SortKey, tutorId?: string | null) {
   const copy = [...rows]
   copy.sort((a, b) => {
     if (key === 'booked') return +new Date(b.createdAt) - +new Date(a.createdAt)

@@ -12,6 +12,7 @@ import {
   SUGGESTED_SKILLS,
   TEACHING_STYLE_TAGS,
   WEEKDAYS,
+  emptyHub,
   loadOrCreateHub,
   publishBlockers,
   saveTutorHub,
@@ -29,6 +30,7 @@ import {
   SETTINGS_NAV,
   addExtraRange,
   availabilityStatus,
+  defaultNotifyPrefs,
   loadNotifyPrefs,
   previewSlots,
   pricingStatus,
@@ -51,10 +53,10 @@ export default function TutorSettings() {
   const navigate = useNavigate()
   const location = useLocation()
   const { session, profile, signOut, updatePassword } = useAuth()
-  const userId = session?.user.id || profile?.id || 'local-tutor'
+  const userId = session?.user.id || profile?.id || null
   const email = session?.user.email || ''
   const [hub, setHub] = useState<TutorHub>(() =>
-    loadOrCreateHub(userId, {
+    emptyHub('__awaiting_auth__', {
       name: profile?.full_name || email || 'Tutor',
       headline: profile?.headline || '',
       avatarUrl: profile?.avatar_url || null,
@@ -62,7 +64,7 @@ export default function TutorSettings() {
     }),
   )
   const [saved, setSaved] = useState<TutorHub>(hub)
-  const [notify, setNotify] = useState(() => loadNotifyPrefs(userId))
+  const [notify, setNotify] = useState(() => defaultNotifyPrefs())
   const [savedNotify, setSavedNotify] = useState(notify)
   const [section, setSection] = useState<SettingsSection>(() => SECTION_FROM_HASH[location.hash.replace('#', '')] || 'overview')
   const [drawer, setDrawer] = useState(false)
@@ -81,6 +83,7 @@ export default function TutorSettings() {
   const dirty = JSON.stringify(hub) !== JSON.stringify(saved) || JSON.stringify(notify) !== JSON.stringify(savedNotify)
 
   useEffect(() => {
+    if (!userId) return
     const next = loadOrCreateHub(userId, {
       name: profile?.full_name || email || 'Tutor',
       headline: profile?.headline || '',
@@ -135,6 +138,7 @@ export default function TutorSettings() {
   }
 
   const persist = (next = hub, note?: string) => {
+    if (!userId) return false
     const availErr = validateAvailability(next)
     const priceErr = validatePricing(next)
     const blockErr = validateBlocked(next)
@@ -251,6 +255,14 @@ export default function TutorSettings() {
       </button>
     </nav>
   )
+
+  if (!userId) {
+    return (
+      <div className="tst-page pt-20 px-4 sm:px-6 pb-24 max-w-6xl mx-auto">
+        <p className="text-sm text-muted">Loading tutor settings…</p>
+      </div>
+    )
+  }
 
   return (
     <div className="tst-page pt-20 px-4 sm:px-6 pb-24 max-w-6xl mx-auto overflow-x-hidden">

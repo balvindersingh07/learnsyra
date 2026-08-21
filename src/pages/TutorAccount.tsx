@@ -20,6 +20,7 @@ import {
   TEACHING_STYLE_TAGS,
   WEEKDAYS,
   coachTips,
+  emptyHub,
   loadOrCreateHub,
   nextOnboardingTarget,
   profileStrength,
@@ -108,10 +109,10 @@ export default function TutorAccount() {
   const { session, profile, updateProfile, updatePassword } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const userId = session?.user.id || profile?.id || 'local-tutor'
+  const userId = session?.user.id || profile?.id || null
   const email = session?.user.email || ''
   const [hub, setHub] = useState<TutorHub>(() =>
-    loadOrCreateHub(userId, {
+    emptyHub('__awaiting_auth__', {
       name: profile?.full_name || email || 'Tutor',
       headline: profile?.headline || '',
       avatarUrl: profile?.avatar_url || null,
@@ -127,9 +128,10 @@ export default function TutorAccount() {
   const [confirm, setConfirm] = useState('')
   const [projects, setProjects] = useState<{ id: string; title: string }[]>([])
   const [courses, setCourses] = useState<(CourseRow & { students: number })[]>([])
-  const [onboarding, setOnboarding] = useState(() => shouldShowOnboarding(hub))
+  const [onboarding, setOnboarding] = useState(false)
 
   useEffect(() => {
+    if (!userId) return
     const next = loadOrCreateHub(userId, {
       name: profile?.full_name || email || 'Tutor',
       headline: profile?.headline || '',
@@ -141,8 +143,8 @@ export default function TutorAccount() {
   }, [userId])
 
   useEffect(() => {
-    if (!profile && !email) return
-    setHub(h => ({
+    if (!userId || (!profile && !email)) return
+    setHub(h => h ? ({
       ...h,
       identity: {
         name: h.identity.name || profile?.full_name || email || 'Tutor',
@@ -150,12 +152,13 @@ export default function TutorAccount() {
         avatarUrl: h.identity.avatarUrl || profile?.avatar_url || null,
         email: email || h.identity.email,
       },
-    }))
-  }, [profile?.full_name, profile?.headline, profile?.avatar_url, email])
+    }) : h)
+  }, [userId, profile?.full_name, profile?.headline, profile?.avatar_url, email])
 
   useEffect(() => {
+    if (!userId || hub.userId !== userId) return
     saveTutorHub(hub)
-  }, [hub])
+  }, [hub, userId])
 
   useEffect(() => {
     if (!previewOpen) return
@@ -177,7 +180,7 @@ export default function TutorAccount() {
     getTutorCourses()
       .then(rows => {
         setCourses(rows)
-        setHub(h => ({
+        setHub(h => h ? ({
           ...h,
           publicCourses: rows.map(c => ({
             title: c.title,
@@ -192,12 +195,12 @@ export default function TutorAccount() {
             courseCount: rows.length,
             rating: rows.length ? rows.reduce((s, c) => s + Number(c.rating || 0), 0) / rows.length : null,
           },
-        }))
+        }) : h)
       })
       .catch(() => setCourses([]))
     getTutorStudents()
       .then(rows => {
-        setHub(h => ({ ...h, platformCache: { ...h.platformCache, students: rows.length } }))
+        setHub(h => h ? ({ ...h, platformCache: { ...h.platformCache, students: rows.length } }) : h)
       })
       .catch(() => {})
     getTutorBookings()
@@ -893,6 +896,14 @@ export default function TutorAccount() {
       </button>
     </section>
   )
+
+  if (!userId) {
+    return (
+      <div className="tp-page pt-20 px-4 sm:px-6 pb-24 max-w-6xl mx-auto">
+        <p className="text-sm text-muted">Loading tutor profile…</p>
+      </div>
+    )
+  }
 
   if (onboarding) {
     const step = hub.onboarding.step
