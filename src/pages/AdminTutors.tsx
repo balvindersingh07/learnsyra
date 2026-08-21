@@ -14,7 +14,6 @@ import {
   type AdminTutorIndex,
   type AdminTutorRow,
   type MarketFilter,
-  type TutorAccountFilter,
   type TutorQuery,
   type TutorSort,
   type TutorTab,
@@ -27,7 +26,6 @@ const TABS: { id: TutorTab; label: string }[] = [
   { id: 'draft', label: 'Draft' },
   { id: 'paused', label: 'Paused' },
   { id: 'review', label: 'Needs Review' },
-  { id: 'suspended', label: 'Suspended' },
 ]
 
 export default function AdminTutors() {
@@ -37,7 +35,6 @@ export default function AdminTutors() {
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<TutorTab>('all')
   const [q, setQ] = useState('')
-  const [account, setAccount] = useState<TutorAccountFilter>('all')
   const [market, setMarket] = useState<MarketFilter>('all')
   const [expertise, setExpertise] = useState('')
   const [style, setStyle] = useState('')
@@ -59,7 +56,7 @@ export default function AdminTutors() {
   }
 
   useEffect(() => { load() }, [])
-  useEffect(() => { setPage(1) }, [tab, q, account, market, expertise, style, session, joined, sort])
+  useEffect(() => { setPage(1) }, [tab, q, market, expertise, style, session, joined, sort])
   useEffect(() => {
     if (!filtersOpen && !exportOpen && !menuId) return
     const onKey = (e: KeyboardEvent) => {
@@ -75,8 +72,8 @@ export default function AdminTutors() {
 
   const rows = index?.tutors ?? []
   const query: TutorQuery = useMemo(() => ({
-    tab, q, account, market, expertise, style, session, joined, sort,
-  }), [tab, q, account, market, expertise, style, session, joined, sort])
+    tab, q, market, expertise, style, session, joined, sort,
+  }), [tab, q, market, expertise, style, session, joined, sort])
   const filtered = useMemo(() => filterTutors(rows, query), [rows, query])
   const pager = paginate(filtered, page)
   const stats = tutorStats(rows)
@@ -87,8 +84,7 @@ export default function AdminTutors() {
   const styles = uniqueValues(rows, 'teachingStyles')
   const sessions = uniqueValues(rows, 'sessionTypes')
   const hasDemo = rows.some(r => r.demo)
-  const hasSuspended = rows.some(r => r.accountStatus === 'suspended')
-  const tabs = hasSuspended ? TABS : TABS.filter(t => t.id !== 'suspended')
+  const tabs = TABS
 
   const emptyCopy = () => {
     if (q.trim()) return 'No tutors match your search.'
@@ -97,14 +93,6 @@ export default function AdminTutors() {
 
   const filters = (
     <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-2">
-      <label className="text-[11px] font-semibold text-muted">
-        Status
-        <select className="field mt-1 w-full px-2 py-1.5 text-sm" value={account} onChange={e => setAccount(e.target.value as TutorAccountFilter)}>
-          <option value="all">All</option>
-          <option value="active">Active</option>
-          <option value="suspended">Suspended</option>
-        </select>
-      </label>
       <label className="text-[11px] font-semibold text-muted">
         Marketplace visibility
         <select className="field mt-1 w-full px-2 py-1.5 text-sm" value={market} onChange={e => setMarket(e.target.value as MarketFilter)}>
@@ -238,7 +226,6 @@ export default function AdminTutors() {
                 <tr className="text-left text-[11px] text-muted">
                   <th className="px-3 py-2">Tutor</th>
                   <th className="px-3 py-2">Expertise</th>
-                  <th className="px-3 py-2">Status</th>
                   <th className="px-3 py-2">Verification</th>
                   <th className="px-3 py-2">Courses</th>
                   {hasStudents && <th className="px-3 py-2">Students</th>}
@@ -253,7 +240,6 @@ export default function AdminTutors() {
                   <tr key={t.id} style={{ borderTop: '1px solid rgba(99,102,241,0.08)' }}>
                     <td className="px-3 py-2"><TutorId tutor={t} /></td>
                     <td className="px-3 py-2 text-muted">{t.expertise.slice(0, 2).join(', ') || '—'}</td>
-                    <td className="px-3 py-2">{t.accountStatus === 'suspended' ? 'Suspended' : 'Active'}</td>
                     <td className="px-3 py-2 text-muted">Not Available</td>
                     <td className="px-3 py-2">{t.courseCount}</td>
                     {hasStudents && <td className="px-3 py-2">{t.studentCount}</td>}
@@ -282,7 +268,6 @@ export default function AdminTutors() {
               <article key={t.id} className="glass rounded-2xl p-3">
                 <TutorId tutor={t} />
                 <div className="flex flex-wrap gap-1.5 mt-2 text-[11px] text-muted">
-                  <span>{t.accountStatus === 'suspended' ? 'Suspended' : 'Active'}</span>
                   <span>Verification: Not Available</span>
                   <span>{marketLabel(t.market)}</span>
                 </div>

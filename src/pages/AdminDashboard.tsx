@@ -147,10 +147,10 @@ export default function AdminDashboard() {
                 <div className="ac-bar" role="img" aria-label={data.growth.map(g => `${g.label}: ${g.students} students, ${g.tutors} tutors`).join('; ')}>
                   {data.growth.map(g => (
                     <span key={g.label} title={`${g.label}: students ${g.students}, tutors ${g.tutors}, courses ${g.courses}, sessions ${g.sessions}`}>
-                      <i style={{ height: `${Math.max(6, (g.students / maxGrowth) * 76)}px`, background: '#6c5ce7' }} />
-                      <i style={{ height: `${Math.max(6, (g.tutors / maxGrowth) * 76)}px`, background: '#8b5cf6' }} />
-                      <i style={{ height: `${Math.max(6, (g.courses / maxGrowth) * 76)}px`, background: '#22c7d6' }} />
-                      <i style={{ height: `${Math.max(6, (g.sessions / maxGrowth) * 76)}px`, background: '#f59e0b' }} />
+                      <i style={{ height: `${g.students === 0 || maxGrowth <= 0 ? 0 : (g.students / maxGrowth) * 76}px`, background: '#6c5ce7' }} />
+                      <i style={{ height: `${g.tutors === 0 || maxGrowth <= 0 ? 0 : (g.tutors / maxGrowth) * 76}px`, background: '#8b5cf6' }} />
+                      <i style={{ height: `${g.courses === 0 || maxGrowth <= 0 ? 0 : (g.courses / maxGrowth) * 76}px`, background: '#22c7d6' }} />
+                      <i style={{ height: `${g.sessions === 0 || maxGrowth <= 0 ? 0 : (g.sessions / maxGrowth) * 76}px`, background: '#f59e0b' }} />
                     </span>
                   ))}
                 </div>

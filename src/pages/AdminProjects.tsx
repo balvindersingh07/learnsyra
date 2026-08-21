@@ -174,7 +174,7 @@ export default function AdminProjects() {
 
         <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 mb-4">
           {[
-            ['Total Projects', loading ? null : stats?.total],
+            ['Catalog Projects', loading ? null : stats?.total],
             ['Published', loading ? null : stats?.published],
             ['Draft', loading ? null : stats?.draft],
             ['Active Builds', loading ? null : stats?.activeBuilds],

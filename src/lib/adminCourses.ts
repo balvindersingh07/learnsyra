@@ -1,3 +1,4 @@
+import { loadAdminStringMap, saveAdminStringMap } from './adminStorage'
 import { getCourseCurriculum, setCoursePublished, type CourseModule, type CourseRow } from './api'
 import { formatWhen, loadAdminUserIndex, paginate, type AdminUserIndex } from './adminUsers'
 import { curriculumHealth, findStudioByAnyId, qualityScore, studioCurriculum, type StudioCourse } from './tutorCourses'
@@ -22,6 +23,7 @@ export interface AdminCourseRow {
   studentCount: number
   skills: string[]
   demo: boolean
+  catalog: boolean
 }
 
 export interface AdminCourseIndex extends AdminUserIndex {
@@ -46,12 +48,7 @@ export function isCourseModerationBackendAvailable() {
 }
 
 export function loadCourseNotes(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(NOTES_KEY)
-    return raw ? (JSON.parse(raw) as Record<string, string>) : {}
-  } catch {
-    return {}
-  }
+  return loadAdminStringMap(NOTES_KEY)
 }
 
 export function saveCourseNote(courseId: string, note: string) {
@@ -59,16 +56,21 @@ export function saveCourseNote(courseId: string, note: string) {
   const next = note.trim()
   if (next) map[courseId] = next
   else delete map[courseId]
-  localStorage.setItem(NOTES_KEY, JSON.stringify(map))
+  saveAdminStringMap(NOTES_KEY, map)
 }
 
 function isDemoCourse(c: CourseRow) {
   return c.id.startsWith('demo-')
 }
 
+function isCatalogCourse(c: CourseRow) {
+  return !c.tutor_id
+}
+
 function toCourse(c: CourseRow, index: AdminUserIndex): AdminCourseRow {
   const tutor = c.tutor_id ? index.profiles.find(p => p.id === c.tutor_id) : null
   const studio = isDemoCourse(c) ? null : studioReference(c.id)
+  const catalog = isCatalogCourse(c)
   return {
     id: c.id,
     title: c.title,
@@ -79,11 +81,12 @@ function toCourse(c: CourseRow, index: AdminUserIndex): AdminCourseRow {
     published: c.published,
     createdAt: c.created_at,
     tutorId: c.tutor_id,
-    tutorName: tutor?.full_name || 'Unnamed tutor',
+    tutorName: tutor?.full_name || (catalog ? 'Catalog' : 'Unnamed tutor'),
     tutorHeadline: tutor?.headline ?? null,
     studentCount: index.enrollments.filter(e => e.course_id === c.id).length,
     skills: studio ? [...studio.primarySkills, ...studio.secondarySkills] : [],
     demo: isDemoCourse(c),
+    catalog,
   }
 }
 
@@ -93,7 +96,7 @@ export async function loadAdminCourseIndex(): Promise<AdminCourseIndex> {
 }
 
 export function courseStats(rows: AdminCourseRow[]) {
-  const real = rows.filter(r => !r.demo)
+  const real = rows.filter(r => !r.demo && !r.catalog)
   return {
     total: String(real.length),
     published: String(real.filter(r => r.published).length),

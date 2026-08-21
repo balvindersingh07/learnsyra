@@ -1,3 +1,4 @@
+import { loadAdminStringMap, saveAdminStringMap } from './adminStorage'
 import { getAllProfiles, getLiveClasses, getTutorListings, setBookingStatus, type LiveClass, type ProfileLite, type TutorListing } from './api'
 import { formatWhen, paginate } from './adminUsers'
 import { isSupabaseConfigured, supabase } from './supabase'
@@ -91,12 +92,7 @@ export function canCancelBooking(row: AdminSessionRow) {
 }
 
 export function loadSessionNotes(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(NOTES_KEY)
-    return raw ? (JSON.parse(raw) as Record<string, string>) : {}
-  } catch {
-    return {}
-  }
+  return loadAdminStringMap(NOTES_KEY)
 }
 
 export function saveSessionNote(sessionId: string, note: string) {
@@ -104,7 +100,7 @@ export function saveSessionNote(sessionId: string, note: string) {
   const next = note.trim()
   if (next) map[sessionId] = next
   else delete map[sessionId]
-  localStorage.setItem(NOTES_KEY, JSON.stringify(map))
+  saveAdminStringMap(NOTES_KEY, map)
 }
 
 function isDemoId(id: string) {

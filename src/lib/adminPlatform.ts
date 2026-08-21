@@ -1,3 +1,4 @@
+import { loadAdminStringList, saveAdminStringList } from './adminStorage'
 import { supabase, isSupabaseConfigured } from './supabase'
 import {
   getAllCoursesAdmin,
@@ -79,17 +80,21 @@ function inRange(iso: string | null | undefined, from: Date, to: Date) {
   return t >= from.getTime() && t <= to.getTime()
 }
 
+export function isDemoRecordId(id: string | null | undefined) {
+  return typeof id === 'string' && id.startsWith('demo-')
+}
+
+/** Public catalog/sample courses are stored with tutor_id = null. Tutor-created courses have a tutor_id. */
+export function isTutorOwnedCourse(c: Pick<CourseRow, 'tutor_id'>) {
+  return Boolean(c.tutor_id)
+}
+
 export function loadDismissedInsights(): string[] {
-  try {
-    const raw = localStorage.getItem(DISMISS_KEY)
-    return raw ? (JSON.parse(raw) as string[]) : []
-  } catch {
-    return []
-  }
+  return loadAdminStringList(DISMISS_KEY)
 }
 
 export function saveDismissedInsights(ids: string[]) {
-  localStorage.setItem(DISMISS_KEY, JSON.stringify(ids.slice(0, 80)))
+  saveAdminStringList(DISMISS_KEY, ids.slice(0, 80))
 }
 
 async function loadBookings(): Promise<AdminBookingLite[]> {
@@ -172,7 +177,7 @@ function buildInsights(input: {
     out.push({
       id: 'course-queue',
       observation: `Course review queue currently has ${queued} unpublished course${queued === 1 ? '' : 's'}.`,
-      basedOn: 'Unpublished rows in the courses catalog.',
+      basedOn: 'Unpublished tutor-owned courses.',
       href: '/admin/courses',
       actionLabel: 'Review Courses',
     })
@@ -206,14 +211,19 @@ function buildInsights(input: {
 export async function loadAdminOverview(range: AdminRange, custom?: { from: string; to: string }): Promise<AdminOverview> {
   const win = adminWindow(range, custom)
   const monthly = range === '3m' || range === '6m' || range === '1y'
-  const [profiles, courses, bookings, reviews, live] = await Promise.all([
+  const [rawProfiles, rawCourses, rawBookings, rawReviews, rawLive] = await Promise.all([
     getAllProfiles().catch(() => [] as ProfileLite[]),
     getAllCoursesAdmin().catch(() => [] as CourseRow[]),
     loadBookings(),
     getReviewQueue().catch(() => []),
     getLiveClasses().catch(() => []),
   ])
-  const students = profiles.filter(p => p.role === 'student').length
+  const profiles = rawProfiles.filter(p => !isDemoRecordId(p.id))
+  const courses = rawCourses.filter(c => isTutorOwnedCourse(c) && !isDemoRecordId(c.id))
+  const bookings = rawBookings.filter(b => !isDemoRecordId(b.id))
+  const reviews = rawReviews.filter(r => !isDemoRecordId(r.id))
+  const live = rawLive.filter(c => !isDemoRecordId(c.id))
+  const students = profiles.filter(p => p.role === 'student')
   const tutors = profiles.filter(p => p.role === 'tutor')
   const publishedCourses = courses.filter(c => c.published).length
   const pendingCourses = courses.filter(c => !c.published).length
@@ -222,7 +232,7 @@ export async function loadAdminOverview(range: AdminRange, custom?: { from: stri
   const pendingVerification = null
   return {
     users: profiles.length,
-    students,
+    students: students.length,
     tutors: tutors.length,
     publishedCourses,
     pendingCourses,

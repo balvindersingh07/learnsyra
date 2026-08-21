@@ -24,7 +24,6 @@ const TABS: { id: UserTab; label: string }[] = [
   { id: 'all', label: 'All Users' },
   { id: 'students', label: 'Students' },
   { id: 'tutors', label: 'Tutors' },
-  { id: 'suspended', label: 'Suspended' },
 ]
 
 export default function AdminUsers() {
@@ -35,7 +34,6 @@ export default function AdminUsers() {
   const [tab, setTab] = useState<UserTab>('all')
   const [q, setQ] = useState('')
   const [role, setRole] = useState<UserQuery['role']>('all')
-  const [status, setStatus] = useState<UserQuery['status']>('all')
   const [joined, setJoined] = useState<JoinedFilter>('any')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
@@ -56,7 +54,7 @@ export default function AdminUsers() {
   }
 
   useEffect(() => { load() }, [])
-  useEffect(() => { setPage(1) }, [tab, q, role, status, joined, from, to, activity, sort])
+  useEffect(() => { setPage(1) }, [tab, q, role, joined, from, to, activity, sort])
 
   useEffect(() => {
     if (!filtersOpen && !exportOpen && !menuId) return
@@ -72,8 +70,8 @@ export default function AdminUsers() {
   }, [filtersOpen, exportOpen, menuId])
 
   const query: UserQuery = useMemo(() => ({
-    tab, q, role, status, joined, custom: { from, to }, activity, sort,
-  }), [tab, q, role, status, joined, from, to, activity, sort])
+    tab, q, role, joined, custom: { from, to }, activity, sort,
+  }), [tab, q, role, joined, from, to, activity, sort])
 
   const filtered = useMemo(() => filterUsers(index?.rows ?? [], query), [index, query])
   const pager = paginate(filtered, page)
@@ -86,7 +84,6 @@ export default function AdminUsers() {
     if (q.trim()) return 'No users match your search.'
     if (tab === 'students') return 'No students found.'
     if (tab === 'tutors') return 'No tutors found.'
-    if (tab === 'suspended') return 'No users found.'
     return 'No users found.'
   }
 
@@ -98,14 +95,6 @@ export default function AdminUsers() {
           <option value="all">All</option>
           <option value="student">Student</option>
           <option value="tutor">Tutor</option>
-        </select>
-      </label>
-      <label className="text-xs font-semibold text-muted">
-        Status
-        <select className="field mt-1 w-full px-3 py-2 text-sm" value={status} onChange={e => setStatus(e.target.value as UserQuery['status'])}>
-          <option value="all">All</option>
-          <option value="active">Active</option>
-          <option value="suspended">Suspended</option>
         </select>
       </label>
       <label className="text-xs font-semibold text-muted">
@@ -150,7 +139,6 @@ export default function AdminUsers() {
         <div>
           <h1 className="text-3xl font-black text-ink" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>User Management</h1>
           <p className="text-muted">View and manage student and tutor accounts across LearnSyra.</p>
-          <p className="text-xs text-muted mt-1">Admin status is stored locally until server-side account controls are connected.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" className="btn-glass text-sm lg:hidden" onClick={() => setFiltersOpen(true)}>Filters</button>
@@ -168,13 +156,11 @@ export default function AdminUsers() {
         <div className="glass rounded-2xl p-3 mb-5 text-sm ac-warn">Demo Users — Not Production Accounts. Demo records are labeled and are not treated as verified or financial accounts.</div>
       )}
 
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
         {[
           ['Total Users', loading ? null : String(stats.total)],
           ['Students', loading ? null : String(stats.students)],
           ['Tutors', loading ? null : String(stats.tutors)],
-          ['Active Users', loading ? null : String(stats.active)],
-          ['Suspended Users', loading ? null : String(stats.suspended)],
           ['New Users', loading ? null : String(stats.newUsers)],
         ].map(([k, v]) => (
           <div key={k} className="glass rounded-2xl p-3">
@@ -222,7 +208,6 @@ export default function AdminUsers() {
               <th className="p-3">Name</th>
               <th className="p-3">Role</th>
               {hasEmail && <th className="p-3">Email</th>}
-              <th className="p-3">Status</th>
               <th className="p-3">Joined</th>
               {hasActivityData && <th className="p-3">Last Active</th>}
               <th className="p-3">Courses</th>
@@ -236,7 +221,6 @@ export default function AdminUsers() {
                 <td className="p-3"><UserId user={u} /></td>
                 <td className="p-3">{roleLabel(u.role)}</td>
                 {hasEmail && <td className="p-3 text-muted">{u.email || '—'}</td>}
-                <td className="p-3"><Status status={u.status} /></td>
                 <td className="p-3">{formatWhen(u.joinedAt)}</td>
                 {hasActivityData && <td className="p-3">{formatWhen(u.lastActiveAt)}</td>}
                 <td className="p-3">{u.courseCount}</td>
@@ -263,7 +247,6 @@ export default function AdminUsers() {
           <article key={u.id} className="glass rounded-2xl p-4">
             <UserId user={u} />
             <div className="flex flex-wrap gap-2 mt-2 text-xs text-muted">
-              <Status status={u.status} />
               <span>Courses {u.courseCount}</span>
               <span>Sessions {u.sessionCount}</span>
               <span>Joined {formatWhen(u.joinedAt)}</span>
@@ -287,7 +270,7 @@ export default function AdminUsers() {
           </div>
         </div>
       )}
-      <p className="text-xs text-muted mt-3">Page size {usersPageSize()}. Suspend and reactivate happen on the user detail page.</p>
+      <p className="text-xs text-muted mt-3">Page size {usersPageSize()}.</p>
 
       {filtersOpen && (
         <div className="ac-drawer fixed inset-0 z-50 flex lg:hidden" role="dialog" aria-modal="true" aria-label="Filters">
@@ -310,15 +293,6 @@ export default function AdminUsers() {
         </div>
       )}
     </AdminShell>
-  )
-}
-
-function Status({ status }: { status: AdminUserRow['status'] }) {
-  return (
-    <span className="ac-status" data-s={status}>
-      <i aria-hidden />
-      {status === 'suspended' ? 'Suspended' : 'Active'}
-    </span>
   )
 }
 

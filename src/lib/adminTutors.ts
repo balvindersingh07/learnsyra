@@ -1,3 +1,4 @@
+import { loadAdminStringMap, saveAdminStringMap } from './adminStorage'
 import { getCourseReviews, type CourseReview, type ProfileLite, type TutorListing } from './api'
 import {
   bookingsForUser,
@@ -5,18 +6,15 @@ import {
   isDemoUserId,
   loadAdminUserIndex,
   paginate,
-  setAccountStatus,
-  type AccountStatus,
   type AdminUserIndex,
   type AdminUserRow,
 } from './adminUsers'
 import { loadTutorHub, saveTutorHub, type ProfileVisibility, type TutorHub } from './tutorProfile'
 import { visibilityLabel } from './tutorSettings'
 
-export type TutorTab = 'all' | 'published' | 'draft' | 'paused' | 'review' | 'suspended'
+export type TutorTab = 'all' | 'published' | 'draft' | 'paused' | 'review'
 export type TutorSort = 'recommended' | 'newest' | 'oldest' | 'name_asc' | 'name_desc' | 'students' | 'rating' | 'sessions'
 export type MarketFilter = 'all' | ProfileVisibility | 'unknown'
-export type TutorAccountFilter = 'all' | AccountStatus
 
 export interface AdminTutorRow {
   id: string
@@ -27,7 +25,6 @@ export interface AdminTutorRow {
   expertise: string[]
   teachingStyles: string[]
   sessionTypes: string[]
-  accountStatus: AccountStatus
   market: ProfileVisibility | null
   publicId: string | null
   listingId: string | null
@@ -49,20 +46,14 @@ export interface AdminTutorIndex extends AdminUserIndex {
 const NOTES_KEY = 'learnsyra_admin_tutor_notes'
 const PAGE_SIZE = 20
 
-export { formatWhen, paginate, setAccountStatus, bookingsForUser }
-export type { AccountStatus }
+export { formatWhen, paginate, bookingsForUser }
 
 export function tutorsPageSize() {
   return PAGE_SIZE
 }
 
 export function loadAdminNotes(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(NOTES_KEY)
-    return raw ? (JSON.parse(raw) as Record<string, string>) : {}
-  } catch {
-    return {}
-  }
+  return loadAdminStringMap(NOTES_KEY)
 }
 
 export function saveAdminNote(tutorId: string, note: string) {
@@ -70,7 +61,7 @@ export function saveAdminNote(tutorId: string, note: string) {
   const next = note.trim()
   if (next) map[tutorId] = next
   else delete map[tutorId]
-  localStorage.setItem(NOTES_KEY, JSON.stringify(map))
+  saveAdminStringMap(NOTES_KEY, map)
 }
 
 function listingFor(userId: string, listings: TutorListing[]) {
@@ -104,7 +95,6 @@ function toTutorRow(user: AdminUserRow, index: AdminUserIndex): AdminTutorRow {
     expertise: expertiseOf(hub, listing),
     teachingStyles: hub?.teachingStyles ?? [],
     sessionTypes: (hub?.sessionOffers ?? []).filter(s => s.enabled).map(s => s.label),
-    accountStatus: user.status,
     market: hub?.visibility ?? null,
     publicId: hub?.publicId ?? listing?.id ?? null,
     listingId: listing?.id ?? null,
@@ -141,7 +131,6 @@ export function tutorStats(rows: AdminTutorRow[]) {
 export interface TutorQuery {
   tab: TutorTab
   q: string
-  account: TutorAccountFilter
   market: MarketFilter
   expertise: string
   style: string
@@ -157,8 +146,6 @@ export function filterTutors(rows: AdminTutorRow[], query: TutorQuery) {
   else if (query.tab === 'draft') list = list.filter(r => r.market === 'draft')
   else if (query.tab === 'paused') list = list.filter(r => r.market === 'paused')
   else if (query.tab === 'review') list = list.filter(r => r.unpublishedCount > 0)
-  else if (query.tab === 'suspended') list = list.filter(r => r.accountStatus === 'suspended')
-  if (query.account !== 'all') list = list.filter(r => r.accountStatus === query.account)
   if (query.market === 'unknown') list = list.filter(r => r.market == null)
   else if (query.market !== 'all') list = list.filter(r => r.market === query.market)
   if (query.expertise) list = list.filter(r => r.expertise.includes(query.expertise))
@@ -190,8 +177,6 @@ export function filterTutors(rows: AdminTutorRow[], query: TutorQuery) {
     sorted.sort((a, b) => {
       const rev = Number(b.unpublishedCount > 0) - Number(a.unpublishedCount > 0)
       if (rev) return rev
-      const sus = Number(b.accountStatus === 'suspended') - Number(a.accountStatus === 'suspended')
-      if (sus) return sus
       return +(new Date(b.joinedAt || 0)) - +(new Date(a.joinedAt || 0))
     })
   }

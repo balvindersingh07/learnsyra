@@ -1,3 +1,4 @@
+import { loadAdminStringMap, saveAdminStringMap } from './adminStorage'
 import { getAllProfiles, type ProfileLite } from './api'
 import { formatWhen, paginate } from './adminUsers'
 import { isSupabaseConfigured, supabase } from './supabase'
@@ -75,12 +76,7 @@ export function isStatementGenerationAvailable() {
 }
 
 export function loadPaymentNotes(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(NOTES_KEY)
-    return raw ? (JSON.parse(raw) as Record<string, string>) : {}
-  } catch {
-    return {}
-  }
+  return loadAdminStringMap(NOTES_KEY)
 }
 
 export function savePaymentNote(paymentId: string, note: string) {
@@ -88,7 +84,7 @@ export function savePaymentNote(paymentId: string, note: string) {
   const next = note.trim()
   if (next) map[paymentId] = next
   else delete map[paymentId]
-  localStorage.setItem(NOTES_KEY, JSON.stringify(map))
+  saveAdminStringMap(NOTES_KEY, map)
 }
 
 function asStr(v: unknown) {

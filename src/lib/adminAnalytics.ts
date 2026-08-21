@@ -5,7 +5,7 @@ import { loadAdminProjectIndex, type AdminStudentBuild } from './adminProjects'
 import { loadAdminReportIndex, reportStats } from './adminReports'
 import { loadAdminSessionIndex, type AdminSessionRow } from './adminSessions'
 import { isVerificationBackendAvailable } from './adminVerification'
-import { adminWindow, type AdminRange } from './adminPlatform'
+import { adminWindow, isTutorOwnedCourse, type AdminRange } from './adminPlatform'
 import { isSupabaseConfigured, supabase } from './supabase'
 import { loadAnalyticsHealth } from './platformHealth'
 
@@ -211,7 +211,7 @@ export async function getAdminAnalytics(range: AdminRange, custom?: { from: stri
   ])
 
   const realProfiles = profiles.filter(p => !isDemo(p.id))
-  const realCourses = courses.filter(c => !isDemo(c.id))
+  const realCourses = courses.filter(c => !isDemo(c.id) && isTutorOwnedCourse(c))
   const realCatalog = catalog.filter(p => !isDemo(p.id))
   const realListings = listings.filter(l => !isDemo(l.id))
   const enrollments = enrollPack.available ? enrollPack.rows.filter(e => !isDemo(e.id) && !isDemo(e.student_id) && !isDemo(e.course_id)) : []

@@ -953,7 +953,7 @@ export async function getAdminStats() {
   const pro = profiles.filter(p => p.plan === 'student_pro' || p.plan === 'career_pro').length
   const live = courses.filter(c => c.published).length
   const pending = courses.filter(c => !c.published).length
-  const mrr = profiles.reduce((s, p) => s + (p.plan === 'career_pro' ? 59 : p.plan === 'student_pro' ? 29 : 0), 0)
+  const mrr = null
   const bookRows = (bookings.data as { id: string; status: string }[]) ?? []
   return {
     students,

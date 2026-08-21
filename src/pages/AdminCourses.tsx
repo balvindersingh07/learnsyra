@@ -225,7 +225,7 @@ export default function AdminCourses() {
                 {pager.slice.map((c: AdminCourseRow) => (
                   <tr key={c.id} style={{ borderTop: '1px solid rgba(99,102,241,0.08)' }}>
                     <td className="px-3 py-2">
-                      <div className="font-semibold">{c.title}{c.demo ? ' · Demo' : ''}</div>
+                      <div className="font-semibold">{c.title}{c.demo ? ' · Demo' : c.catalog ? ' · Catalog' : ''}</div>
                       <div className="text-[11px] text-muted">{c.category || '—'}</div>
                     </td>
                     <td className="px-3 py-2">{c.tutorName}</td>
@@ -249,7 +249,7 @@ export default function AdminCourses() {
           <div className="ac-mobile-cards space-y-2 mb-3">
             {pager.slice.map((c: AdminCourseRow) => (
               <article key={c.id} className="glass rounded-2xl p-3">
-                <div className="font-semibold text-ink">{c.title}</div>
+                <div className="font-semibold text-ink">{c.title}{c.demo ? ' · Demo' : c.catalog ? ' · Catalog' : ''}</div>
                 <p className="text-[12px] text-muted">{c.tutorName} · {courseStatusLabel(c.published)} · Moderation: Unavailable</p>
                 <div className="flex flex-wrap gap-3 mt-2 text-[12px] text-muted">
                   <span>Students {c.studentCount}</span>

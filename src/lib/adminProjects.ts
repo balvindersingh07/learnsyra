@@ -1,3 +1,4 @@
+import { loadAdminStringMap, saveAdminStringMap } from './adminStorage'
 import { getAllProfiles, getProjects, type ProfileLite, type ProjectRow, type StudentProjectRow } from './api'
 import { formatWhen, paginate } from './adminUsers'
 import { isSupabaseConfigured, supabase } from './supabase'
@@ -70,12 +71,7 @@ export function isProjectReportingAvailable() {
 }
 
 export function loadProjectNotes(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(NOTES_KEY)
-    return raw ? (JSON.parse(raw) as Record<string, string>) : {}
-  } catch {
-    return {}
-  }
+  return loadAdminStringMap(NOTES_KEY)
 }
 
 export function saveProjectNote(projectId: string, note: string) {
@@ -83,7 +79,7 @@ export function saveProjectNote(projectId: string, note: string) {
   const next = note.trim()
   if (next) map[projectId] = next
   else delete map[projectId]
-  localStorage.setItem(NOTES_KEY, JSON.stringify(map))
+  saveAdminStringMap(NOTES_KEY, map)
 }
 
 function isDemoId(id: string) {

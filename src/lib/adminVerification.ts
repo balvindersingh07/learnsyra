@@ -1,3 +1,4 @@
+import { loadAdminStringMap, saveAdminStringMap } from './adminStorage'
 import { loadAdminTutorIndex, type AdminTutorIndex, type AdminTutorRow } from './adminTutors'
 
 const NOTES_KEY = 'learnsyra_admin_verification_notes'
@@ -41,12 +42,7 @@ export function verificationStats(input: { backend: boolean; tutorCount: number 
 }
 
 export function loadVerificationNotes(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(NOTES_KEY)
-    return raw ? (JSON.parse(raw) as Record<string, string>) : {}
-  } catch {
-    return {}
-  }
+  return loadAdminStringMap(NOTES_KEY)
 }
 
 export function saveVerificationNote(tutorId: string, note: string) {
@@ -54,7 +50,7 @@ export function saveVerificationNote(tutorId: string, note: string) {
   const next = note.trim()
   if (next) map[tutorId] = next
   else delete map[tutorId]
-  localStorage.setItem(NOTES_KEY, JSON.stringify(map))
+  saveAdminStringMap(NOTES_KEY, map)
 }
 
 export function findVerificationTutor(index: AdminTutorIndex, id: string): AdminTutorRow | null {

@@ -1,3 +1,4 @@
+import { loadAdminStringMap, saveAdminStringMap } from './adminStorage'
 import { getAllProfiles, type ProfileLite } from './api'
 import { formatWhen, paginate } from './adminUsers'
 import { isSupabaseConfigured, supabase } from './supabase'
@@ -68,12 +69,7 @@ export function isAiModerationAvailable() {
 }
 
 export function loadReportNotes(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(NOTES_KEY)
-    return raw ? (JSON.parse(raw) as Record<string, string>) : {}
-  } catch {
-    return {}
-  }
+  return loadAdminStringMap(NOTES_KEY)
 }
 
 export function saveReportNote(reportId: string, note: string) {
@@ -81,7 +77,7 @@ export function saveReportNote(reportId: string, note: string) {
   const next = note.trim()
   if (next) map[reportId] = next
   else delete map[reportId]
-  localStorage.setItem(NOTES_KEY, JSON.stringify(map))
+  saveAdminStringMap(NOTES_KEY, map)
 }
 
 function asStr(v: unknown) {

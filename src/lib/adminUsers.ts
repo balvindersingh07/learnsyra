@@ -2,8 +2,7 @@ import { supabase, isSupabaseConfigured } from './supabase'
 import { getAllCoursesAdmin, getAllProfiles, getProjects, getTutorListings, type CourseRow, type ProfileLite, type ProjectRow, type TutorListing } from './api'
 import { adminWindow, type AdminRange } from './adminPlatform'
 
-export type UserTab = 'all' | 'students' | 'tutors' | 'suspended'
-export type AccountStatus = 'active' | 'suspended'
+export type UserTab = 'all' | 'students' | 'tutors'
 export type JoinedFilter = 'any' | AdminRange
 export type ActivityFilter = 'any' | 'recent' | 'inactive' | 'none'
 export type UserSort = 'recommended' | 'newest' | 'oldest' | 'name_asc' | 'name_desc' | 'last_active'
@@ -41,7 +40,6 @@ export interface AdminUserRow {
   avatarUrl: string | null
   headline: string | null
   joinedAt: string | null
-  status: AccountStatus
   lastActiveAt: string | null
   courseCount: number
   sessionCount: number
@@ -55,31 +53,10 @@ export interface UserActivityEvent {
   at: string
 }
 
-const STATUS_KEY = 'learnsyra_admin_user_status'
 const PAGE_SIZE = 20
 
 export function usersPageSize() {
   return PAGE_SIZE
-}
-
-export function loadAccountStatus(): Record<string, AccountStatus> {
-  try {
-    const raw = localStorage.getItem(STATUS_KEY)
-    return raw ? (JSON.parse(raw) as Record<string, AccountStatus>) : {}
-  } catch {
-    return {}
-  }
-}
-
-export function saveAccountStatus(map: Record<string, AccountStatus>) {
-  localStorage.setItem(STATUS_KEY, JSON.stringify(map))
-}
-
-export function setAccountStatus(userId: string, status: AccountStatus) {
-  const map = loadAccountStatus()
-  map[userId] = status
-  saveAccountStatus(map)
-  return status
 }
 
 function inRange(iso: string | null | undefined, from: Date, to: Date) {
@@ -134,9 +111,8 @@ export async function loadAdminUserIndex(): Promise<AdminUserIndex> {
     getProjects().catch(() => [] as ProjectRow[]),
     getTutorListings().catch(() => [] as TutorListing[]),
   ])
-  const statusMap = loadAccountStatus()
   const listingById = Object.fromEntries(listings.map(l => [l.id, l]))
-  const rows = profiles.map(p => toRow(p, { courses, enrollments, bookings, projects, statusMap, listingById }))
+  const rows = profiles.map(p => toRow(p, { courses, enrollments, bookings, projects, listingById }))
   return { profiles, rows, courses, enrollments, bookings, projects, catalog, listings }
 }
 
@@ -161,7 +137,6 @@ function toRow(
     enrollments: AdminEnrollmentLite[]
     bookings: AdminBookingRow[]
     projects: AdminProjectRow[]
-    statusMap: Record<string, AccountStatus>
     listingById: Record<string, TutorListing>
   },
 ): AdminUserRow {
@@ -187,7 +162,6 @@ function toRow(
     avatarUrl: p.avatar_url,
     headline: p.headline ?? null,
     joinedAt: p.created_at ?? null,
-    status: ctx.statusMap[p.id] || 'active',
     lastActiveAt,
     courseCount,
     sessionCount: books.length,
@@ -200,13 +174,12 @@ export function userStats(rows: AdminUserRow[], joined: JoinedFilter, custom?: {
   const win = joined === 'any' || (joined === 'custom' && (!custom?.from || !custom?.to))
     ? adminWindow('7d')
     : adminWindow(joined, custom)
+  const real = rows.filter(r => !r.demo)
   return {
-    total: rows.length,
-    students: rows.filter(r => r.role === 'student').length,
-    tutors: rows.filter(r => r.role === 'tutor').length,
-    active: rows.filter(r => r.status === 'active').length,
-    suspended: rows.filter(r => r.status === 'suspended').length,
-    newUsers: rows.filter(r => inRange(r.joinedAt, win.from, win.to)).length,
+    total: real.length,
+    students: real.filter(r => r.role === 'student').length,
+    tutors: real.filter(r => r.role === 'tutor').length,
+    newUsers: real.filter(r => inRange(r.joinedAt, win.from, win.to)).length,
   }
 }
 
@@ -214,7 +187,6 @@ export interface UserQuery {
   tab: UserTab
   q: string
   role: 'all' | 'student' | 'tutor'
-  status: 'all' | AccountStatus
   joined: JoinedFilter
   custom?: { from: string; to: string }
   activity: ActivityFilter
@@ -229,9 +201,7 @@ export function filterUsers(rows: AdminUserRow[], query: UserQuery) {
   let list = rows
   if (query.tab === 'students') list = list.filter(r => r.role === 'student')
   else if (query.tab === 'tutors') list = list.filter(r => r.role === 'tutor')
-  else if (query.tab === 'suspended') list = list.filter(r => r.status === 'suspended')
   if (query.role !== 'all') list = list.filter(r => r.role === query.role)
-  if (query.status !== 'all') list = list.filter(r => r.status === query.status)
   if (query.joined !== 'any' && !(query.joined === 'custom' && (!query.custom?.from || !query.custom?.to))) {
     const win = adminWindow(query.joined, query.custom)
     list = list.filter(r => inRange(r.joinedAt, win.from, win.to))
@@ -254,11 +224,7 @@ export function filterUsers(rows: AdminUserRow[], query: UserQuery) {
   else if (query.sort === 'last_active') {
     sorted.sort((a, b) => +(new Date(b.lastActiveAt || 0)) - +(new Date(a.lastActiveAt || 0)))
   } else {
-    sorted.sort((a, b) => {
-      const att = Number(b.status === 'suspended') - Number(a.status === 'suspended')
-      if (att) return att
-      return +(new Date(b.joinedAt || 0)) - +(new Date(a.joinedAt || 0))
-    })
+    sorted.sort((a, b) => +(new Date(b.joinedAt || 0)) - +(new Date(a.joinedAt || 0)))
   }
   return sorted
 }

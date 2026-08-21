@@ -15,11 +15,9 @@ import {
   publicProfileHref,
   resumeDiscovery,
   saveAdminNote,
-  setAccountStatus,
   tutorActivity,
   tutorProjects,
   tutorStudents,
-  type AccountStatus,
   type AdminTutorIndex,
   type AdminTutorRow,
 } from '../lib/adminTutors'
@@ -35,7 +33,7 @@ export default function AdminTutorDetail() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<DetailTab>('overview')
-  const [confirm, setConfirm] = useState<'suspend' | 'reactivate' | 'pause' | 'resume' | null>(null)
+  const [confirm, setConfirm] = useState<'pause' | 'resume' | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [note, setNote] = useState('')
   const [reviews, setReviews] = useState<CourseReview[] | null>(null)
@@ -75,16 +73,6 @@ export default function AdminTutorDetail() {
     loadTutorCourseReviews(index, tutor.id).then(rows => { if (live) setReviews(rows) }).catch(() => { if (live) setReviews([]) })
     return () => { live = false }
   }, [tab, index, tutor])
-
-  const applyAccount = (next: AccountStatus) => {
-    if (!tutor) return
-    setAccountStatus(tutor.id, next)
-    setConfirm(null)
-    setMsg(next === 'suspended'
-      ? 'Tutor marked suspended in Admin view. Existing records are preserved. Login blocks and marketplace removal are not claimed unless connected.'
-      : 'Tutor marked active in Admin view.')
-    load()
-  }
 
   const applyVisibility = (mode: 'pause' | 'resume') => {
     if (!tutor) return
@@ -129,7 +117,7 @@ export default function AdminTutorDetail() {
                   <h1 className="font-black text-ink truncate" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>{tutor.name}</h1>
                   <p className="text-[13px] text-muted">{tutor.headline || 'No headline'}</p>
                   <p className="text-[12px] text-muted mt-0.5">
-                    Account: {tutor.accountStatus === 'suspended' ? 'Suspended' : 'Active'} · Marketplace: {marketLabel(tutor.market)} · Verification: Not Available
+                    Marketplace: {marketLabel(tutor.market)} · Verification: Not Available
                   </p>
                 </div>
               </div>
@@ -139,9 +127,6 @@ export default function AdminTutorDetail() {
                 <button type="button" className="btn-glass text-xs" onClick={() => setTab('courses')}>View Courses</button>
                 {hub?.visibility === 'published' && <button type="button" className="btn-glass text-xs" onClick={() => setConfirm('pause')}>Pause Discovery</button>}
                 {hub?.visibility === 'paused' && <button type="button" className="btn-primary text-xs" onClick={() => setConfirm('resume')}>Resume Discovery</button>}
-                {tutor.accountStatus === 'suspended'
-                  ? <button type="button" className="btn-primary text-xs" onClick={() => setConfirm('reactivate')}>Reactivate Account</button>
-                  : <button type="button" className="btn-glass text-xs" style={{ color: '#B45309' }} onClick={() => setConfirm('suspend')}>Suspend Account</button>}
               </div>
             </div>
             {tutor.demo && <div className="glass rounded-2xl p-3 mb-3 text-sm ac-warn">Demo Tutor Data — Not Production Data</div>}
@@ -297,21 +282,15 @@ export default function AdminTutorDetail() {
           <button type="button" className="absolute inset-0" aria-label="Cancel" style={{ background: 'transparent', border: 'none' }} onClick={() => setConfirm(null)} />
           <div className="glass rounded-3xl p-6 relative z-10 w-full max-w-md">
             <h2 id="tutor-action-title" className="text-lg font-black text-ink mb-2">
-              {confirm === 'suspend' && 'Suspend this tutor?'}
-              {confirm === 'reactivate' && 'Reactivate this account?'}
               {confirm === 'pause' && 'Pause discovery?'}
               {confirm === 'resume' && 'Resume discovery?'}
             </h2>
             <p className="text-sm text-muted mb-4">
-              {confirm === 'suspend' && 'The tutor account will be marked suspended. Existing records are preserved. Courses, students, sessions, projects, earnings, reviews, and profile data are not deleted. This is an Admin overlay until account status is connected server-side.'}
-              {confirm === 'reactivate' && 'This restores active status in Admin view. It does not automatically publish the tutor profile or send email.'}
               {confirm === 'pause' && 'New discovery/bookings may be affected according to the existing visibility rules. Existing sessions are not cancelled automatically.'}
               {confirm === 'resume' && 'This restores published marketplace visibility using the existing tutor visibility state.'}
             </p>
             <div className="flex flex-wrap gap-2">
               <button type="button" className="btn-glass text-sm" onClick={() => setConfirm(null)}>Cancel</button>
-              {confirm === 'suspend' && <button type="button" className="btn-primary text-sm" onClick={() => applyAccount('suspended')}>Suspend Account</button>}
-              {confirm === 'reactivate' && <button type="button" className="btn-primary text-sm" onClick={() => applyAccount('active')}>Reactivate Account</button>}
               {confirm === 'pause' && <button type="button" className="btn-primary text-sm" onClick={() => applyVisibility('pause')}>Pause Discovery</button>}
               {confirm === 'resume' && <button type="button" className="btn-primary text-sm" onClick={() => applyVisibility('resume')}>Resume Discovery</button>}
             </div>

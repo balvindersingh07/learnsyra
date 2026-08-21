@@ -75,7 +75,7 @@ export default function AdminVerificationDetail() {
                   <h1 className="font-black text-ink truncate" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>{tutor.name}</h1>
                   <p className="text-[13px] text-muted">{tutor.headline || 'No headline'}</p>
                   <p className="text-[12px] text-muted mt-0.5">
-                    Account: {tutor.accountStatus === 'suspended' ? 'Suspended' : 'Active'} · Marketplace: {marketLabel(tutor.market)} · Verification: Unavailable
+                    Marketplace: {marketLabel(tutor.market)} · Verification: Unavailable
                   </p>
                 </div>
               </div>

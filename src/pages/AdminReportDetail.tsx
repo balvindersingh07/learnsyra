@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import AdminShell from '../components/AdminShell'
-import { loadAccountStatus, setAccountStatus } from '../lib/adminUsers'
 import {
   entityAdminHref,
   formatWhen,
@@ -46,39 +45,16 @@ export default function AdminReportDetail() {
       if (e.key === 'Escape') {
         e.preventDefault()
         setExplain(null)
-        return
       }
-      if (e.key !== 'Enter') return
-      e.preventDefault()
-      if (explain === 'suspend' && id) {
-        const reportId = index?.rows.find(r => r.id === id)?.entityId
-        if (reportId) {
-          setAccountStatus(reportId, 'suspended')
-          setMsg('Account marked suspended in Admin view. This is the existing User Management overlay until account status is connected server-side.')
-        }
-        setExplain(null)
-        return
-      }
-      if (explain === 'reactivate' && id) {
-        const reportId = index?.rows.find(r => r.id === id)?.entityId
-        if (reportId) {
-          setAccountStatus(reportId, 'active')
-          setMsg('Account marked active in Admin view. This is the existing User Management overlay until account status is connected server-side.')
-        }
-        setExplain(null)
-        return
-      }
-      setExplain(null)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [explain, id, index])
+  }, [explain])
 
   const report: AdminReportRow | null = index?.rows.find(r => r.id === id) ?? null
   const href = report ? entityAdminHref(report) : null
   const entityKind = ((report?.entityType || report?.type) || '').toLowerCase()
   const entityProfile = report?.entityId ? index?.profiles.find(p => p.id === report.entityId) ?? null : null
-  const accountStatus = report?.entityId ? (loadAccountStatus()[report.entityId] ?? 'active') : null
   const isCourse = /course/.test(entityKind)
   const isProject = /project/.test(entityKind)
   const isSession = /session|booking/.test(entityKind)
@@ -89,15 +65,6 @@ export default function AdminReportDetail() {
   const audit = isReportAuditAvailable()
   const ai = isAiModerationAvailable()
   const blocked = 'Moderation actions are not connected.'
-
-  const applyAccount = (status: 'active' | 'suspended') => {
-    if (!report?.entityId) return
-    setAccountStatus(report.entityId, status)
-    setMsg(status === 'suspended'
-      ? 'Account marked suspended in Admin view. This is the existing User Management overlay until account status is connected server-side.'
-      : 'Account marked active in Admin view. This is the existing User Management overlay until account status is connected server-side.')
-    setExplain(null)
-  }
 
   return (
     <AdminShell>
@@ -158,15 +125,8 @@ export default function AdminReportDetail() {
                       <KV k="Name" v={entityProfile?.full_name || report.entityName || '—'} />
                       <KV k="Role" v={entityProfile?.role || (isTutorEntity ? 'tutor' : '—')} />
                       {isTutorEntity && <KV k="Headline" v={entityProfile?.headline || '—'} />}
-                      <KV k="Account status" v={accountStatus || '—'} />
                     </dl>
                     <p className="text-[11px] text-muted mt-2">Operational context only. Private notes, AI chats, verification documents, and credentials are not shown.</p>
-                    {report.entityId && (
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        <button type="button" className="btn-glass text-xs" onClick={() => setExplain('suspend')}>Suspend</button>
-                        <button type="button" className="btn-glass text-xs" onClick={() => setExplain('reactivate')}>Reactivate</button>
-                      </div>
-                    )}
                   </>
                 )}
               </section>
@@ -208,18 +168,13 @@ export default function AdminReportDetail() {
           <button type="button" className="absolute inset-0" aria-label="Close" style={{ background: 'transparent', border: 'none' }} onClick={() => setExplain(null)} />
           <div className="glass rounded-3xl p-6 relative z-10 w-full max-w-md">
             <h2 id="rpt-mod-title" className="text-lg font-black text-ink mb-2">
-              {explain === 'suspend' ? 'Suspend account?' : explain === 'reactivate' ? 'Reactivate account?' : 'Unavailable'}
+              Unavailable
             </h2>
             <p className="text-sm text-muted mb-4">
-              {explain === 'suspend' && 'This uses the existing Admin User Management overlay. It does not create a separate account-status system, and it is not a server-side ban until that overlay is connected.'}
-              {explain === 'reactivate' && 'This restores the existing Admin User Management overlay to active. Platform-wide login blocks apply only when account status is connected server-side.'}
-              {explain !== 'suspend' && explain !== 'reactivate' && explain}
+              {explain}
             </p>
             <div className="flex flex-wrap gap-2">
-              {(explain === 'suspend' || explain === 'reactivate') && (
-                <button type="button" className="btn-primary text-sm" onClick={() => applyAccount(explain === 'suspend' ? 'suspended' : 'active')}>Confirm</button>
-              )}
-              <button type="button" className={explain === 'suspend' || explain === 'reactivate' ? 'btn-glass text-sm' : 'btn-primary text-sm'} onClick={() => setExplain(null)}>Close</button>
+              <button type="button" className="btn-primary text-sm" onClick={() => setExplain(null)}>Close</button>
             </div>
           </div>
         </div>
