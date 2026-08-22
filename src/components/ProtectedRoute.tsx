@@ -12,8 +12,9 @@ interface Props {
 }
 
 export default function ProtectedRoute({ children, roles }: Props) {
-  const { session, profile, loading } = useAuth()
+  const { session, profile, loading, isEmailVerified } = useAuth()
   const location = useLocation()
+  const requireVerifiedEmail = import.meta.env.PROD
 
   if (loading || (session && !profile)) {
     return (
@@ -25,6 +26,10 @@ export default function ProtectedRoute({ children, roles }: Props) {
 
   if (!session) {
     return <Navigate to="/" state={{ from: location.pathname }} replace />
+  }
+
+  if (requireVerifiedEmail && !isEmailVerified) {
+    return <Navigate to="/verify-email" state={{ from: location.pathname }} replace />
   }
 
   if (roles && profile && !roles.includes(profile.role)) {

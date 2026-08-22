@@ -21,7 +21,6 @@ import {
   buildAiStudentContext,
   coachPrompt,
   COMPOSER_CHIPS,
-  contextualCoachReply,
   EMPTY_PROMPTS,
   loadSavedLessons,
   pickTutor,
@@ -360,18 +359,17 @@ export default function AILearning() {
           await loadList()
         }
       }
-      const rich = contextualCoachReply(q, ctx)
-      let reply = rich
-      if (!reply) {
-        const history = messages
-          .filter(m => m.role === 'user' || m.role === 'ai')
-          .slice(-8)
-          .map(m => ({ role: m.role === 'user' ? 'user' as const : 'assistant' as const, content: m.text }))
-        const res = await askAiTutor(history, coachPrompt(ctx, q))
-        reply = res.source === 'fallback' ? contextualCoachReply(q, ctx) || res.reply : res.reply
+      const history = messages
+        .filter(m => m.role === 'user' || m.role === 'ai')
+        .slice(-8)
+        .map(m => ({ role: m.role === 'user' ? 'user' as const : 'assistant' as const, content: m.text }))
+      const res = await askAiTutor(history, coachPrompt(ctx, q))
+      if ('error' in res) {
+        setError(res.error)
+        return
       }
-      if (isPersistable(convoId) && reply) await saveAiMessage(convoId, 'assistant', reply)
-      setMessages(m => [...m, { id: uid(), role: 'ai', text: reply || 'Let us try that another way.' }])
+      if (isPersistable(convoId)) await saveAiMessage(convoId, 'assistant', res.reply)
+      setMessages(m => [...m, { id: uid(), role: 'ai', text: res.reply }])
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not send message')
     } finally {

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import type { UserRole } from '../lib/supabase'
+import { validateSignupInput } from '../lib/authValidation'
 import BrandMark from '../components/BrandMark'
 import PasswordField from '../components/PasswordField'
 
@@ -26,14 +27,23 @@ export default function Signup() {
     e.preventDefault()
     setError(null)
     setNotice(null)
-    setLoading(true)
-    const { error } = await signUp(email, password, fullName, role)
-    setLoading(false)
-    if (error) {
-      setError(error)
+    const validation = validateSignupInput(email, password, fullName)
+    if (validation) {
+      setError(validation)
       return
     }
-    setNotice('Account created! If email confirmation is on, check your inbox. Otherwise you can log in now.')
+    setLoading(true)
+    const { error: err, needsVerification } = await signUp(email, password, fullName, role)
+    setLoading(false)
+    if (err) {
+      setError(err)
+      return
+    }
+    if (needsVerification || import.meta.env.PROD) {
+      navigate('/verify-email')
+      return
+    }
+    setNotice('Account created. You can sign in now.')
     setTimeout(() => navigate('/login'), 1500)
   }
 
@@ -75,6 +85,13 @@ export default function Signup() {
             ))}
           </div>
 
+          {role === 'tutor' && (
+            <p className="text-xs text-muted leading-relaxed">
+              Tutor accounts use email/password signup so your role is set securely at registration.
+              Google sign-in creates a student account.
+            </p>
+          )}
+
           <input
             type="text"
             required
@@ -95,8 +112,8 @@ export default function Signup() {
           />
           <PasswordField
             required
-            minLength={6}
-            placeholder="Password (min 6 chars)"
+            minLength={8}
+            placeholder="Password (min 8 chars)"
             value={password}
             onChange={e => setPassword(e.target.value)}
             className="glass rounded-xl px-4 py-3 text-ink text-sm outline-none"

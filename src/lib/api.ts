@@ -664,26 +664,35 @@ export async function renameConversation(id: string, title: string) {
   await supabase.from('ai_conversations').update({ title }).eq('id', id)
 }
 
-export function fallbackTutorReply(question: string) {
-  const q = question.toLowerCase()
-  if (q.includes('quiz')) {
-    return `Quick check on "${question}":\n1) What is the core idea in one sentence?\n2) Where would you use it in a real project?\n3) What mistake do beginners make?\nReply with your answers and I will score them.`
+function invokeError(data: unknown, error: { message: string } | null): string | null {
+  if (data && typeof data === 'object' && 'error' in data) {
+    const message = (data as { error?: unknown }).error
+    if (typeof message === 'string' && message.trim()) return message
   }
-  if (q.includes('project')) {
-    return `Project idea for "${question}": build a small app that uses this concept in 3 screens (list, detail, form). Ship a GitHub link from the Projects page when you are done.`
-  }
-  if (q.includes('interview')) {
-    return `Interview angle: explain "${question}" as if the interviewer asked "walk me through it". Cover definition, a real example, a trade-off, and a follow-up question you would ask.`
-  }
-  return `Here is a student-friendly take on "${question}": break it into (1) what it is, (2) why it matters in your course, (3) one example, (4) one practice step. Ask me to quiz you or give a project next. (Live GPT replies need an OpenAI key on the server — chats are saved either way.)`
+  return error?.message ?? null
 }
 
-export async function setMyPlan(plan: PlanId): Promise<{ error: string | null }> {
-  const uid = await currentUserId()
-  if (!uid) return { error: 'Not logged in' }
-  const { error } = await supabase.from('profiles').update({ plan }).eq('id', uid)
-  if (!error) await notify('Plan updated', `You are now on ${planLabel(plan)}.`, '/pricing')
-  return { error: error?.message ?? null }
+export async function askAiTutor(
+  history: { role: 'user' | 'assistant'; content: string }[],
+  question: string,
+): Promise<{ reply: string; source: 'openai' } | { error: string }> {
+  const { data, error } = await supabase.functions.invoke('ai-tutor', {
+    body: { messages: [...history, { role: 'user', content: question }] },
+  })
+  const message = invokeError(data, error)
+  if (message) return { error: message }
+  const reply = data && typeof data === 'object' ? (data as { reply?: unknown }).reply : null
+  if (typeof reply !== 'string' || !reply.trim()) {
+    return { error: 'AI tutor is unavailable right now.' }
+  }
+  return { reply, source: 'openai' }
+}
+
+export async function startCheckout(
+  planId: PlanId,
+): Promise<{ error: string | null; url?: string; unavailable?: boolean; pending?: boolean; verified?: boolean }> {
+  const { startPlanCheckout } = await import('./payments/index')
+  return startPlanCheckout(planId)
 }
 
 export async function notifyUser(userId: string, title: string, body?: string, href?: string) {
@@ -693,41 +702,6 @@ export async function notifyUser(userId: string, title: string, body?: string, h
     p_body: body ?? null,
     p_href: href ?? null,
   })
-}
-
-export async function askAiTutor(
-  history: { role: 'user' | 'assistant'; content: string }[],
-  question: string,
-): Promise<{ reply: string; source: 'openai' | 'fallback' }> {
-  const { data, error } = await supabase.functions.invoke('ai-tutor', {
-    body: { messages: [...history, { role: 'user', content: question }] },
-  })
-  if (error || !data?.reply) {
-    return { reply: fallbackTutorReply(question), source: 'fallback' }
-  }
-  return {
-    reply: data.reply as string,
-    source: data.source === 'openai' ? 'openai' : 'fallback',
-  }
-}
-
-export async function startCheckout(
-  planId: PlanId,
-): Promise<{ error: string | null; url?: string; local?: boolean }> {
-  if (planId === 'free') {
-    const { error } = await setMyPlan('free')
-    return { error, local: true }
-  }
-  const { data, error } = await supabase.functions.invoke('create-checkout', {
-    body: { planId, origin: window.location.origin },
-  })
-  if (error) return { error: error.message }
-  if (data?.url) return { error: null, url: data.url as string }
-  if (data?.mode === 'local') {
-    const set = await setMyPlan(planId)
-    return { error: set.error, local: true }
-  }
-  return { error: data?.error ?? 'Checkout failed' }
 }
 
 export async function getTutorCourses(): Promise<(CourseRow & { students: number })[]> {

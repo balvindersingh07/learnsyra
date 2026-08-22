@@ -1,6 +1,7 @@
 import { useEffect, useState, type ChangeEvent, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { validatePasswordMatch } from '../lib/authValidation'
 import { getProjects, getTutorBookings, getTutorCourses, getTutorStudents, type CourseRow } from '../lib/api'
 import { formatInr } from '../lib/courseCatalog'
 import { tutorBookPath, tutorPath } from '../lib/paths'
@@ -333,12 +334,9 @@ export default function TutorAccount() {
   const changePassword = async () => {
     setErr(null)
     setMsg(null)
-    if (password.length < 8) {
-      setErr('Password must be at least 8 characters.')
-      return
-    }
-    if (password !== confirm) {
-      setErr('Passwords do not match.')
+    const validation = validatePasswordMatch(password, confirm)
+    if (validation) {
+      setErr(validation)
       return
     }
     setBusy(true)

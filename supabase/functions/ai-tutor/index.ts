@@ -1,40 +1,79 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
+import { createClient } from "npm:@supabase/supabase-js@2"
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 }
 
-function fallback(question: string) {
-  const q = question.toLowerCase()
-  if (q.includes("quiz")) {
-    return `Quick check on "${question}":\n1) What is the core idea in one sentence?\n2) Where would you use it in a real project?\n3) What mistake do beginners make?`
+const MAX_MESSAGES = 20
+const MAX_CONTENT = 4000
+const MAX_PER_MINUTE = 8
+const MAX_PER_HOUR = 40
+const MINUTE = 60 * 1000
+const HOUR = 60 * MINUTE
+
+const hits = new Map<string, number[]>()
+
+function json(body: Record<string, unknown>, status = 200) {
+  return Response.json(body, { status, headers: cors })
+}
+
+function rateLimited(userId: string): boolean {
+  const now = Date.now()
+  const prev = (hits.get(userId) ?? []).filter(t => now - t < HOUR)
+  const minute = prev.filter(t => now - t < MINUTE)
+  if (minute.length >= MAX_PER_MINUTE || prev.length >= MAX_PER_HOUR) {
+    hits.set(userId, prev)
+    return true
   }
-  if (q.includes("project")) {
-    return `Project idea for "${question}": build a small app with a list, detail, and form screen, then submit the GitHub link from Projects.`
-  }
-  if (q.includes("interview")) {
-    return `Interview angle: explain "${question}" with a definition, a real example, a trade-off, and one follow-up you would ask.`
-  }
-  return `Student-friendly take on "${question}": (1) what it is, (2) why it matters, (3) one example, (4) one practice step. Add an OPENAI_API_KEY secret on the server for live GPT replies.`
+  prev.push(now)
+  hits.set(userId, prev)
+  return false
 }
 
 Deno.serve(async req => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors })
 
   try {
-    const { messages } = (await req.json()) as {
-      messages?: { role: string; content: string }[]
+    const authHeader = req.headers.get("Authorization") ?? ""
+    if (!authHeader.toLowerCase().startsWith("bearer ")) {
+      return json({ error: "Not logged in" }, 401)
     }
-    const history = messages ?? []
-    const lastUser = [...history].reverse().find(m => m.role === "user")?.content ?? ""
-    const key = Deno.env.get("OPENAI_API_KEY")
 
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+      { global: { headers: { Authorization: authHeader } } },
+    )
+    const { data: userData, error: userErr } = await supabase.auth.getUser()
+    if (userErr || !userData.user) {
+      return json({ error: "Not logged in" }, 401)
+    }
+
+    const key = Deno.env.get("OPENAI_API_KEY")
     if (!key) {
-      return Response.json(
-        { reply: fallback(lastUser), source: "fallback" },
-        { headers: { ...cors, "Content-Type": "application/json" } },
-      )
+      return json({ error: "AI tutor is not configured." }, 503)
+    }
+
+    if (rateLimited(userData.user.id)) {
+      return json({ error: "Too many requests. Try again later." }, 429)
+    }
+
+    const { messages } = (await req.json()) as {
+      messages?: { role?: string; content?: string }[]
+    }
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return json({ error: "Invalid messages" }, 400)
+    }
+
+    const history = messages.slice(-MAX_MESSAGES).map(m => ({
+      role: m.role === "assistant" || m.role === "user" ? m.role : "user" as const,
+      content: typeof m.content === "string" ? m.content.slice(0, MAX_CONTENT) : "",
+    })).filter(m => m.content.length > 0)
+
+    if (!history.length) {
+      return json({ error: "Invalid messages" }, 400)
     }
 
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -52,32 +91,26 @@ Deno.serve(async req => {
             content:
               "You are LearnSyra's AI tutor. Be clear, concise, and practical. Prefer short explanations, quizzes, and project ideas. Do not invent course grades.",
           },
-          ...history.map(m => ({
-            role: m.role === "assistant" || m.role === "user" ? m.role : "user",
-            content: m.content,
-          })),
+          ...history,
         ],
       }),
     })
 
     if (!res.ok) {
-      const err = await res.text()
-      return Response.json(
-        { reply: fallback(lastUser), source: "fallback", error: err.slice(0, 200) },
-        { headers: { ...cors, "Content-Type": "application/json" } },
-      )
+      return json({ error: "AI tutor is unavailable right now." }, 502)
     }
 
     const data = await res.json()
-    const reply = data.choices?.[0]?.message?.content ?? fallback(lastUser)
-    return Response.json(
-      { reply, source: "openai" },
-      { headers: { ...cors, "Content-Type": "application/json" } },
-    )
+    const reply = data.choices?.[0]?.message?.content
+    if (typeof reply !== "string" || !reply.trim()) {
+      return json({ error: "AI tutor is unavailable right now." }, 502)
+    }
+
+    return json({ reply, source: "openai" })
   } catch (e) {
-    return Response.json(
+    return json(
       { error: e instanceof Error ? e.message : "AI failed" },
-      { status: 400, headers: { ...cors, "Content-Type": "application/json" } },
+      400,
     )
   }
 })

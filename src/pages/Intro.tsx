@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
+import { useAuth, consumeAuthReturnPath } from '../context/AuthContext'
 import { postLoginPath } from '../lib/roleAccess'
+import { normalizeEmail } from '../lib/authValidation'
 import { BlobField, Orb3D } from '../components/Soft3D'
 import BrandMark from '../components/BrandMark'
 import PasswordField from '../components/PasswordField'
@@ -31,16 +32,30 @@ const stories = [
 ]
 
 export default function Intro() {
-  const { session, profile, loading: authLoading, signIn, signInWithGoogle, resetPassword, configured } = useAuth()
+  const {
+    session,
+    profile,
+    loading: authLoading,
+    isEmailVerified,
+    signIn,
+    signInWithGoogle,
+    resetPassword,
+    configured,
+  } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const from = (location.state as { from?: string } | null)?.from ?? '/dashboard'
+  const storedReturn = useState(() => consumeAuthReturnPath())[0]
+  const from =
+    storedReturn ??
+    (location.state as { from?: string } | null)?.from ??
+    '/dashboard'
+  const loginNotice = (location.state as { notice?: string } | null)?.notice
 
   const [story] = useState(() => stories[Math.floor(Math.random() * stories.length)])
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(loginNotice ?? null)
   const [loading, setLoading] = useState(false)
 
   if (session && (authLoading || !profile)) {
@@ -52,6 +67,9 @@ export default function Intro() {
   }
 
   if (session && profile) {
+    if (import.meta.env.PROD && !isEmailVerified) {
+      return <Navigate to="/verify-email" state={{ from }} replace />
+    }
     return <Navigate to={postLoginPath(from, profile.role)} replace />
   }
 
@@ -60,7 +78,7 @@ export default function Intro() {
     setError(null)
     setNotice(null)
     setLoading(true)
-    const { error } = await signIn(email, password)
+    const { error } = await signIn(normalizeEmail(email), password)
     setLoading(false)
     if (error) {
       setError(error)
@@ -70,7 +88,7 @@ export default function Intro() {
 
   const google = async () => {
     setError(null)
-    const { error } = await signInWithGoogle()
+    const { error } = await signInWithGoogle(from)
     if (error) setError(error)
   }
 
@@ -81,7 +99,7 @@ export default function Intro() {
       setError('Enter your email first, then tap Forgot password.')
       return
     }
-    const { error } = await resetPassword(email.trim())
+    const { error } = await resetPassword(normalizeEmail(email))
     if (error) setError(error)
     else setNotice('Password reset email sent if that account exists.')
   }

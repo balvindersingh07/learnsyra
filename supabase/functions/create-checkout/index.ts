@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
+/** Legacy Stripe checkout (worldwide — deferred). India uses create-razorpay-order. */
 import { createClient } from "npm:@supabase/supabase-js@2"
 import Stripe from "npm:stripe@18.5.0"
 
@@ -35,8 +36,8 @@ Deno.serve(async req => {
     const secret = Deno.env.get("STRIPE_SECRET_KEY")
     if (!secret) {
       return Response.json(
-        { mode: "local", plan: planId },
-        { headers: { ...cors, "Content-Type": "application/json" } },
+        { error: "Payments unavailable. Coming soon." },
+        { status: 503, headers: cors },
       )
     }
 

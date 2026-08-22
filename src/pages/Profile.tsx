@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import ProfileEditDialog from '../components/profile/ProfileEditDialog'
 import ProfilePreviewDialog from '../components/profile/ProfilePreviewDialog'
 import { useAuth } from '../context/AuthContext'
+import { validatePasswordMatch } from '../lib/authValidation'
 import {
   getCertificates,
   getCourses,
@@ -188,12 +189,9 @@ export default function Profile() {
   const changePassword = async () => {
     setErr(null)
     setMsg(null)
-    if (password.length < 8) {
-      setErr('Password must be at least 8 characters.')
-      return
-    }
-    if (password !== confirm) {
-      setErr('Passwords do not match.')
+    const validation = validatePasswordMatch(password, confirm)
+    if (validation) {
+      setErr(validation)
       return
     }
     setBusy(true)

@@ -404,7 +404,22 @@ s3_access_key = "env(S3_ACCESS_KEY)"
 # Configures AWS_SECRET_ACCESS_KEY for S3 bucket
 s3_secret_key = "env(S3_SECRET_KEY)"
 
+[functions.ai-tutor]
+verify_jwt = true
+
+[functions.create-checkout]
+verify_jwt = true
+
 [functions.stripe-webhook]
+verify_jwt = false
+
+[functions.create-razorpay-order]
+verify_jwt = true
+
+[functions.verify-razorpay-payment]
+verify_jwt = true
+
+[functions.razorpay-webhook]
 verify_jwt = false
 
 # pg-delta is the schema diff engine for db diff / db pull / db remote commit.

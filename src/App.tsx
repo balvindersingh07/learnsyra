@@ -62,6 +62,8 @@ import AdminAuditDetail from './pages/AdminAuditDetail'
 import AdminProfile from './pages/AdminProfile'
 import NotFound from './pages/NotFound'
 import Signup from './pages/Signup'
+import ResetPassword from './pages/ResetPassword'
+import VerifyEmail from './pages/VerifyEmail'
 import Profile from './pages/Profile'
 import Notifications from './pages/Notifications'
 import LiveClasses from './pages/LiveClasses'
@@ -104,7 +106,12 @@ function AdminApp({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   const location = useLocation()
-  const hideNav = location.pathname === '/' || location.pathname === '/login'
+  const hideNav =
+    location.pathname === '/' ||
+    location.pathname === '/login' ||
+    location.pathname === '/signup' ||
+    location.pathname === '/reset-password' ||
+    location.pathname === '/verify-email'
 
   return (
     <div className="min-h-screen mesh-bg" style={{ fontFamily: 'Inter, sans-serif' }}>
@@ -128,6 +135,8 @@ export default function App() {
           <Route path="/projects/:id/workspace" element={<TutorBounce to="/tutor/projects"><ProjectWorkspace /></TutorBounce>} />
           <Route path="/pricing" element={<TutorBounce to="/tutor/profile#pricing"><PricingRoute /></TutorBounce>} />
           <Route path="/signup" element={<Signup />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/verify-email" element={<VerifyEmail />} />
 
           <Route
             path="/dashboard"

@@ -1,6 +1,7 @@
 import type { Page } from '../App'
 import { useAuth } from '../context/AuthContext'
 import { startCheckout, type PlanId } from '../lib/api'
+import { formatInr, INDIA_PAID_PLANS } from '../lib/paymentPlans'
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
@@ -61,7 +62,7 @@ const plans: {
       '✅ Career readiness tracker',
       '✅ LinkedIn certificate sharing',
     ],
-    cta: 'Start 7-Day Free Trial',
+    cta: 'Upgrade Now',
     popular: true,
   },
   {
@@ -83,7 +84,7 @@ const plans: {
       '✅ 1 tutor session credit/month',
       '✅ Priority job matching',
     ],
-    cta: 'Start 7-Day Free Trial',
+    cta: 'Upgrade Now',
     popular: false,
   },
 ]
@@ -93,13 +94,19 @@ export default function Pricing({ onNav }: Props) {
   const [params] = useSearchParams()
   const [busy, setBusy] = useState<PlanId | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
+  const [msgErr, setMsgErr] = useState(false)
+  const [paymentsUnavailable, setPaymentsUnavailable] = useState(false)
 
   useEffect(() => {
     if (params.get('paid') === '1') {
       reloadProfile()
-      setMsg('Payment received. Your plan updates after Stripe confirms (or instantly in local mode).')
+      setMsgErr(false)
+      setMsg('If you completed checkout, your subscription activates after verification. Refresh in a moment.')
     }
-    if (params.get('canceled') === '1') setMsg('Checkout canceled.')
+    if (params.get('canceled') === '1') {
+      setMsgErr(false)
+      setMsg('Checkout canceled.')
+    }
   }, [params, reloadProfile])
 
   const choose = async (planId: PlanId) => {
@@ -107,14 +114,49 @@ export default function Pricing({ onNav }: Props) {
       onNav('login')
       return
     }
+    if (planId !== 'free' && paymentsUnavailable) {
+      setMsgErr(true)
+      setMsg('Payments unavailable / Coming soon.')
+      return
+    }
     setBusy(planId)
     const result = await startCheckout(planId)
     setBusy(null)
-    if (result.error) setMsg(result.error)
-    else if (result.url) window.location.href = result.url
-    else {
+    if (result.unavailable) setPaymentsUnavailable(true)
+    if (result.error) {
+      setMsgErr(true)
+      setMsg(result.error)
+      return
+    }
+    if ('url' in result && result.url) {
+      window.location.href = result.url
+      return
+    }
+    if (result.verified) {
       await reloadProfile()
-      setMsg(result.local ? `Plan set to ${planId.replace('_', ' ')}. Add STRIPE_SECRET_KEY for real checkout.` : 'Done.')
+      setMsgErr(false)
+      setMsg('Subscription verified. Your plan is updating now.')
+      return
+    }
+    if (result.pending === false) {
+      setMsgErr(false)
+      setMsg('Payment canceled.')
+      return
+    }
+    if (result.pending) {
+      setMsgErr(false)
+      setMsg('Subscription started. Your plan updates after server verification.')
+      await reloadProfile()
+      return
+    }
+    if (planId === 'free') {
+      await reloadProfile()
+      setMsgErr(false)
+      setMsg(
+        profile?.plan && profile.plan !== 'free'
+          ? 'Paid plans change only after an active subscription is verified. Free access stays available.'
+          : 'You are on the free plan.',
+      )
     }
   }
   return (
@@ -169,9 +211,11 @@ export default function Pricing({ onNav }: Props) {
                   className="text-5xl font-black text-ink"
                   style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}
                 >
-                  ${p.price}
+                  {p.planId === 'free'
+                    ? 'Free'
+                    : formatInr(INDIA_PAID_PLANS[p.planId].amountInr)}
                 </span>
-                <span className="text-muted text-sm">/{p.period}</span>
+                {p.planId !== 'free' && <span className="text-muted text-sm">/{p.period}</span>}
               </div>
               <p className="text-muted text-sm">{p.desc}</p>
             </div>
@@ -187,7 +231,7 @@ export default function Pricing({ onNav }: Props) {
             <button
               className="w-full py-3 rounded-xl font-bold text-sm cursor-pointer transition-all"
               onClick={() => choose(p.planId)}
-              disabled={busy === p.planId}
+              disabled={busy === p.planId || (p.planId !== 'free' && paymentsUnavailable)}
               style={{
                 fontFamily: 'Plus Jakarta Sans,sans-serif',
                 background: p.popular
@@ -197,13 +241,19 @@ export default function Pricing({ onNav }: Props) {
                 color: p.popular ? 'white' : '#172033',
               }}
             >
-              {profile?.plan === p.planId ? 'Current plan' : busy === p.planId ? '…' : p.cta}
+              {profile?.plan === p.planId
+                ? 'Current plan'
+                : busy === p.planId
+                  ? '…'
+                  : p.planId !== 'free' && paymentsUnavailable
+                    ? 'Coming soon'
+                    : p.cta}
             </button>
           </div>
         ))}
       </div>
       {msg && (
-        <p className="text-center text-sm mb-12" style={{ color: '#0F8A68' }}>
+        <p className="text-center text-sm mb-12" style={{ color: msgErr ? '#B42318' : '#0F8A68' }}>
           {msg}
         </p>
       )}
@@ -276,7 +326,7 @@ export default function Pricing({ onNav }: Props) {
         {[
           { q: 'Can I switch plans anytime?', a: 'Yes, upgrade or downgrade your plan at any time. Changes take effect immediately.' },
           { q: 'Is there a student discount?', a: 'Yes! Students with a valid .edu email get 40% off Student Pro and Career Pro plans.' },
-          { q: 'What payment methods do you accept?', a: 'We accept all major credit/debit cards, PayPal, and bank transfers in 30+ currencies.' },
+          { q: 'What payment methods do you accept?', a: 'In India we accept UPI, credit/debit cards, and net banking through Razorpay Checkout. International card payments via Stripe will be added later.' },
           { q: 'Do tutors need teaching credentials?', a: 'Not necessarily. We vet all tutors based on expertise and a teaching trial. Passion and knowledge matter more than credentials.' },
         ].map(f => (
           <div

@@ -107,13 +107,19 @@ function pick(row: Record<string, unknown>, keys: string[]) {
 function normalize(raw: Record<string, unknown>, profiles: ProfileLite[]): AdminPaymentTx | null {
   const id = asStr(pick(raw, ['id', 'transaction_id']))
   if (!id) return null
-  const payerId = asStr(pick(raw, ['payer_id', 'student_id', 'customer_id']))
+  const payerId = asStr(pick(raw, ['user_id', 'payer_id', 'student_id', 'customer_id']))
   const payeeId = asStr(pick(raw, ['payee_id', 'tutor_id']))
+  const amountMinor = asNum(pick(raw, ['amount_minor']))
   const amountCents = asNum(pick(raw, ['amount_cents']))
-  const amount = amountCents != null ? amountCents / 100 : asNum(pick(raw, ['amount', 'gross', 'gross_amount']))
+  const amount =
+    amountMinor != null
+      ? amountMinor / 100
+      : amountCents != null
+        ? amountCents / 100
+        : asNum(pick(raw, ['amount', 'gross', 'gross_amount']))
   return {
     id,
-    type: asStr(pick(raw, ['type', 'transaction_type', 'kind'])),
+    type: asStr(pick(raw, ['plan_id', 'type', 'transaction_type', 'kind'])),
     status: asStr(pick(raw, ['status', 'payment_status'])),
     amount,
     currency: asStr(pick(raw, ['currency'])),
@@ -122,7 +128,7 @@ function normalize(raw: Record<string, unknown>, profiles: ProfileLite[]): Admin
     payeeId,
     payeeName: asStr(pick(raw, ['payee', 'payee_name'])) || (payeeId ? profiles.find(p => p.id === payeeId)?.full_name ?? null : null),
     source: asStr(pick(raw, ['source', 'source_type'])),
-    reference: asStr(pick(raw, ['reference', 'provider_ref', 'order_id'])),
+    reference: asStr(pick(raw, ['external_subscription_id', 'external_order_id', 'reference', 'provider_ref', 'order_id'])),
     createdAt: asStr(pick(raw, ['created_at', 'createdAt'])),
     completedAt: asStr(pick(raw, ['completed_at', 'completedAt'])),
     refund: asNum(pick(raw, ['refund', 'refund_amount'])),

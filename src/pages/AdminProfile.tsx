@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AdminShell from '../components/AdminShell'
 import { useAuth } from '../context/AuthContext'
+import { validatePasswordMatch } from '../lib/authValidation'
 import { displayInitials } from '../lib/roleAccess'
 import './admin-control.css'
 
@@ -115,12 +116,9 @@ export default function AdminProfile() {
   const savePassword = async () => {
     setErr(null)
     setMsg(null)
-    if (pw.length < 8) {
-      setErr('Password must be at least 8 characters.')
-      return
-    }
-    if (pw !== pw2) {
-      setErr('Passwords do not match.')
+    const validation = validatePasswordMatch(pw, pw2)
+    if (validation) {
+      setErr(validation)
       return
     }
     setBusy(true)
