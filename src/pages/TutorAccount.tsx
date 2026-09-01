@@ -497,38 +497,29 @@ export default function TutorAccount() {
   const identityVerified = hub.verification.identity === 'verified'
   const emailVerified = Boolean(email)
 
-  const headerPhotoBlock = (
-    <div className="tp-header-photo shrink-0 flex flex-col items-center sm:items-start gap-2">
-      <div
-        className="tp-avatar w-20 h-20 md:w-24 md:h-24 rounded-full overflow-hidden flex items-center justify-center text-white text-xl md:text-2xl font-black"
-        aria-hidden
-      >
-        {displayAvatar ? <img src={displayAvatar} alt="" className="w-full h-full object-cover" /> : initials}
-      </div>
-      <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
-        <label className="btn-primary text-xs cursor-pointer">
-          {hasValidProfilePhoto(hub) || displayAvatar ? 'Change Photo' : 'Upload Photo'}
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif"
-            className="sr-only"
-            onChange={onPhoto}
-            disabled={busy}
-          />
-        </label>
-        {(hasValidProfilePhoto(hub) || displayAvatar) && !photoPreview ? (
-          <button type="button" className="btn-glass text-xs" disabled={busy} onClick={removePhoto}>
-            Remove
-          </button>
-        ) : null}
-      </div>
-      <p className="text-[10px] text-subtle text-center sm:text-left max-w-[9rem] leading-snug">JPG, PNG or WebP. Square recommended.</p>
+  const photoUploadActions = (
+    <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
+      <label className="btn-primary text-xs cursor-pointer">
+        {hasValidProfilePhoto(hub) || displayAvatar ? 'Change Photo' : 'Upload Photo'}
+        <input
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          className="sr-only"
+          onChange={onPhoto}
+          disabled={busy}
+        />
+      </label>
+      {(hasValidProfilePhoto(hub) || displayAvatar) && !photoPreview ? (
+        <button type="button" className="btn-glass text-xs" disabled={busy} onClick={removePhoto}>
+          Remove
+        </button>
+      ) : null}
     </div>
   )
 
   const avatarUrlFallback = (fieldId: string) => (
-    <details className="tp-url-fallback glass rounded-xl px-3 py-2 mb-1">
-      <summary className="text-xs font-semibold text-muted cursor-pointer select-none">Paste image URL instead</summary>
+    <details className="tp-url-fallback glass rounded-xl px-3 py-2 mt-2 w-full max-w-xs">
+      <summary className="text-xs font-semibold text-muted cursor-pointer select-none">Use image URL instead</summary>
       <input
         id={fieldId}
         className="field tp-field w-full px-3 py-2 text-sm mt-2"
@@ -540,10 +531,17 @@ export default function TutorAccount() {
     </details>
   )
 
-  const photoControls = (urlFieldId: string) => (
-    <div className="mb-4">
-      {headerPhotoBlock}
-      {avatarUrlFallback(urlFieldId)}
+  const headerPhotoBlock = (
+    <div className="tp-header-photo shrink-0 flex flex-col items-center sm:items-start gap-2">
+      <div
+        className="tp-avatar w-20 h-20 md:w-24 md:h-24 rounded-full overflow-hidden flex items-center justify-center text-white text-xl md:text-2xl font-black"
+        aria-hidden
+      >
+        {displayAvatar ? <img src={displayAvatar} alt="" className="w-full h-full object-cover" /> : initials}
+      </div>
+      {photoUploadActions}
+      <p className="text-[10px] text-subtle text-center sm:text-left max-w-[9rem] leading-snug">JPG, PNG or WebP. Square recommended.</p>
+      {avatarUrlFallback('avatar-url-header')}
     </div>
   )
 
@@ -551,15 +549,26 @@ export default function TutorAccount() {
     <section id="photo" className="glass rounded-2xl p-5 md:p-6 mb-5">
       <h2 className="text-lg font-black text-ink mb-1">Profile Photo</h2>
       <p className="text-sm text-muted mb-3">Students see this on your public tutor profile.</p>
-      {photoControls('avatar-url')}
+      <div className="flex items-start gap-4">
+        <div
+          className="tp-avatar w-20 h-20 rounded-full overflow-hidden flex items-center justify-center text-white text-xl font-black shrink-0"
+          aria-hidden
+        >
+          {displayAvatar ? <img src={displayAvatar} alt="" className="w-full h-full object-cover" /> : initials}
+        </div>
+        <div className="min-w-0">
+          {photoUploadActions}
+          <p className="text-[11px] text-subtle mt-2">JPG, PNG or WebP. Recommended square image.</p>
+          {avatarUrlFallback('avatar-url-onboarding')}
+        </div>
+      </div>
     </section>
   )
 
   const basicProfileFields = (
     <section id="about" className="glass rounded-2xl p-5 md:p-6 mb-5">
       <h2 className="text-lg font-black text-ink mb-1">Basic Profile</h2>
-      <p className="text-sm text-muted mb-4">Your headline and story for students. Update your photo from the header above.</p>
-      {avatarUrlFallback('avatar-url-basic')}
+      <p className="text-sm text-muted mb-4">Your headline and story for students.</p>
       <Field id="full-name" label="Full name">
         <input id="full-name" className="field tp-field w-full px-3 py-2 text-sm" value={hub.identity.name} onChange={e => patch({ identity: { ...hub.identity, name: e.target.value } })} autoComplete="name" />
       </Field>
