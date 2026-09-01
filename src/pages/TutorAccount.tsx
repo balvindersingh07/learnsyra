@@ -43,7 +43,6 @@ import {
   type TutorLanguage,
   type VideoStatus,
 } from '../lib/tutorProfile'
-import { loadTutorBookings } from '../lib/tutorMarketplace'
 import { uploadTutorAvatar } from '../lib/tutorAvatarUpload'
 import { mergeListingProfileIntoHub, syncTutorListingProfile } from '../lib/tutorListingProfile'
 import { syncPublishedTutorPricing, syncTutorListingAvailability } from '../lib/tutorSessionOffers'
@@ -54,7 +53,7 @@ const FORMATS: TeachingFormat[] = ['1-on-1', 'Group Classes', 'Courses', 'Projec
 type ProfileSection = 'basic' | 'expertise' | 'sessions' | 'availability' | 'content' | 'verification' | 'publish' | 'account'
 
 const PROFILE_SECTIONS: { id: ProfileSection; label: string; hint: string }[] = [
-  { id: 'basic', label: 'Basic Profile', hint: 'Photo, headline, bio, languages' },
+  { id: 'basic', label: 'Basic Profile', hint: 'Headline, bio, location, and languages' },
   { id: 'expertise', label: 'Expertise & Experience', hint: 'Skills, teaching background, credentials' },
   { id: 'sessions', label: 'Sessions & Pricing', hint: 'Bookable sessions, rates, duration' },
   { id: 'availability', label: 'Availability', hint: 'Weekly schedule students can book' },
@@ -309,8 +308,6 @@ export default function TutorAccount() {
   const tips = coachTips(hub)
   const name = hub.identity.name || email || 'Tutor'
   const initials = displayInitials(name)
-  const localBooks = loadTutorBookings().filter(b => b.tutorId === hub.publicId)
-  const interviewCount = localBooks.filter(b => b.sessionType === 'interview').length
   const publicUrl = `${window.location.origin}${tutorPath(hub.publicId)}`
   const suggestedSkills = SUGGESTED_SKILLS.filter(
     s => s.toLowerCase().includes(skillQuery.toLowerCase()) && !hub.skills.some(x => x.name.toLowerCase() === s.toLowerCase()),
@@ -500,46 +497,53 @@ export default function TutorAccount() {
   const identityVerified = hub.verification.identity === 'verified'
   const emailVerified = Boolean(email)
 
-  const photoControls = (urlFieldId: string, compact?: boolean) => (
-    <div className={compact ? 'mb-0' : 'mb-4'}>
-      <div className="flex items-center gap-4 mb-3">
-        <div
-          className={`tp-avatar rounded-full overflow-hidden flex items-center justify-center text-white font-black shrink-0 ${compact ? 'w-16 h-16 text-lg' : 'w-20 h-20'}`}
-        >
-          {displayAvatar ? <img src={displayAvatar} alt="" className="w-full h-full object-cover" /> : initials}
-        </div>
-        <div>
-          <div className="flex flex-wrap gap-2">
-            <label className="btn-primary text-sm cursor-pointer">
-              {hasValidProfilePhoto(hub) || displayAvatar ? 'Change Photo' : 'Upload Photo'}
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp,image/gif"
-                className="sr-only"
-                onChange={onPhoto}
-                disabled={busy}
-              />
-            </label>
-            {(hasValidProfilePhoto(hub) || displayAvatar) && !photoPreview ? (
-              <button type="button" className="btn-glass text-sm" disabled={busy} onClick={removePhoto}>
-                Remove
-              </button>
-            ) : null}
-          </div>
-          <p className="text-[11px] text-subtle mt-2">JPG, PNG or WebP. Recommended square image.</p>
-        </div>
+  const headerPhotoBlock = (
+    <div className="tp-header-photo shrink-0 flex flex-col items-center sm:items-start gap-2">
+      <div
+        className="tp-avatar w-20 h-20 md:w-24 md:h-24 rounded-full overflow-hidden flex items-center justify-center text-white text-xl md:text-2xl font-black"
+        aria-hidden
+      >
+        {displayAvatar ? <img src={displayAvatar} alt="" className="w-full h-full object-cover" /> : initials}
       </div>
-      {!compact ? (
-        <Field id={urlFieldId} label="Or paste image URL">
+      <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
+        <label className="btn-primary text-xs cursor-pointer">
+          {hasValidProfilePhoto(hub) || displayAvatar ? 'Change Photo' : 'Upload Photo'}
           <input
-            id={urlFieldId}
-            className="field tp-field w-full px-3 py-2 text-sm"
-            value={hub.identity.avatarUrl?.startsWith('data:') || hub.identity.avatarUrl?.startsWith('blob:') ? '' : hub.identity.avatarUrl ?? ''}
-            onChange={e => patch({ identity: { ...hub.identity, avatarUrl: e.target.value || null } })}
-            placeholder="https://example.com/photo.jpg"
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            className="sr-only"
+            onChange={onPhoto}
+            disabled={busy}
           />
-        </Field>
-      ) : null}
+        </label>
+        {(hasValidProfilePhoto(hub) || displayAvatar) && !photoPreview ? (
+          <button type="button" className="btn-glass text-xs" disabled={busy} onClick={removePhoto}>
+            Remove
+          </button>
+        ) : null}
+      </div>
+      <p className="text-[10px] text-subtle text-center sm:text-left max-w-[9rem] leading-snug">JPG, PNG or WebP. Square recommended.</p>
+    </div>
+  )
+
+  const avatarUrlFallback = (fieldId: string) => (
+    <details className="tp-url-fallback glass rounded-xl px-3 py-2 mb-1">
+      <summary className="text-xs font-semibold text-muted cursor-pointer select-none">Paste image URL instead</summary>
+      <input
+        id={fieldId}
+        className="field tp-field w-full px-3 py-2 text-sm mt-2"
+        value={hub.identity.avatarUrl?.startsWith('data:') || hub.identity.avatarUrl?.startsWith('blob:') ? '' : hub.identity.avatarUrl ?? ''}
+        onChange={e => patch({ identity: { ...hub.identity, avatarUrl: e.target.value || null } })}
+        placeholder="https://example.com/photo.jpg"
+        aria-label="Profile photo URL"
+      />
+    </details>
+  )
+
+  const photoControls = (urlFieldId: string) => (
+    <div className="mb-4">
+      {headerPhotoBlock}
+      {avatarUrlFallback(urlFieldId)}
     </div>
   )
 
@@ -554,8 +558,8 @@ export default function TutorAccount() {
   const basicProfileFields = (
     <section id="about" className="glass rounded-2xl p-5 md:p-6 mb-5">
       <h2 className="text-lg font-black text-ink mb-1">Basic Profile</h2>
-      <p className="text-sm text-muted mb-4">Your photo, headline, and story for students.</p>
-      {photoControls('avatar-url-basic')}
+      <p className="text-sm text-muted mb-4">Your headline and story for students. Update your photo from the header above.</p>
+      {avatarUrlFallback('avatar-url-basic')}
       <Field id="full-name" label="Full name">
         <input id="full-name" className="field tp-field w-full px-3 py-2 text-sm" value={hub.identity.name} onChange={e => patch({ identity: { ...hub.identity, name: e.target.value } })} autoComplete="name" />
       </Field>
@@ -1441,68 +1445,58 @@ export default function TutorAccount() {
   }
 
   return (
-    <div className="tp-page pt-20 px-4 sm:px-6 pb-28 max-w-6xl mx-auto overflow-x-hidden">
-      <section className="tp-hero glass rounded-3xl p-5 md:p-8 mb-6">
-        <div className="flex flex-col lg:flex-row gap-5">
-          <div className="flex flex-col sm:flex-row gap-4 flex-1 min-w-0">
-            <div className="shrink-0">{photoControls('avatar-url-hero', true)}</div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wider text-primary mb-1">Tutor Profile</p>
-              <h1 className="text-3xl font-black text-ink" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
-                {name}
-              </h1>
-              <p className="text-muted mb-3">{hub.identity.headline || 'Add a professional headline'}</p>
-              <div className="flex flex-wrap gap-2 mb-3">
-                <span className="badge badge-primary">Tutor</span>
-                {identityVerified ? (
-                  <span className="badge badge-primary">Verified Tutor</span>
-                ) : emailVerified ? (
-                  <span className="badge">Email verified</span>
-                ) : (
-                  <span className="badge">Unverified</span>
-                )}
-                <span className="badge">{hub.visibility === 'published' ? 'Published' : hub.visibility === 'paused' ? 'Paused' : 'Draft'}</span>
-              </div>
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted mb-4">
-                {hub.platformCache.rating != null ? <span className="font-semibold text-ink">⭐ {hub.platformCache.rating.toFixed(1)}</span> : <span>No rating yet</span>}
-                <span>{hub.platformCache.students} LearnSyra students</span>
-                {hub.experienceYears != null ? <span>{hub.experienceYears} years experience (self-reported)</span> : <span>Experience not listed</span>}
-              </div>
-              <div className="glass rounded-2xl p-3 mb-4">
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="font-semibold text-ink">Profile strength</span>
-                  <span className="text-muted">{strength.percent}%</span>
-                </div>
-                <div className="tp-progress" role="progressbar" aria-valuenow={strength.percent} aria-valuemin={0} aria-valuemax={100}>
-                  <span style={{ width: `${strength.percent}%` }} />
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" className="btn-primary text-sm" disabled={busy} onClick={() => persist()}>
-                  {busy ? 'Saving…' : 'Save Changes'}
-                </button>
-                <button type="button" className="btn-glass text-sm" disabled={busy || blockers.length > 0} onClick={publish}>
-                  Publish Profile
-                </button>
-                <button type="button" className="btn-glass text-sm" onClick={() => setPreviewOpen(true)}>
-                  Preview Public Profile
-                </button>
-                <button type="button" className="btn-glass text-sm" onClick={share}>
-                  Share Profile
-                </button>
-              </div>
-              {(msg || err) && (
-                <p className="text-sm mt-3" style={{ color: err ? '#E11D48' : '#0F8A68' }}>
-                  {err ?? msg}
-                </p>
+    <div className="tp-page pt-20 px-4 sm:px-6 pb-16 max-w-6xl mx-auto overflow-x-hidden">
+      <section className="tp-hero glass rounded-3xl p-4 md:p-6 mb-5">
+        <div className="flex flex-col md:flex-row gap-4 md:gap-6">
+          {headerPhotoBlock}
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-wider text-primary mb-1">Tutor Profile</p>
+            <h1 className="text-2xl md:text-3xl font-black text-ink leading-tight" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
+              {name}
+            </h1>
+            <p className="text-sm text-muted mt-1 mb-2">{hub.identity.headline || 'Add a professional headline'}</p>
+            <div className="flex flex-wrap gap-2 mb-3">
+              <span className="badge badge-primary">Tutor</span>
+              {identityVerified ? (
+                <span className="badge badge-primary">Verified Tutor</span>
+              ) : emailVerified ? (
+                <span className="badge">Email verified</span>
+              ) : (
+                <span className="badge">Unverified</span>
               )}
+              <span className="badge">{hub.visibility === 'published' ? 'Published' : hub.visibility === 'paused' ? 'Paused' : 'Draft'}</span>
+              <span className="badge">{strength.percent}% complete</span>
             </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted mb-4">
+              {hub.platformCache.rating != null ? <span className="font-semibold text-ink">⭐ {hub.platformCache.rating.toFixed(1)}</span> : <span>No rating yet</span>}
+              <span>{hub.platformCache.students} LearnSyra students</span>
+              {hub.experienceYears != null ? <span>{hub.experienceYears} yrs experience</span> : null}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="btn-primary text-sm" disabled={busy} onClick={() => persist()}>
+                {busy ? 'Saving…' : 'Save Changes'}
+              </button>
+              <button type="button" className="btn-glass text-sm" disabled={busy || blockers.length > 0} onClick={publish}>
+                Publish Profile
+              </button>
+              <button type="button" className="btn-glass text-sm" onClick={() => setPreviewOpen(true)}>
+                Preview Public Profile
+              </button>
+              <button type="button" className="btn-glass text-sm" onClick={share}>
+                Share Profile
+              </button>
+            </div>
+            {(msg || err) && (
+              <p className="text-sm mt-3" style={{ color: err ? '#E11D48' : '#0F8A68' }}>
+                {err ?? msg}
+              </p>
+            )}
           </div>
         </div>
       </section>
 
-      <div className="glass rounded-3xl p-4 md:p-5 mb-6">
-        <div className="tp-section-nav mb-3" role="tablist" aria-label="Profile sections">
+      <div className="glass rounded-3xl p-3 md:p-4 mb-5">
+        <div className="tp-section-nav mb-2" role="tablist" aria-label="Profile sections">
           {PROFILE_SECTIONS.map(section => {
             const done = sectionComplete(section.id, hub)
             return (
@@ -1515,59 +1509,78 @@ export default function TutorAccount() {
                 data-on={activeSection === section.id}
                 onClick={() => setActiveSection(section.id)}
               >
-                {done ? '✓ ' : ''}
+                {done ? <span className="tp-tab-done" aria-hidden>✓</span> : null}
                 {section.label}
               </button>
             )
           })}
         </div>
-        <p className="text-sm text-muted">{PROFILE_SECTIONS.find(s => s.id === activeSection)?.hint}</p>
+        <p className="text-xs md:text-sm text-muted px-1">{PROFILE_SECTIONS.find(s => s.id === activeSection)?.hint}</p>
       </div>
 
-      <div className="grid lg:grid-cols-[minmax(0,1fr)_20rem] gap-6">
+      <div className="grid lg:grid-cols-[minmax(0,1fr)_17.5rem] gap-5 lg:gap-6">
         <div role="tabpanel">{renderSectionPanel()}</div>
 
-        <aside className="space-y-5 lg:sticky lg:top-24 self-start">
-          <section className="glass rounded-2xl p-5">
-            <h2 className="text-base font-black text-ink mb-2">Tutor Profile Strength</h2>
-            <div className="text-3xl font-black text-ink mb-2">{strength.percent}% Complete</div>
-            <div className="tp-progress mb-4" role="progressbar" aria-valuenow={strength.percent} aria-valuemin={0} aria-valuemax={100} aria-label="Profile completion">
+        <aside className="tp-sidebar space-y-4 lg:sticky lg:top-24 self-start">
+          <section className="glass rounded-2xl p-4">
+            <div className="flex items-baseline justify-between gap-2 mb-2">
+              <h2 className="text-sm font-black text-ink">Profile Strength</h2>
+              <span className="text-xl font-black text-ink tabular-nums">{strength.percent}%</span>
+            </div>
+            <div className="tp-progress tp-progress-sm mb-3" role="progressbar" aria-valuenow={strength.percent} aria-valuemin={0} aria-valuemax={100} aria-label="Profile completion">
               <span style={{ width: `${strength.percent}%` }} />
             </div>
-            <ul className="space-y-2 text-sm mb-4">
-              {strength.items.map(item => (
-                <li key={item.id} className="flex items-center gap-2">
-                  <Check done={item.done} warn={item.optional && !item.done} />
-                  {item.label}
-                </li>
-              ))}
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted mb-2">Required</p>
+            <ul className="space-y-1.5 text-xs mb-3">
+              {strength.items
+                .filter(item => !item.optional)
+                .map(item => (
+                  <li key={item.id} className={`tp-strength-row flex items-center gap-2 ${item.done ? 'tp-strength-row--done' : ''}`}>
+                    <Check done={item.done} />
+                    <span className={item.done ? 'text-ink font-medium' : 'text-muted'}>{item.label}</span>
+                  </li>
+                ))}
             </ul>
-            <button type="button" className="btn-primary w-full text-sm" onClick={goNextMissing}>
+            {strength.items.some(item => item.optional) ? (
+              <>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted mb-2">Optional</p>
+                <ul className="space-y-1.5 text-xs mb-3">
+                  {strength.items
+                    .filter(item => item.optional)
+                    .map(item => (
+                      <li key={item.id} className="tp-strength-row flex items-center gap-2">
+                        <Check done={item.done} warn={!item.done} />
+                        <span className="text-muted">{item.label}</span>
+                      </li>
+                    ))}
+                </ul>
+              </>
+            ) : null}
+            <button type="button" className="btn-primary w-full text-xs" onClick={goNextMissing}>
               Complete Next Step →
             </button>
             {hub.onboarding.dismissed && strength.percent < 70 && (
-              <button type="button" className="btn-glass w-full text-sm mt-2" onClick={() => setOnboarding(true)}>
+              <button type="button" className="btn-glass w-full text-xs mt-2" onClick={() => setOnboarding(true)}>
                 Resume setup
               </button>
             )}
           </section>
 
-          <section className="glass rounded-2xl p-5">
-            <h2 className="text-base font-black text-ink mb-2">Why Students Choose Me</h2>
-            <ul className="text-sm space-y-2 text-muted">
+          <section className="glass rounded-2xl p-4">
+            <h2 className="text-sm font-black text-ink mb-2">Why Students Choose Me</h2>
+            <ul className="text-xs space-y-1.5 text-muted">
               <li>⭐ {hub.platformCache.rating != null ? hub.platformCache.rating.toFixed(1) : 'No rating yet'}</li>
               <li>👥 {hub.platformCache.students} LearnSyra students</li>
               <li>📚 {courses.length} courses</li>
               <li>🚀 {hub.portfolioProjectIds.length} linked projects</li>
-              <li>🎤 {interviewCount} interview sessions booked here</li>
             </ul>
           </section>
 
-          <section className="glass rounded-2xl p-5">
-            <h2 className="text-base font-black text-ink mb-2">✨ AI Profile Coach</h2>
-            <p className="text-xs text-subtle mb-3">Recommendations from your current profile only — never invented credentials.</p>
-            <ul className="space-y-3 text-sm text-muted mb-3">
-              {tips.map(t => (
+          <section className="glass rounded-2xl p-4">
+            <h2 className="text-sm font-black text-ink mb-1">✨ AI Profile Coach</h2>
+            <p className="text-[11px] text-subtle mb-2">Based on your current profile only.</p>
+            <ul className="space-y-2 text-xs text-muted mb-3">
+              {tips.slice(0, 3).map(t => (
                 <li key={t.text}>{t.text}</li>
               ))}
             </ul>
@@ -1580,32 +1593,7 @@ export default function TutorAccount() {
               </button>
             </div>
           </section>
-
-          <section className="glass rounded-2xl p-5">
-            <h2 className="text-base font-black text-ink mb-2">Profile Performance</h2>
-            {localBooks.length ? (
-              <ul className="text-sm space-y-1 text-muted">
-                <li>Bookings (this browser): {localBooks.length}</li>
-                <li>Views: No analytics yet</li>
-                <li>Profile saves: No analytics yet</li>
-                <li>Conversion: No analytics yet</li>
-              </ul>
-            ) : (
-              <p className="text-sm text-muted">No analytics yet. Views, saves, and conversion will appear when platform analytics are connected.</p>
-            )}
-          </section>
         </aside>
-      </div>
-
-      <div className="tp-sticky -mx-4 sm:-mx-6 mt-6 px-4 sm:px-6 py-3 flex flex-wrap items-center gap-3">
-        <button type="button" className="btn-primary text-sm" disabled={busy} onClick={() => persist()}>
-          {busy ? 'Saving…' : 'Save Changes'}
-        </button>
-        {(msg || err) && (
-          <p className="text-sm" style={{ color: err ? '#E11D48' : '#0F8A68' }}>
-            {err ?? msg}
-          </p>
-        )}
       </div>
 
       {previewOpen && (
