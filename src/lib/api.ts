@@ -124,6 +124,20 @@ export interface BookingRow {
   tutor_listing_id: string
   message: string | null
   status: 'pending' | 'confirmed' | 'cancelled' | 'completed'
+  offer_key?: '1on1' | 'project' | 'interview' | 'career' | null
+  scheduled_at?: string | null
+  duration_minutes?: number | null
+  amount_minor?: number | null
+  currency?: string
+  payment_status?:
+    | 'not_required'
+    | 'awaiting_payment'
+    | 'paid'
+    | 'failed'
+    | 'expired'
+    | 'refunded'
+  marketplace_payment_id?: string | null
+  expires_at?: string | null
   created_at: string
   listing?: TutorListing | null
   student?: ProfileLite | null

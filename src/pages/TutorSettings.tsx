@@ -48,6 +48,7 @@ import {
   type NotifyPrefs,
   type SettingsSection,
 } from '../lib/tutorSettings'
+import { syncPublishedTutorPricing, syncTutorListingAvailability } from '../lib/tutorSessionOffers'
 import './tutor-settings.css'
 
 export default function TutorSettings() {
@@ -138,7 +139,7 @@ export default function TutorSettings() {
     setMsg(null)
   }
 
-  const persist = (next = hub, note?: string) => {
+  const persist = async (next = hub, note?: string) => {
     if (!userId) return false
     const availErr = validateAvailability(next)
     const priceErr = validatePricing(next)
@@ -153,6 +154,21 @@ export default function TutorSettings() {
     try {
       saveTutorHub(next)
       saveNotifyPrefs(userId, notify)
+      if (next.visibility === 'published') {
+        const sync = await syncPublishedTutorPricing(next)
+        if (sync.error) {
+          setErr(sync.error)
+          setStatus('idle')
+          return false
+        }
+      } else {
+        const sync = await syncTutorListingAvailability(next.userId, false)
+        if (sync.error) {
+          setErr(sync.error)
+          setStatus('idle')
+          return false
+        }
+      }
       setHub(next)
       setSaved(next)
       setSavedNotify(notify)

@@ -23,6 +23,8 @@ import {
   statementForMonth,
   statusLabel,
   TX_PAGE_SIZE,
+  mergeEarningTransactions,
+  transactionsFromServerEarnings,
   type ChartRange,
   type DatePreset,
   type TutorTransaction,
@@ -31,6 +33,7 @@ import {
 import { tutorCoursePath, tutorSessionPath } from '../lib/paths'
 import { loadTutorBookings } from '../lib/tutorMarketplace'
 import { loadTutorHub, selfTutorId } from '../lib/tutorProfile'
+import { getTutorEarningsRecords } from '../lib/tutorSessionOffers'
 import { mergeTutorCourses } from '../lib/tutorCourses'
 import { buildTutorSessions } from '../lib/tutorSessions'
 import { buildTutorRoster } from '../lib/tutorStudents'
@@ -101,7 +104,8 @@ export default function TutorEarnings() {
       getTutorBookings().catch(() => []),
       getTutorCourses().catch(() => []),
       getTutorLiveClasses().catch(() => []),
-    ]).then(([enrollments, bookings, apiCourses, liveClasses]) => {
+      getTutorEarningsRecords(tutorId).catch(() => []),
+    ]).then(([enrollments, bookings, apiCourses, liveClasses, serverEarnings]) => {
       const roster = buildTutorRoster({ enrollments, bookings, reviews: [], localBookings: loadTutorBookings(), apiCourses })
       const built = buildTutorSessions({
         local: loadTutorBookings(),
@@ -116,7 +120,9 @@ export default function TutorEarnings() {
       const map: Record<string, number> = {}
       for (const c of apiCourses) map[c.id] = c.students
       setEnrollMap(map)
-      setRows(buildTransactions({ sessions: built.sessions, local: loadTutorBookings(), api: bookings, tutorPublicId: publicId }))
+      const legacy = buildTransactions({ sessions: built.sessions, local: loadTutorBookings(), api: bookings, tutorPublicId: publicId })
+      const server = transactionsFromServerEarnings(serverEarnings)
+      setRows(mergeEarningTransactions(legacy, server))
     }).catch(() => {
       setError("We couldn't load earnings right now.")
       setRows([])

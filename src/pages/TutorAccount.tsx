@@ -43,6 +43,7 @@ import {
   type VideoStatus,
 } from '../lib/tutorProfile'
 import { loadTutorBookings } from '../lib/tutorMarketplace'
+import { syncPublishedTutorPricing, syncTutorListingAvailability } from '../lib/tutorSessionOffers'
 import './tutor-profile.css'
 
 const FORMATS: TeachingFormat[] = ['1-on-1', 'Group Classes', 'Courses', 'Project Mentoring', 'Interview Preparation']
@@ -259,10 +260,21 @@ export default function TutorAccount() {
       headline: withProjects.identity.headline.trim() || null,
       avatar_url: skipRemoteAvatar ? profile?.avatar_url ?? null : avatar,
     })
+    let pricingError: string | null = null
+    if (!error) {
+      if (withProjects.visibility === 'published') {
+        const sync = await syncPublishedTutorPricing(withProjects)
+        pricingError = sync.error
+      } else {
+        const sync = await syncTutorListingAvailability(withProjects.userId, false)
+        pricingError = sync.error
+      }
+    }
     setBusy(false)
     if (error) setErr(error)
+    else if (pricingError) setErr(pricingError)
     else if (notify) setMsg('Tutor profile saved. Public profile and booking use this data when published.')
-    return true
+    return !error && !pricingError
   }
 
   const goNextMissing = () => {

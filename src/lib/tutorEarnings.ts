@@ -1,4 +1,5 @@
 import type { BookingRow } from './api'
+import type { TutorEarningRow } from './tutorSessionOffers'
 import { userStorageKey } from './supabase'
 import type { StudioCourse } from './tutorCourses'
 import type { TutorBooking } from './tutorMarketplace'
@@ -267,6 +268,52 @@ export function buildTransactions(input: {
   }
 
   return rows.sort((a, b) => +new Date(b.transactionDate) - +new Date(a.transactionDate))
+}
+
+function mapServerPayoutStatus(status: TutorEarningRow['payout_status']): PayoutStatus {
+  if (status === 'paid') return 'paid'
+  if (status === 'available') return 'processing'
+  if (status === 'held') return 'pending'
+  if (status === 'cancelled') return 'cancelled'
+  return 'pending'
+}
+
+export function transactionsFromServerEarnings(rows: TutorEarningRow[]): TutorTransaction[] {
+  return rows.map(row => ({
+    id: row.id,
+    sourceType: 'session',
+    sourceId: row.booking_id || row.id,
+    courseId: null,
+    sessionId: row.booking_id || row.id,
+    projectId: null,
+    studentId: null,
+    studentName: null,
+    description: 'Paid tutor session',
+    grossAmount: row.gross_minor / 100,
+    platformFee: row.platform_fee_minor / 100,
+    refundAmount: 0,
+    adjustmentAmount: 0,
+    netAmount: row.net_minor / 100,
+    currency: 'INR',
+    transactionStatus: 'completed',
+    payoutStatus: mapServerPayoutStatus(row.payout_status),
+    payoutId: row.payout_id,
+    transactionDate: row.earned_at,
+    settlementDate: row.earned_at,
+    reference: row.marketplace_payment_id,
+    demo: false,
+  }))
+}
+
+export function mergeEarningTransactions(legacy: TutorTransaction[], server: TutorTransaction[]): TutorTransaction[] {
+  const serverBookingIds = new Set(server.map(s => s.sourceId).filter(Boolean))
+  const serverIds = new Set(server.map(s => s.id))
+  const filtered = legacy.filter(r => {
+    if (serverIds.has(r.id)) return false
+    if (r.sourceId && serverBookingIds.has(r.sourceId)) return false
+    return true
+  })
+  return [...server, ...filtered].sort((a, b) => +new Date(b.transactionDate) - +new Date(a.transactionDate))
 }
 
 export function filterTransactions(

@@ -1,9 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { bookTutor, getTutorListings, type TutorListing } from '../lib/api'
+import { getTutorListings, type TutorListing } from '../lib/api'
 import { setPendingAiPrompt } from '../lib/dashboardIntel'
 import { formatInr } from '../lib/courseCatalog'
+import { startTutorSessionCheckout } from '../lib/payments/tutorSessionCheckout'
+import {
+  buildScheduledAtIso,
+  getTutorSessionOffers,
+  resolveTutorListingId,
+  sessionTypesFromOffers,
+} from '../lib/tutorSessionOffers'
 import {
   buildTutorCatalog,
   calendarBlob,
@@ -51,11 +58,16 @@ export default function TutorBook() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState<TutorBooking | null>(null)
+  const [listingId, setListingId] = useState<string | null>(null)
+  const [serverTypes, setServerTypes] = useState<SessionType[]>([])
 
   const catalog = useMemo(() => buildTutorCatalog(rows), [rows])
   const tutor = id ? getTutorById(catalog, id) : null
-  const types = tutor ? sessionTypesFor(tutor) : []
+  const types = serverTypes.length ? serverTypes : tutor ? sessionTypesFor(tutor) : []
   const selected = types.find(t => t.id === typeId) ?? types[0]
+  const paidCheckout = Boolean(
+    session && listingId && tutor && !tutor.demo && !tutor.id.startsWith('catalog-') && selected && selected.price > 0,
+  )
   const dates = upcomingDates()
   const slots = tutor ? slotsForDate(tutor, date) : []
 
@@ -65,6 +77,36 @@ export default function TutorBook() {
       .catch(() => setRows([]))
       .finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => {
+    if (!tutor?.id || tutor.demo || tutor.id.startsWith('catalog-')) {
+      setListingId(null)
+      setServerTypes([])
+      return
+    }
+    let cancelled = false
+    resolveTutorListingId(tutor.id)
+      .then(async resolvedListingId => {
+        if (cancelled) return
+        setListingId(resolvedListingId)
+        if (!resolvedListingId) {
+          setServerTypes([])
+          return
+        }
+        const offers = await getTutorSessionOffers(resolvedListingId)
+        if (cancelled) return
+        setServerTypes(sessionTypesFromOffers(offers))
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setListingId(null)
+          setServerTypes([])
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [tutor?.id, tutor?.demo])
 
   useEffect(() => {
     if (!tutor) return
@@ -83,10 +125,59 @@ export default function TutorBook() {
   const confirm = async () => {
     if (!tutor || !selected || !time) return
     setBusy(true)
+    setError(null)
+
+    const message = [selected.label, `${formatLongDate(date)} ${time}`, goal, brief?.text].filter(Boolean).join('\n')
+    const scheduledAt = buildScheduledAtIso(date, time)
+
+    if (paidCheckout && listingId && session) {
+      const checkout = await startTutorSessionCheckout({
+        tutorListingId: listingId,
+        offerKey: selected.id,
+        scheduledAt,
+        message,
+        idempotencyKey: `${session.user.id}:${listingId}:${selected.id}:${scheduledAt}`,
+      })
+      setBusy(false)
+      if (checkout.cancelled) {
+        setError('Payment cancelled. Your session was not booked.')
+        return
+      }
+      if (checkout.error || !checkout.verified || !checkout.bookingId) {
+        setError(checkout.error || 'Payment could not be completed.')
+        return
+      }
+      const price = checkout.amountMinor ? checkout.amountMinor / 100 : selected.price
+      const booking: TutorBooking = {
+        id: checkout.bookingId,
+        tutorId: tutor.id,
+        studentId: session.user.id,
+        sessionType: selected.id,
+        sessionLabel: selected.label,
+        date: date.toISOString().slice(0, 10),
+        time,
+        duration: selected.minutes,
+        price,
+        goal,
+        aiBrief: brief?.text ?? null,
+        status: 'confirmed',
+        createdAt: new Date().toISOString(),
+      }
+      saveTutorBookings([booking, ...loadTutorBookings()])
+      setDone(booking)
+      return
+    }
+
+    if (!session) {
+      setError('Please log in to book this session.')
+      setBusy(false)
+      return
+    }
+
     const booking: TutorBooking = {
       id: `sess-${Date.now()}`,
       tutorId: tutor.id,
-      studentId: session?.user.id ?? null,
+      studentId: session.user.id,
       sessionType: selected.id,
       sessionLabel: selected.label,
       date: date.toISOString().slice(0, 10),
@@ -97,17 +188,6 @@ export default function TutorBook() {
       aiBrief: brief?.text ?? null,
       status: 'confirmed',
       createdAt: new Date().toISOString(),
-    }
-    if (session && !tutor.id.startsWith('catalog-')) {
-      const { error: err } = await bookTutor(
-        tutor.id,
-        [selected.label, `${formatLongDate(date)} ${time}`, goal, brief?.text].filter(Boolean).join('\n'),
-      )
-      if (err) {
-        setError(err)
-        setBusy(false)
-        return
-      }
     }
     saveTutorBookings([booking, ...loadTutorBookings()])
     setDone(booking)
@@ -370,8 +450,11 @@ export default function TutorBook() {
               <div className="flex justify-between"><dt className="text-muted">Price</dt><dd className="font-black text-ink">{formatInr(selected.price)}</dd></div>
             </dl>
             {error && <p className="text-sm text-rose-500 mb-2">{error}</p>}
+            {paidCheckout && (
+              <p className="text-xs text-muted mb-3">Secure payment via Razorpay. Your booking is confirmed only after successful payment.</p>
+            )}
             <button type="button" className="btn-primary w-full" disabled={busy || !time} onClick={confirm}>
-              {busy ? 'Booking…' : 'Confirm Booking →'}
+              {busy ? 'Processing…' : paidCheckout ? 'Pay & Book →' : 'Confirm Booking →'}
             </button>
           </div>
         </aside>

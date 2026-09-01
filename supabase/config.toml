@@ -422,6 +422,15 @@ verify_jwt = true
 [functions.razorpay-webhook]
 verify_jwt = false
 
+[functions.create-tutor-session-order]
+verify_jwt = true
+
+[functions.verify-tutor-session-payment]
+verify_jwt = true
+
+[functions.razorpay-marketplace-webhook]
+verify_jwt = false
+
 # pg-delta is the schema diff engine for db diff / db pull / db remote commit.
 # Set enabled = false to fall back to the legacy migra engine.
 [experimental.pgdelta]
