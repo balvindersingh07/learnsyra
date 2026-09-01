@@ -51,6 +51,49 @@ import './tutor-profile.css'
 
 const FORMATS: TeachingFormat[] = ['1-on-1', 'Group Classes', 'Courses', 'Project Mentoring', 'Interview Preparation']
 
+type ProfileSection = 'basic' | 'expertise' | 'sessions' | 'availability' | 'content' | 'verification' | 'publish' | 'account'
+
+const PROFILE_SECTIONS: { id: ProfileSection; label: string; hint: string }[] = [
+  { id: 'basic', label: 'Basic Profile', hint: 'Photo, headline, bio, languages' },
+  { id: 'expertise', label: 'Expertise & Experience', hint: 'Skills, teaching background, credentials' },
+  { id: 'sessions', label: 'Sessions & Pricing', hint: 'Bookable sessions, rates, duration' },
+  { id: 'availability', label: 'Availability', hint: 'Weekly schedule students can book' },
+  { id: 'content', label: 'Content & Portfolio', hint: 'Video, projects, courses' },
+  { id: 'verification', label: 'Verification', hint: 'Email, identity, credentials' },
+  { id: 'publish', label: 'Publish & Visibility', hint: 'Readiness, publish, discovery' },
+  { id: 'account', label: 'Account', hint: 'Password and account settings' },
+]
+
+const SECTION_STORAGE_KEY = 'learnsyra_tutor_profile_section'
+
+function sectionComplete(id: ProfileSection, hub: TutorHub): boolean {
+  switch (id) {
+    case 'basic':
+      return (
+        hasValidProfilePhoto(hub) &&
+        hub.identity.headline.trim().length > 3 &&
+        hub.bio.trim().length >= 20 &&
+        hub.languages.length > 0
+      )
+    case 'expertise':
+      return hub.skills.length > 0 && (hub.teachingStyles.length > 0 || hub.teachingPhilosophy.trim().length > 8)
+    case 'sessions':
+      return hub.sessionOffers.some(s => s.enabled && s.hourlyRate > 0)
+    case 'availability':
+      return hub.availability.some(d => d.enabled)
+    case 'content':
+      return Boolean(hub.introVideoUrl.trim()) || hub.portfolioProjectIds.length > 0 || hub.publicCourses.length > 0
+    case 'verification':
+      return hub.verification.identity === 'verified' || hub.verification.submittedAt != null
+    case 'publish':
+      return hub.visibility === 'published' && publishBlockers(hub).length === 0
+    case 'account':
+      return true
+    default:
+      return false
+  }
+}
+
 function Field({
   id,
   label,
@@ -134,6 +177,16 @@ export default function TutorAccount() {
   const [projects, setProjects] = useState<{ id: string; title: string }[]>([])
   const [courses, setCourses] = useState<(CourseRow & { students: number })[]>([])
   const [onboarding, setOnboarding] = useState(false)
+  const [activeSection, setActiveSection] = useState<ProfileSection>(() => {
+    try {
+      const saved = sessionStorage.getItem(SECTION_STORAGE_KEY) as ProfileSection | null
+      if (saved && PROFILE_SECTIONS.some(s => s.id === saved)) return saved
+    } catch {
+      /* ignore */
+    }
+    return 'basic'
+  })
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
 
   useEffect(() => {
     if (!userId) return
@@ -183,11 +236,38 @@ export default function TutorAccount() {
   }, [previewOpen])
 
   useEffect(() => {
-    const id = location.hash.replace('#', '')
-    if (!id) return
-    const t = window.setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80)
-    return () => window.clearTimeout(t)
-  }, [location.hash, onboarding])
+    try {
+      sessionStorage.setItem(SECTION_STORAGE_KEY, activeSection)
+    } catch {
+      /* ignore */
+    }
+  }, [activeSection])
+
+  useEffect(() => {
+    const hash = location.hash.replace('#', '')
+    if (!hash) return
+    const hashToSection: Record<string, ProfileSection> = {
+      about: 'basic',
+      photo: 'basic',
+      languages: 'basic',
+      expertise: 'expertise',
+      experience: 'expertise',
+      style: 'expertise',
+      'session-types': 'sessions',
+      pricing: 'sessions',
+      prefs: 'sessions',
+      availability: 'availability',
+      'intro-video': 'content',
+      portfolio: 'content',
+      courses: 'content',
+      verification: 'verification',
+      publish: 'publish',
+      visibility: 'publish',
+      settings: 'account',
+    }
+    const next = hashToSection[hash]
+    if (next) setActiveSection(next)
+  }, [location.hash])
 
   useEffect(() => {
     getTutorCourses()
@@ -296,20 +376,21 @@ export default function TutorAccount() {
 
   const goNextMissing = () => {
     const id = strength.next?.id
-    const map: Record<string, string> = {
-      basic: 'about',
-      headline: 'about',
+    const map: Record<string, ProfileSection> = {
+      basic: 'basic',
+      headline: 'basic',
+      bio: 'basic',
+      photo: 'basic',
       expertise: 'expertise',
-      teaching: 'style',
-      pricing: 'pricing',
+      teaching: 'expertise',
+      sessions: 'sessions',
+      pricing: 'sessions',
       availability: 'availability',
-      photo: 'photo',
-      video: 'intro-video',
-      portfolio: 'portfolio',
+      video: 'content',
+      portfolio: 'content',
     }
-    const el = map[id ?? ''] || 'about'
     setOnboarding(false)
-    document.getElementById(el)?.scrollIntoView({ behavior: 'smooth' })
+    setActiveSection(map[id ?? ''] || 'basic')
   }
 
   const share = async () => {
@@ -328,8 +409,15 @@ export default function TutorAccount() {
     setBusy(true)
     setErr(null)
     setMsg(null)
+    const previousAvatar = hub.identity.avatarUrl
+    const localPreview = URL.createObjectURL(file)
+    setPhotoPreview(localPreview)
+    patch({ identity: { ...hub.identity, avatarUrl: localPreview } })
     const { url, error: uploadError } = await uploadTutorAvatar(userId, file)
+    URL.revokeObjectURL(localPreview)
+    setPhotoPreview(null)
     if (uploadError || !url) {
+      patch({ identity: { ...hub.identity, avatarUrl: previousAvatar } })
       setBusy(false)
       setErr(uploadError || 'Could not upload photo.')
       return
@@ -347,6 +435,20 @@ export default function TutorAccount() {
     else if (profileSync.error) setErr(profileSync.error)
     else setMsg('Profile photo updated.')
   }
+
+  const removePhoto = async () => {
+    const next = { ...hub, identity: { ...hub.identity, avatarUrl: null } }
+    patch({ identity: { ...hub.identity, avatarUrl: null } })
+    setBusy(true)
+    const { error: profileError } = await updateProfile({ avatar_url: null })
+    const profileSync = await syncTutorListingProfile(next)
+    setBusy(false)
+    if (profileError) setErr(profileError)
+    else if (profileSync.error) setErr(profileSync.error)
+    else setMsg('Profile photo removed.')
+  }
+
+  const displayAvatar = photoPreview || hub.identity.avatarUrl
 
   const addSkill = (raw: string) => {
     const name = raw.trim()
@@ -398,10 +500,62 @@ export default function TutorAccount() {
   const identityVerified = hub.verification.identity === 'verified'
   const emailVerified = Boolean(email)
 
-  const aboutFields = (
+  const photoControls = (urlFieldId: string, compact?: boolean) => (
+    <div className={compact ? 'mb-0' : 'mb-4'}>
+      <div className="flex items-center gap-4 mb-3">
+        <div
+          className={`tp-avatar rounded-full overflow-hidden flex items-center justify-center text-white font-black shrink-0 ${compact ? 'w-16 h-16 text-lg' : 'w-20 h-20'}`}
+        >
+          {displayAvatar ? <img src={displayAvatar} alt="" className="w-full h-full object-cover" /> : initials}
+        </div>
+        <div>
+          <div className="flex flex-wrap gap-2">
+            <label className="btn-primary text-sm cursor-pointer">
+              {hasValidProfilePhoto(hub) || displayAvatar ? 'Change Photo' : 'Upload Photo'}
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                className="sr-only"
+                onChange={onPhoto}
+                disabled={busy}
+              />
+            </label>
+            {(hasValidProfilePhoto(hub) || displayAvatar) && !photoPreview ? (
+              <button type="button" className="btn-glass text-sm" disabled={busy} onClick={removePhoto}>
+                Remove
+              </button>
+            ) : null}
+          </div>
+          <p className="text-[11px] text-subtle mt-2">JPG, PNG or WebP. Recommended square image.</p>
+        </div>
+      </div>
+      {!compact ? (
+        <Field id={urlFieldId} label="Or paste image URL">
+          <input
+            id={urlFieldId}
+            className="field tp-field w-full px-3 py-2 text-sm"
+            value={hub.identity.avatarUrl?.startsWith('data:') || hub.identity.avatarUrl?.startsWith('blob:') ? '' : hub.identity.avatarUrl ?? ''}
+            onChange={e => patch({ identity: { ...hub.identity, avatarUrl: e.target.value || null } })}
+            placeholder="https://example.com/photo.jpg"
+          />
+        </Field>
+      ) : null}
+    </div>
+  )
+
+  const photoFields = (
+    <section id="photo" className="glass rounded-2xl p-5 md:p-6 mb-5">
+      <h2 className="text-lg font-black text-ink mb-1">Profile Photo</h2>
+      <p className="text-sm text-muted mb-3">Students see this on your public tutor profile.</p>
+      {photoControls('avatar-url')}
+    </section>
+  )
+
+  const basicProfileFields = (
     <section id="about" className="glass rounded-2xl p-5 md:p-6 mb-5">
-      <h2 className="text-lg font-black text-ink mb-1">About You</h2>
-      <p className="text-sm text-muted mb-4">Who you are, in the student’s first glance.</p>
+      <h2 className="text-lg font-black text-ink mb-1">Basic Profile</h2>
+      <p className="text-sm text-muted mb-4">Your photo, headline, and story for students.</p>
+      {photoControls('avatar-url-basic')}
       <Field id="full-name" label="Full name">
         <input id="full-name" className="field tp-field w-full px-3 py-2 text-sm" value={hub.identity.name} onChange={e => patch({ identity: { ...hub.identity, name: e.target.value } })} autoComplete="name" />
       </Field>
@@ -422,7 +576,7 @@ export default function TutorAccount() {
       <Field id="bio" label="Short bio" hint="Cover what you teach, how you teach, and the outcomes you help with. Do not invent companies, degrees, or student counts.">
         <textarea id="bio" className="field tp-field w-full px-3 py-2 text-sm" rows={5} value={hub.bio} onChange={e => patch({ bio: e.target.value })} placeholder="What you teach, your teaching approach, and how you help students ship real work." />
       </Field>
-      <div className="grid sm:grid-cols-2 gap-3">
+      <div className="grid sm:grid-cols-2 gap-3 mb-4">
         <Field id="location" label="Location">
           <input id="location" className="field tp-field w-full px-3 py-2 text-sm" value={hub.location} onChange={e => patch({ location: e.target.value })} />
         </Field>
@@ -438,6 +592,116 @@ export default function TutorAccount() {
           />
         </Field>
       </div>
+      <h3 className="text-sm font-bold text-ink mb-2">Languages I Teach In</h3>
+      <div className="flex flex-wrap gap-2 mb-3">
+        {LANGUAGE_OPTIONS.map(lang => {
+          const on = hub.languages.some(l => l.name === lang)
+          return (
+            <Chip
+              key={lang}
+              on={on}
+              onClick={() => {
+                const next: TutorLanguage[] = on
+                  ? hub.languages.filter(l => l.name !== lang)
+                  : [...hub.languages, { name: lang, level: 'Fluent' }]
+                patch({ languages: next })
+              }}
+            >
+              {lang}
+            </Chip>
+          )
+        })}
+      </div>
+      <ul className="space-y-2">
+        {hub.languages.map(lang => (
+          <li key={lang.name} className="flex items-center gap-3">
+            <span className="text-sm font-semibold text-ink w-28">{lang.name}</span>
+            <select
+              className="field px-2 py-1 text-xs"
+              aria-label={`${lang.name} proficiency`}
+              value={lang.level}
+              onChange={e =>
+                patch({
+                  languages: hub.languages.map(l => (l.name === lang.name ? { ...l, level: e.target.value as TutorLanguage['level'] } : l)),
+                })
+              }
+            >
+              {LANG_LEVELS.map(l => (
+                <option key={l}>{l}</option>
+              ))}
+            </select>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+
+  const aboutFields = (
+    <section id="about-onboarding" className="glass rounded-2xl p-5 md:p-6 mb-5">
+      <h2 className="text-lg font-black text-ink mb-1">About You</h2>
+      <p className="text-sm text-muted mb-4">Who you are, in the student’s first glance.</p>
+      <Field id="full-name-onboarding" label="Full name">
+        <input id="full-name-onboarding" className="field tp-field w-full px-3 py-2 text-sm" value={hub.identity.name} onChange={e => patch({ identity: { ...hub.identity, name: e.target.value } })} autoComplete="name" />
+      </Field>
+      <Field id="headline-onboarding" label="Professional headline" hint="Example shape: Full Stack Developer & React Mentor — only use titles you actually hold.">
+        <input id="headline-onboarding" className="field tp-field w-full px-3 py-2 text-sm" value={hub.identity.headline} onChange={e => patch({ identity: { ...hub.identity, headline: e.target.value } })} placeholder="Full Stack Developer & React Mentor" />
+      </Field>
+      <Field id="bio-onboarding" label="Short bio" hint="Cover what you teach, how you teach, and the outcomes you help with.">
+        <textarea id="bio-onboarding" className="field tp-field w-full px-3 py-2 text-sm" rows={5} value={hub.bio} onChange={e => patch({ bio: e.target.value })} placeholder="What you teach, your teaching approach, and how you help students ship real work." />
+      </Field>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field id="location-onboarding" label="Location">
+          <input id="location-onboarding" className="field tp-field w-full px-3 py-2 text-sm" value={hub.location} onChange={e => patch({ location: e.target.value })} />
+        </Field>
+        <Field id="years-onboarding" label="Years of experience (self-reported)">
+          <input
+            id="years-onboarding"
+            type="number"
+            min={0}
+            max={60}
+            className="field tp-field w-full px-3 py-2 text-sm"
+            value={hub.experienceYears ?? ''}
+            onChange={e => patch({ experienceYears: e.target.value === '' ? null : Number(e.target.value) })}
+          />
+        </Field>
+      </div>
+    </section>
+  )
+
+  const educationFields = (
+    <section id="education" className="glass rounded-2xl p-5 md:p-6 mb-5">
+      <h2 className="text-lg font-black text-ink mb-1">Education & Credentials</h2>
+      <p className="text-sm text-muted mb-4">Entries stay Not Verified until an admin confirms them.</p>
+      <div className="flex justify-between items-center mb-2">
+        <h3 className="text-sm font-bold text-ink">Education</h3>
+        <button type="button" className="btn-glass text-xs" onClick={addEducation}>
+          Add education
+        </button>
+      </div>
+      {hub.education.map(row => (
+        <div key={row.id} className="glass rounded-xl p-3 mb-2 grid sm:grid-cols-2 gap-2">
+          <input className="field px-3 py-2 text-sm" placeholder="Degree" value={row.degree} aria-label="Degree" onChange={e => patch({ education: hub.education.map(r => (r.id === row.id ? { ...r, degree: e.target.value } : r)) })} />
+          <input className="field px-3 py-2 text-sm" placeholder="Institution" value={row.institution} aria-label="Institution" onChange={e => patch({ education: hub.education.map(r => (r.id === row.id ? { ...r, institution: e.target.value } : r)) })} />
+          <input className="field px-3 py-2 text-sm" placeholder="Field of study" value={row.field} aria-label="Field of study" onChange={e => patch({ education: hub.education.map(r => (r.id === row.id ? { ...r, field: e.target.value } : r)) })} />
+          <input className="field px-3 py-2 text-sm" placeholder="Graduation year" value={row.year} aria-label="Graduation year" onChange={e => patch({ education: hub.education.map(r => (r.id === row.id ? { ...r, year: e.target.value } : r)) })} />
+          <div className="text-xs text-muted sm:col-span-2">{verifyLabel(row.status)}</div>
+        </div>
+      ))}
+      <div className="flex justify-between items-center mt-4 mb-2">
+        <h3 className="text-sm font-bold text-ink">Credentials</h3>
+        <button type="button" className="btn-glass text-xs" onClick={addCredential}>
+          Add credential
+        </button>
+      </div>
+      {hub.credentials.map(row => (
+        <div key={row.id} className="glass rounded-xl p-3 mb-2 grid sm:grid-cols-2 gap-2">
+          <input className="field px-3 py-2 text-sm" placeholder="Certification name" value={row.name} aria-label="Certification name" onChange={e => patch({ credentials: hub.credentials.map(r => (r.id === row.id ? { ...r, name: e.target.value } : r)) })} />
+          <input className="field px-3 py-2 text-sm" placeholder="Issuing organization" value={row.org} aria-label="Issuing organization" onChange={e => patch({ credentials: hub.credentials.map(r => (r.id === row.id ? { ...r, org: e.target.value } : r)) })} />
+          <input className="field px-3 py-2 text-sm" placeholder="Credential ID" value={row.credentialId} aria-label="Credential ID" onChange={e => patch({ credentials: hub.credentials.map(r => (r.id === row.id ? { ...r, credentialId: e.target.value } : r)) })} />
+          <input className="field px-3 py-2 text-sm" placeholder="Credential URL" value={row.url} aria-label="Credential URL" onChange={e => patch({ credentials: hub.credentials.map(r => (r.id === row.id ? { ...r, url: e.target.value } : r)) })} />
+          <div className="text-xs text-muted sm:col-span-2">{verifyLabel(row.status)}</div>
+        </div>
+      ))}
     </section>
   )
 
@@ -822,6 +1086,107 @@ export default function TutorAccount() {
     </section>
   )
 
+  const introVideoFields = (
+    <section id="intro-video" className="glass rounded-2xl p-5 md:p-6 mb-5">
+      <h2 className="text-lg font-black text-ink mb-1">Introduction Video</h2>
+      <p className="text-sm text-muted mb-3">Introduce yourself to students in 30–60 seconds.</p>
+      <Field id="video-url" label="Video URL">
+        <input id="video-url" className="field tp-field w-full px-3 py-2 text-sm" value={hub.introVideoUrl} onChange={e => patch({ introVideoUrl: e.target.value })} placeholder="https://" />
+      </Field>
+      <div className="text-xs text-muted">
+        Status: {hub.introVideoUrl.trim() ? (hub.introVideoStatus === 'pending_review' ? 'Pending Review' : 'Added') : 'Not Added'}
+      </div>
+    </section>
+  )
+
+  const portfolioFields = (
+    <section id="portfolio" className="glass rounded-2xl p-5 md:p-6 mb-5">
+      <h2 className="text-lg font-black text-ink mb-1">Professional Portfolio</h2>
+      <p className="text-sm text-muted mb-3">Link existing LearnSyra projects. Project management stays on the projects page.</p>
+      <div className="flex flex-wrap gap-2 mb-3">
+        {projects.slice(0, 12).map(p => (
+          <Chip
+            key={p.id}
+            on={hub.portfolioProjectIds.includes(p.id)}
+            onClick={() =>
+              patch({
+                portfolioProjectIds: hub.portfolioProjectIds.includes(p.id)
+                  ? hub.portfolioProjectIds.filter(id => id !== p.id)
+                  : [...hub.portfolioProjectIds, p.id],
+              })
+            }
+          >
+            {p.title}
+          </Chip>
+        ))}
+      </div>
+      <button type="button" className="btn-glass text-sm" onClick={() => navigate('/tutor/projects')}>
+        Add Project
+      </button>
+    </section>
+  )
+
+  const coursesFields = (
+    <section id="courses" className="glass rounded-2xl p-5 md:p-6 mb-5">
+      <h2 className="text-lg font-black text-ink mb-3">My Courses</h2>
+      {courses.length === 0 ? (
+        <p className="text-sm text-muted">No courses yet. Create them from the tutor courses workspace.</p>
+      ) : (
+        <div className="space-y-3">
+          {courses.map(c => (
+            <article key={c.id} className="glass rounded-xl p-4">
+              <h3 className="font-bold text-ink">{c.title}</h3>
+              <div className="text-xs text-muted mt-1">
+                {c.students} students · {Number(c.rating) ? `${Number(c.rating).toFixed(1)} rating` : 'No rating yet'} · {c.published ? 'Published' : 'Draft'}
+              </div>
+              <div className="flex flex-wrap gap-2 mt-3">
+                <button type="button" className="btn-glass text-xs" onClick={() => navigate('/tutor/courses')}>
+                  Edit Course
+                </button>
+                <button type="button" className="btn-glass text-xs" onClick={() => navigate(`/courses/${c.id}`)}>
+                  View Course
+                </button>
+                <button type="button" className="btn-glass text-xs" onClick={() => navigate('/tutor/analytics')}>
+                  Analytics
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+
+  const visibilityFields = (
+    <section id="visibility" className="glass rounded-2xl p-5 md:p-6 mb-5">
+      <h2 className="text-lg font-black text-ink mb-3">Profile Visibility</h2>
+      {(['draft', 'published', 'paused'] as ProfileVisibility[]).map(v => (
+        <label key={v} className="flex items-start gap-2 mb-2 text-sm">
+          <input type="radio" name="visibility" checked={hub.visibility === v} onChange={() => patch({ visibility: v })} />
+          <span>
+            <span className="font-semibold text-ink capitalize">{v}</span>
+            <span className="text-muted block text-xs">
+              {v === 'draft' && 'Students cannot discover the profile.'}
+              {v === 'published' && 'Profile appears in the tutor marketplace.'}
+              {v === 'paused' && 'Temporarily hidden from discovery.'}
+            </span>
+          </span>
+        </label>
+      ))}
+    </section>
+  )
+
+  const accountFields = (
+    <section id="settings" className="glass rounded-2xl p-5 md:p-6 mb-5">
+      <h2 className="text-lg font-black text-ink mb-3">Account settings</h2>
+      <input type="password" className="field w-full mb-3 px-3 py-2 text-sm" value={password} onChange={e => setPassword(e.target.value)} placeholder="New password" autoComplete="new-password" />
+      <input type="password" className="field w-full mb-4 px-3 py-2 text-sm" value={confirm} onChange={e => setConfirm(e.target.value)} placeholder="Confirm password" autoComplete="new-password" />
+      <button type="button" className="btn-glass text-sm" disabled={busy} onClick={changePassword}>
+        Update password
+      </button>
+    </section>
+  )
+
   const onboardingBody = () => {
     const step = hub.onboarding.step
     if (step === 0) return aboutFields
@@ -862,49 +1227,6 @@ export default function TutorAccount() {
       </>
     )
   }
-
-  const photoFields = (
-    <section id="photo" className="glass rounded-2xl p-5 md:p-6 mb-5">
-      <h2 className="text-lg font-black text-ink mb-1">Profile Photo</h2>
-      <p className="text-sm text-muted mb-3">Students see this on your public tutor profile.</p>
-      <div className="flex items-center gap-4 mb-3">
-        <div className="tp-avatar w-20 h-20 rounded-full overflow-hidden flex items-center justify-center text-white font-black">
-          {hub.identity.avatarUrl ? <img src={hub.identity.avatarUrl} alt="" className="w-full h-full object-cover" /> : initials}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <label className="btn-primary text-sm cursor-pointer">
-            {hub.identity.avatarUrl ? 'Change Photo' : 'Upload Photo'}
-            <input type="file" accept="image/*" className="sr-only" onChange={onPhoto} disabled={busy} />
-          </label>
-          {hub.identity.avatarUrl ? (
-            <button
-              type="button"
-              className="btn-glass text-sm"
-              disabled={busy}
-              onClick={async () => {
-                const next = { ...hub, identity: { ...hub.identity, avatarUrl: null } }
-                patch({ identity: { ...hub.identity, avatarUrl: null } })
-                await updateProfile({ avatar_url: null })
-                await syncTutorListingProfile(next)
-                setMsg('Profile photo removed.')
-              }}
-            >
-              Remove
-            </button>
-          ) : null}
-        </div>
-      </div>
-      <Field id="avatar-url" label="Or paste image URL">
-        <input
-          id="avatar-url"
-          className="field tp-field w-full px-3 py-2 text-sm"
-          value={hub.identity.avatarUrl?.startsWith('data:') ? '' : hub.identity.avatarUrl ?? ''}
-          onChange={e => patch({ identity: { ...hub.identity, avatarUrl: e.target.value || null } })}
-          placeholder="https://example.com/photo.jpg"
-        />
-      </Field>
-    </section>
-  )
 
   const verificationBlock = (
     <section id="verification" className="glass rounded-2xl p-5 md:p-6 mb-5">
@@ -993,6 +1315,53 @@ export default function TutorAccount() {
     </section>
   )
 
+  const renderSectionPanel = () => {
+    switch (activeSection) {
+      case 'basic':
+        return basicProfileFields
+      case 'expertise':
+        return (
+          <>
+            {expertiseFields}
+            {experienceFields}
+            {educationFields}
+            {styleFields}
+          </>
+        )
+      case 'sessions':
+        return (
+          <>
+            {sessionFields}
+            {pricingFields}
+            {prefsFields}
+          </>
+        )
+      case 'availability':
+        return availabilityFields
+      case 'content':
+        return (
+          <>
+            {introVideoFields}
+            {portfolioFields}
+            {coursesFields}
+          </>
+        )
+      case 'verification':
+        return verificationBlock
+      case 'publish':
+        return (
+          <>
+            {publishBlock}
+            {visibilityFields}
+          </>
+        )
+      case 'account':
+        return accountFields
+      default:
+        return basicProfileFields
+    }
+  }
+
   if (!userId) {
     return (
       <div className="tp-page pt-20 px-4 sm:px-6 pb-24 max-w-6xl mx-auto">
@@ -1074,218 +1443,89 @@ export default function TutorAccount() {
   return (
     <div className="tp-page pt-20 px-4 sm:px-6 pb-28 max-w-6xl mx-auto overflow-x-hidden">
       <section className="tp-hero glass rounded-3xl p-5 md:p-8 mb-6">
-        <div className="flex flex-col md:flex-row gap-5">
-          <div
-            className="tp-avatar w-24 h-24 rounded-full overflow-hidden flex items-center justify-center text-white text-2xl font-black flex-shrink-0"
-            aria-hidden
-          >
-            {hub.identity.avatarUrl ? <img src={hub.identity.avatarUrl} alt="" className="w-full h-full object-cover" /> : initials}
-          </div>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-3xl font-black text-ink" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
-              {name}
-            </h1>
-            <p className="text-muted mb-3">{hub.identity.headline || 'Add a professional headline'}</p>
-            <div className="flex flex-wrap gap-2 mb-3">
-              <span className="badge badge-primary">Tutor</span>
-              {identityVerified ? (
-                <span className="badge badge-primary">Verified Tutor</span>
-              ) : emailVerified ? (
-                <span className="badge">Email verified</span>
-              ) : (
-                <span className="badge">Unverified</span>
+        <div className="flex flex-col lg:flex-row gap-5">
+          <div className="flex flex-col sm:flex-row gap-4 flex-1 min-w-0">
+            <div className="shrink-0">{photoControls('avatar-url-hero', true)}</div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wider text-primary mb-1">Tutor Profile</p>
+              <h1 className="text-3xl font-black text-ink" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
+                {name}
+              </h1>
+              <p className="text-muted mb-3">{hub.identity.headline || 'Add a professional headline'}</p>
+              <div className="flex flex-wrap gap-2 mb-3">
+                <span className="badge badge-primary">Tutor</span>
+                {identityVerified ? (
+                  <span className="badge badge-primary">Verified Tutor</span>
+                ) : emailVerified ? (
+                  <span className="badge">Email verified</span>
+                ) : (
+                  <span className="badge">Unverified</span>
+                )}
+                <span className="badge">{hub.visibility === 'published' ? 'Published' : hub.visibility === 'paused' ? 'Paused' : 'Draft'}</span>
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted mb-4">
+                {hub.platformCache.rating != null ? <span className="font-semibold text-ink">⭐ {hub.platformCache.rating.toFixed(1)}</span> : <span>No rating yet</span>}
+                <span>{hub.platformCache.students} LearnSyra students</span>
+                {hub.experienceYears != null ? <span>{hub.experienceYears} years experience (self-reported)</span> : <span>Experience not listed</span>}
+              </div>
+              <div className="glass rounded-2xl p-3 mb-4">
+                <div className="flex justify-between text-sm mb-2">
+                  <span className="font-semibold text-ink">Profile strength</span>
+                  <span className="text-muted">{strength.percent}%</span>
+                </div>
+                <div className="tp-progress" role="progressbar" aria-valuenow={strength.percent} aria-valuemin={0} aria-valuemax={100}>
+                  <span style={{ width: `${strength.percent}%` }} />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className="btn-primary text-sm" disabled={busy} onClick={() => persist()}>
+                  {busy ? 'Saving…' : 'Save Changes'}
+                </button>
+                <button type="button" className="btn-glass text-sm" disabled={busy || blockers.length > 0} onClick={publish}>
+                  Publish Profile
+                </button>
+                <button type="button" className="btn-glass text-sm" onClick={() => setPreviewOpen(true)}>
+                  Preview Public Profile
+                </button>
+                <button type="button" className="btn-glass text-sm" onClick={share}>
+                  Share Profile
+                </button>
+              </div>
+              {(msg || err) && (
+                <p className="text-sm mt-3" style={{ color: err ? '#E11D48' : '#0F8A68' }}>
+                  {err ?? msg}
+                </p>
               )}
-            </div>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted mb-4">
-              {hub.platformCache.rating != null ? <span className="font-semibold text-ink">⭐ {hub.platformCache.rating.toFixed(1)}</span> : <span>No rating yet</span>}
-              <span>{hub.platformCache.students} LearnSyra students</span>
-              {hub.experienceYears != null ? <span>{hub.experienceYears} years experience (self-reported)</span> : <span>Experience not listed</span>}
-              <span>{strength.percent}% complete</span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button type="button" className="btn-primary text-sm" onClick={() => document.getElementById('about')?.scrollIntoView({ behavior: 'smooth' })}>
-                Edit Profile
-              </button>
-              <button type="button" className="btn-glass text-sm" onClick={() => setPreviewOpen(true)}>
-                Preview Public Profile
-              </button>
-              <button type="button" className="btn-glass text-sm" onClick={share}>
-                Share Profile
-              </button>
             </div>
           </div>
         </div>
       </section>
 
-      <div className="grid lg:grid-cols-[minmax(0,1fr)_20rem] gap-6">
-        <div>
-          {aboutFields}
-          {expertiseFields}
-          {experienceFields}
-          <section className="glass rounded-2xl p-5 md:p-6 mb-5">
-            <h2 className="text-lg font-black text-ink mb-1">Education & Credentials</h2>
-            <p className="text-sm text-muted mb-4">Entries stay Not Verified until an admin confirms them.</p>
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="text-sm font-bold text-ink">Education</h3>
-              <button type="button" className="btn-glass text-xs" onClick={addEducation}>
-                Add education
+      <div className="glass rounded-3xl p-4 md:p-5 mb-6">
+        <div className="tp-section-nav mb-3" role="tablist" aria-label="Profile sections">
+          {PROFILE_SECTIONS.map(section => {
+            const done = sectionComplete(section.id, hub)
+            return (
+              <button
+                key={section.id}
+                type="button"
+                role="tab"
+                aria-selected={activeSection === section.id}
+                className="tp-section-tab"
+                data-on={activeSection === section.id}
+                onClick={() => setActiveSection(section.id)}
+              >
+                {done ? '✓ ' : ''}
+                {section.label}
               </button>
-            </div>
-            {hub.education.map(row => (
-              <div key={row.id} className="glass rounded-xl p-3 mb-2 grid sm:grid-cols-2 gap-2">
-                <input className="field px-3 py-2 text-sm" placeholder="Degree" value={row.degree} aria-label="Degree" onChange={e => patch({ education: hub.education.map(r => (r.id === row.id ? { ...r, degree: e.target.value } : r)) })} />
-                <input className="field px-3 py-2 text-sm" placeholder="Institution" value={row.institution} aria-label="Institution" onChange={e => patch({ education: hub.education.map(r => (r.id === row.id ? { ...r, institution: e.target.value } : r)) })} />
-                <input className="field px-3 py-2 text-sm" placeholder="Field of study" value={row.field} aria-label="Field of study" onChange={e => patch({ education: hub.education.map(r => (r.id === row.id ? { ...r, field: e.target.value } : r)) })} />
-                <input className="field px-3 py-2 text-sm" placeholder="Graduation year" value={row.year} aria-label="Graduation year" onChange={e => patch({ education: hub.education.map(r => (r.id === row.id ? { ...r, year: e.target.value } : r)) })} />
-                <div className="text-xs text-muted sm:col-span-2">{verifyLabel(row.status)}</div>
-              </div>
-            ))}
-            <div className="flex justify-between items-center mt-4 mb-2">
-              <h3 className="text-sm font-bold text-ink">Credentials</h3>
-              <button type="button" className="btn-glass text-xs" onClick={addCredential}>
-                Add credential
-              </button>
-            </div>
-            {hub.credentials.map(row => (
-              <div key={row.id} className="glass rounded-xl p-3 mb-2 grid sm:grid-cols-2 gap-2">
-                <input className="field px-3 py-2 text-sm" placeholder="Certification name" value={row.name} aria-label="Certification name" onChange={e => patch({ credentials: hub.credentials.map(r => (r.id === row.id ? { ...r, name: e.target.value } : r)) })} />
-                <input className="field px-3 py-2 text-sm" placeholder="Issuing organization" value={row.org} aria-label="Issuing organization" onChange={e => patch({ credentials: hub.credentials.map(r => (r.id === row.id ? { ...r, org: e.target.value } : r)) })} />
-                <input className="field px-3 py-2 text-sm" placeholder="Credential ID" value={row.credentialId} aria-label="Credential ID" onChange={e => patch({ credentials: hub.credentials.map(r => (r.id === row.id ? { ...r, credentialId: e.target.value } : r)) })} />
-                <input className="field px-3 py-2 text-sm" placeholder="Credential URL" value={row.url} aria-label="Credential URL" onChange={e => patch({ credentials: hub.credentials.map(r => (r.id === row.id ? { ...r, url: e.target.value } : r)) })} />
-                <div className="text-xs text-muted sm:col-span-2">{verifyLabel(row.status)}</div>
-              </div>
-            ))}
-          </section>
-          {styleFields}
-          {languageFields}
-          {sessionFields}
-          {pricingFields}
-          {availabilityFields}
-          {prefsFields}
-
-          <section id="photo" className="glass rounded-2xl p-5 md:p-6 mb-5">
-            <h2 className="text-lg font-black text-ink mb-3">Profile Photo</h2>
-            <p className="text-sm text-muted mb-3">Upload a clear headshot for your public tutor profile.</p>
-            <div className="flex items-center gap-4 mb-3">
-              <div className="tp-avatar w-20 h-20 rounded-full overflow-hidden flex items-center justify-center text-white font-black">
-                {hub.identity.avatarUrl ? <img src={hub.identity.avatarUrl} alt="" className="w-full h-full object-cover" /> : initials}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <label className="btn-primary text-sm cursor-pointer">
-                  {hub.identity.avatarUrl ? 'Change Photo' : 'Upload Photo'}
-                  <input type="file" accept="image/*" className="sr-only" onChange={onPhoto} disabled={busy} />
-                </label>
-                {hub.identity.avatarUrl ? (
-                  <button type="button" className="btn-glass text-sm" disabled={busy} onClick={() => patch({ identity: { ...hub.identity, avatarUrl: null } })}>
-                    Remove
-                  </button>
-                ) : null}
-              </div>
-            </div>
-            <Field id="avatar-url-full" label="Or paste image URL">
-              <input id="avatar-url-full" className="field tp-field w-full px-3 py-2 text-sm" value={hub.identity.avatarUrl?.startsWith('data:') ? '' : hub.identity.avatarUrl ?? ''} onChange={e => patch({ identity: { ...hub.identity, avatarUrl: e.target.value || null } })} placeholder="https://example.com/photo.jpg" />
-            </Field>
-          </section>
-
-          <section id="intro-video" className="glass rounded-2xl p-5 md:p-6 mb-5">
-            <h2 className="text-lg font-black text-ink mb-1">Introduction Video</h2>
-            <p className="text-sm text-muted mb-3">Introduce yourself to students in 30–60 seconds.</p>
-            <Field id="video-url" label="Video URL">
-              <input id="video-url" className="field tp-field w-full px-3 py-2 text-sm" value={hub.introVideoUrl} onChange={e => patch({ introVideoUrl: e.target.value })} placeholder="https://" />
-            </Field>
-            <div className="text-xs text-muted">
-              Status: {hub.introVideoUrl.trim() ? (hub.introVideoStatus === 'pending_review' ? 'Pending Review' : 'Added') : 'Not Added'}
-            </div>
-          </section>
-
-          <section id="portfolio" className="glass rounded-2xl p-5 md:p-6 mb-5">
-            <h2 className="text-lg font-black text-ink mb-1">Professional Portfolio</h2>
-            <p className="text-sm text-muted mb-3">Link existing LearnSyra projects. Project management stays on the projects page.</p>
-            <div className="flex flex-wrap gap-2 mb-3">
-              {projects.slice(0, 12).map(p => (
-                <Chip
-                  key={p.id}
-                  on={hub.portfolioProjectIds.includes(p.id)}
-                  onClick={() =>
-                    patch({
-                      portfolioProjectIds: hub.portfolioProjectIds.includes(p.id)
-                        ? hub.portfolioProjectIds.filter(id => id !== p.id)
-                        : [...hub.portfolioProjectIds, p.id],
-                    })
-                  }
-                >
-                  {p.title}
-                </Chip>
-              ))}
-            </div>
-            <button type="button" className="btn-glass text-sm" onClick={() => navigate('/tutor/projects')}>
-              Add Project
-            </button>
-          </section>
-
-          <section id="courses" className="glass rounded-2xl p-5 md:p-6 mb-5">
-            <h2 className="text-lg font-black text-ink mb-3">My Courses</h2>
-            {courses.length === 0 ? (
-              <p className="text-sm text-muted">No courses yet. Create them from the tutor courses workspace.</p>
-            ) : (
-              <div className="space-y-3">
-                {courses.map(c => (
-                  <article key={c.id} className="glass rounded-xl p-4">
-                    <h3 className="font-bold text-ink">{c.title}</h3>
-                    <div className="text-xs text-muted mt-1">
-                      {c.students} students · {Number(c.rating) ? `${Number(c.rating).toFixed(1)} rating` : 'No rating yet'} · {c.published ? 'Published' : 'Draft'}
-                    </div>
-                    <div className="flex flex-wrap gap-2 mt-3">
-                      <button type="button" className="btn-glass text-xs" onClick={() => navigate('/tutor/courses')}>
-                        Edit Course
-                      </button>
-                      <button type="button" className="btn-glass text-xs" onClick={() => navigate(`/courses/${c.id}`)}>
-                        View Course
-                      </button>
-                      <button type="button" className="btn-glass text-xs" onClick={() => navigate('/tutor/analytics')}>
-                        Analytics
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-
-          {verificationBlock}
-          {publishBlock}
-
-          <section id="visibility" className="glass rounded-2xl p-5 md:p-6 mb-5">
-            <h2 className="text-lg font-black text-ink mb-3">Profile Visibility</h2>
-            {(['draft', 'published', 'paused'] as ProfileVisibility[]).map(v => (
-              <label key={v} className="flex items-start gap-2 mb-2 text-sm">
-                <input
-                  type="radio"
-                  name="visibility"
-                  checked={hub.visibility === v}
-                  onChange={() => patch({ visibility: v })}
-                />
-                <span>
-                  <span className="font-semibold text-ink capitalize">{v}</span>
-                  <span className="text-muted block text-xs">
-                    {v === 'draft' && 'Students cannot discover the profile.'}
-                    {v === 'published' && 'Profile appears in the tutor marketplace.'}
-                    {v === 'paused' && 'Temporarily hidden from discovery.'}
-                  </span>
-                </span>
-              </label>
-            ))}
-          </section>
-
-          <section id="settings" className="glass rounded-2xl p-5 md:p-6 mb-5">
-            <h2 className="text-lg font-black text-ink mb-3">Account settings</h2>
-            <input type="password" className="field w-full mb-3 px-3 py-2 text-sm" value={password} onChange={e => setPassword(e.target.value)} placeholder="New password" autoComplete="new-password" />
-            <input type="password" className="field w-full mb-4 px-3 py-2 text-sm" value={confirm} onChange={e => setConfirm(e.target.value)} placeholder="Confirm password" autoComplete="new-password" />
-            <button type="button" className="btn-glass text-sm" disabled={busy} onClick={changePassword}>
-              Update password
-            </button>
-          </section>
+            )
+          })}
         </div>
+        <p className="text-sm text-muted">{PROFILE_SECTIONS.find(s => s.id === activeSection)?.hint}</p>
+      </div>
+
+      <div className="grid lg:grid-cols-[minmax(0,1fr)_20rem] gap-6">
+        <div role="tabpanel">{renderSectionPanel()}</div>
 
         <aside className="space-y-5 lg:sticky lg:top-24 self-start">
           <section className="glass rounded-2xl p-5">
@@ -1335,7 +1575,7 @@ export default function TutorAccount() {
               <button type="button" className="btn-primary text-xs" onClick={goNextMissing}>
                 Improve Profile
               </button>
-              <button type="button" className="btn-glass text-xs" onClick={() => document.getElementById('session-types')?.scrollIntoView({ behavior: 'smooth' })}>
+              <button type="button" className="btn-glass text-xs" onClick={() => setActiveSection('sessions')}>
                 Add Session
               </button>
             </div>
@@ -1380,7 +1620,7 @@ export default function TutorAccount() {
             </p>
             <div className="flex gap-3 mb-3">
               <div className="tp-avatar w-16 h-16 rounded-full overflow-hidden flex items-center justify-center text-white font-black">
-                {hub.identity.avatarUrl ? <img src={hub.identity.avatarUrl} alt="" className="w-full h-full object-cover" /> : initials}
+                {displayAvatar ? <img src={displayAvatar} alt="" className="w-full h-full object-cover" /> : initials}
               </div>
               <div>
                 <div className="font-black text-ink">{name}</div>

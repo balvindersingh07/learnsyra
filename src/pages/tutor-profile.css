@@ -58,6 +58,31 @@
   font-size: 0.7rem;
   flex-shrink: 0;
 }
+.tp-section-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.tp-section-tab {
+  border: 1px solid rgba(99, 102, 241, 0.14);
+  background: rgba(255, 255, 255, 0.88);
+  color: #667085;
+  border-radius: 999px;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.tp-section-tab[data-on='true'] {
+  border-color: rgba(108, 92, 231, 0.45);
+  background: rgba(108, 92, 231, 0.1);
+  color: #5b4bd6;
+}
+.tp-section-tab:focus-visible {
+  outline: 2px solid #6c5ce7;
+  outline-offset: 2px;
+}
 @media (max-width: 767px) {
   .tp-week {
     display: block;
