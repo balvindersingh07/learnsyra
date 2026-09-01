@@ -517,20 +517,6 @@ export default function TutorAccount() {
     </div>
   )
 
-  const avatarUrlFallback = (fieldId: string) => (
-    <details className="tp-url-fallback glass rounded-xl px-3 py-2 mt-2 w-full max-w-xs">
-      <summary className="text-xs font-semibold text-muted cursor-pointer select-none">Use image URL instead</summary>
-      <input
-        id={fieldId}
-        className="field tp-field w-full px-3 py-2 text-sm mt-2"
-        value={hub.identity.avatarUrl?.startsWith('data:') || hub.identity.avatarUrl?.startsWith('blob:') ? '' : hub.identity.avatarUrl ?? ''}
-        onChange={e => patch({ identity: { ...hub.identity, avatarUrl: e.target.value || null } })}
-        placeholder="https://example.com/photo.jpg"
-        aria-label="Profile photo URL"
-      />
-    </details>
-  )
-
   const headerPhotoBlock = (
     <div className="tp-header-photo shrink-0 flex flex-col items-center sm:items-start gap-2">
       <div
@@ -541,7 +527,6 @@ export default function TutorAccount() {
       </div>
       {photoUploadActions}
       <p className="text-[10px] text-subtle text-center sm:text-left max-w-[9rem] leading-snug">JPG, PNG or WebP. Square recommended.</p>
-      {avatarUrlFallback('avatar-url-header')}
     </div>
   )
 
@@ -559,7 +544,6 @@ export default function TutorAccount() {
         <div className="min-w-0">
           {photoUploadActions}
           <p className="text-[11px] text-subtle mt-2">JPG, PNG or WebP. Recommended square image.</p>
-          {avatarUrlFallback('avatar-url-onboarding')}
         </div>
       </div>
     </section>
