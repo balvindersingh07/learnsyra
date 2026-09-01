@@ -1,5 +1,6 @@
 import {
   daySlotRanges,
+  hasValidProfilePhoto,
   hubSlotsForDate,
   invalidRange,
   isHubDateAvailable,
@@ -184,7 +185,7 @@ export function settingsChecklist(hub: TutorHub): PublishCheck[] {
     { id: 'types', label: 'Session Types', done: hub.sessionOffers.some(s => s.enabled) },
     { id: 'pricing', label: 'Pricing', done: hub.sessionOffers.some(s => s.enabled && s.hourlyRate > 0) },
     { id: 'availability', label: 'Availability', done: hub.availability.some(d => d.enabled) },
-    { id: 'photo', label: 'Profile Photo', done: Boolean(hub.identity.avatarUrl) },
+    { id: 'photo', label: 'Profile Photo', done: hasValidProfilePhoto(hub) },
     { id: 'video', label: 'Intro Video', done: Boolean(hub.introVideoUrl.trim()), optional: true },
     { id: 'portfolio', label: 'Portfolio', done: hub.portfolioProjectIds.length > 0, optional: true },
     { id: 'verification', label: 'Verification', done: false, optional: true },

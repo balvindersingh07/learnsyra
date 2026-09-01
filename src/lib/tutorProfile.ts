@@ -599,26 +599,40 @@ export interface ProfileStrength {
   next: ChecklistItem | null
 }
 
+export function hasValidProfilePhoto(hub: TutorHub): boolean {
+  const url = hub.identity.avatarUrl?.trim()
+  return Boolean(url && !url.startsWith('data:'))
+}
+
 export function profileStrength(hub: TutorHub): ProfileStrength {
   const items: ChecklistItem[] = [
     { id: 'basic', label: 'Basic information', done: hub.identity.name.trim().length > 1 },
     { id: 'headline', label: 'Professional headline', done: hub.identity.headline.trim().length > 3 },
+    { id: 'bio', label: 'Bio', done: hub.bio.trim().length >= 20 },
     { id: 'expertise', label: 'Expertise', done: hub.skills.length > 0 },
-    { id: 'teaching', label: 'Teaching experience', done: hub.teachingStyles.length > 0 || hub.teachingPhilosophy.trim().length > 8 },
+    {
+      id: 'teaching',
+      label: 'Teaching experience',
+      done: hub.teachingStyles.length > 0 || hub.teachingPhilosophy.trim().length > 8,
+    },
+    { id: 'sessions', label: 'Session types', done: hub.sessionOffers.some(s => s.enabled) },
     { id: 'pricing', label: 'Pricing', done: hub.sessionOffers.some(s => s.enabled && s.hourlyRate > 0) },
     { id: 'availability', label: 'Availability', done: hub.availability.some(d => d.enabled) },
-    { id: 'photo', label: 'Profile photo', done: Boolean(hub.identity.avatarUrl) },
+    { id: 'photo', label: 'Profile photo', done: hasValidProfilePhoto(hub) },
     { id: 'video', label: 'Add introduction video', done: Boolean(hub.introVideoUrl.trim()), optional: true },
     { id: 'portfolio', label: 'Add portfolio', done: hub.portfolioProjectIds.length > 0, optional: true },
   ]
-  const percent = Math.round((items.filter(i => i.done).length / items.length) * 100)
-  const next = items.find(i => !i.done) ?? null
+  const required = items.filter(i => !i.optional)
+  const percent = required.length
+    ? Math.round((required.filter(i => i.done).length / required.length) * 100)
+    : 0
+  const next = items.find(i => !i.done && !i.optional) ?? items.find(i => !i.done) ?? null
   return { percent, items, next }
 }
 
 export function publishBlockers(hub: TutorHub) {
   const missing: string[] = []
-  if (!hub.identity.avatarUrl) missing.push('Profile photo')
+  if (!hasValidProfilePhoto(hub)) missing.push('Profile photo')
   if (hub.identity.headline.trim().length < 4) missing.push('Professional headline')
   if (hub.bio.trim().length < 20) missing.push('Bio')
   if (!hub.skills.length) missing.push('Expertise')
@@ -654,7 +668,7 @@ export function coachTips(hub: TutorHub) {
       href: '#session-types',
     })
   }
-  if (!hub.identity.avatarUrl) {
+  if (!hasValidProfilePhoto(hub)) {
     tips.push({ text: 'Add a profile photo so students can recognize you.', action: 'improve', href: '#photo' })
   }
   if (hub.bio.trim().length < 20) {

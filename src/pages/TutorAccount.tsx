@@ -22,6 +22,7 @@ import {
   WEEKDAYS,
   coachTips,
   emptyHub,
+  hasValidProfilePhoto,
   loadOrCreateHub,
   nextOnboardingTarget,
   profileStrength,
@@ -962,7 +963,7 @@ export default function TutorAccount() {
       </div>
       <ul className="space-y-2 text-sm mb-4">
         {[
-          ['Profile photo', Boolean(hub.identity.avatarUrl)],
+          ['Profile photo', hasValidProfilePhoto(hub)],
           ['Professional headline', hub.identity.headline.trim().length > 3],
           ['Bio', hub.bio.trim().length >= 20],
           ['Expertise', hub.skills.length > 0],
@@ -1004,7 +1005,7 @@ export default function TutorAccount() {
     const step = hub.onboarding.step
     const pct = Math.round(((step + 1) / ONBOARDING_STEPS.length) * 100)
     return (
-      <div className="tp-page pt-20 px-4 sm:px-6 pb-24 max-w-3xl mx-auto overflow-x-hidden">
+      <div className="tp-page pt-20 px-4 sm:px-6 pb-24 max-w-6xl mx-auto overflow-x-hidden">
         <p className="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Tutor onboarding</p>
         <h1 className="text-3xl font-black text-ink mb-1" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
           Build Your Tutor Profile
