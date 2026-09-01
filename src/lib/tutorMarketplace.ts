@@ -1,5 +1,13 @@
 import type { TutorListing } from './api'
 import { formatInr } from './courseCatalog'
+import {
+  decodeAvailabilityFromTags,
+  isListingDateAvailable,
+  listingSlotsForDate,
+  skillTagsFromListing,
+  weeklyHoursFromAvailability,
+  type ListingAvailabilityMeta,
+} from './tutorListingProfile'
 import { userStorageKey } from './supabase'
 import {
   applyPublishedHubs,
@@ -74,6 +82,7 @@ export interface CatalogTutor {
   avatarUrl?: string | null
   fromTutorHub?: boolean
   demo?: boolean
+  availabilityMeta?: ListingAvailabilityMeta
 }
 
 export interface SessionType {
@@ -719,12 +728,21 @@ function hourlyFromCents(cents: number) {
 }
 
 function fromApi(row: TutorListing): CatalogTutor {
-  const skills = row.tags.length ? row.tags : []
+  const tags = row.tags ?? []
+  const skills = skillTagsFromListing(tags).length ? skillTagsFromListing(tags) : []
   const rate = hourlyFromCents(row.hourly_rate_cents)
   const subject = inferSubject(row)
   const expertise = row.expertise
     ? row.expertise.split(/[·,&]/).map(s => s.trim()).filter(Boolean)
     : skills.slice(0, 3)
+  const availabilityMeta = decodeAvailabilityFromTags(tags)
+  const weekly = availabilityMeta ? weeklyHoursFromAvailability(availabilityMeta.availability) : []
+  const todayOpen = availabilityMeta
+    ? row.available && !availabilityMeta.vacationMode && isListingDateAvailable(availabilityMeta, new Date())
+    : Boolean(row.available)
+  const slotsToday = availabilityMeta && row.available && !availabilityMeta.vacationMode
+    ? listingSlotsForDate(availabilityMeta, new Date()).filter(s => s.open).map(s => s.time)
+    : []
   return {
     id: row.id,
     name: row.name,
@@ -751,13 +769,17 @@ function fromApi(row: TutorListing): CatalogTutor {
     aiMatchReason: '',
     matchReasons: [],
     availability: {
-      today: Boolean(row.available),
-      thisWeek: Boolean(row.available),
+      today: todayOpen,
+      thisWeek: availabilityMeta
+        ? row.available && !availabilityMeta.vacationMode && availabilityMeta.availability.some(d => d.enabled)
+        : Boolean(row.available),
       onlineNow: false,
-      slotsToday: [],
-      weekly: [],
+      slotsToday,
+      weekly,
     },
     reviews: [],
+    avatarUrl: row.image_key || null,
+    availabilityMeta: availabilityMeta ?? undefined,
     demo: row.id.startsWith('demo-') || row.id.startsWith('catalog-'),
   }
 }
@@ -839,6 +861,7 @@ export function upcomingDates(count = 14) {
 export function isDateAvailable(tutor: CatalogTutor, date: Date) {
   const hub = findHubByPublicId(tutor.id)
   if (hub) return isHubDateAvailable(hub, date)
+  if (tutor.availabilityMeta) return isListingDateAvailable(tutor.availabilityMeta, date)
   if (tutor.demo) {
     const day = date.getDay()
     if (day === 0) return false
@@ -855,6 +878,7 @@ function iSameDay(a: Date, b: Date) {
 export function slotsForDate(tutor: CatalogTutor, date: Date) {
   const hub = findHubByPublicId(tutor.id)
   if (hub) return hubSlotsForDate(hub, date)
+  if (tutor.availabilityMeta) return listingSlotsForDate(tutor.availabilityMeta, date)
   if (!tutor.demo) {
     return tutor.availability.slotsToday.map(time => ({ time, open: true }))
   }

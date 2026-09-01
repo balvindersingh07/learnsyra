@@ -43,6 +43,8 @@ import {
   type VideoStatus,
 } from '../lib/tutorProfile'
 import { loadTutorBookings } from '../lib/tutorMarketplace'
+import { uploadTutorAvatar } from '../lib/tutorAvatarUpload'
+import { mergeListingProfileIntoHub, syncTutorListingProfile } from '../lib/tutorListingProfile'
 import { syncPublishedTutorPricing, syncTutorListingAvailability } from '../lib/tutorSessionOffers'
 import './tutor-profile.css'
 
@@ -134,14 +136,22 @@ export default function TutorAccount() {
 
   useEffect(() => {
     if (!userId) return
-    const next = loadOrCreateHub(userId, {
+    let cancelled = false
+    const base = loadOrCreateHub(userId, {
       name: profile?.full_name || email || 'Tutor',
       headline: profile?.headline || '',
       avatarUrl: profile?.avatar_url || null,
       email,
     })
-    setHub(next)
-    setOnboarding(shouldShowOnboarding(next))
+    mergeListingProfileIntoHub(base).then(merged => {
+      if (!cancelled) {
+        setHub(merged)
+        setOnboarding(shouldShowOnboarding(merged))
+      }
+    })
+    return () => {
+      cancelled = true
+    }
   }, [userId])
 
   useEffect(() => {
@@ -261,6 +271,7 @@ export default function TutorAccount() {
       avatar_url: skipRemoteAvatar ? profile?.avatar_url ?? null : avatar,
     })
     let pricingError: string | null = null
+    let listingProfileError: string | null = null
     if (!error) {
       if (withProjects.visibility === 'published') {
         const sync = await syncPublishedTutorPricing(withProjects)
@@ -269,12 +280,17 @@ export default function TutorAccount() {
         const sync = await syncTutorListingAvailability(withProjects.userId, false)
         pricingError = sync.error
       }
+      if (!pricingError) {
+        const profileSync = await syncTutorListingProfile(withProjects)
+        listingProfileError = profileSync.error
+      }
     }
     setBusy(false)
     if (error) setErr(error)
     else if (pricingError) setErr(pricingError)
+    else if (listingProfileError) setErr(listingProfileError)
     else if (notify) setMsg('Tutor profile saved. Public profile and booking use this data when published.')
-    return !error && !pricingError
+    return !error && !pricingError && !listingProfileError
   }
 
   const goNextMissing = () => {
@@ -304,15 +320,31 @@ export default function TutorAccount() {
     }
   }
 
-  const onPhoto = (e: ChangeEvent<HTMLInputElement>) => {
+  const onPhoto = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      const url = typeof reader.result === 'string' ? reader.result : null
-      patch({ identity: { ...hub.identity, avatarUrl: url } })
+    if (!file || !userId) return
+    e.target.value = ''
+    setBusy(true)
+    setErr(null)
+    setMsg(null)
+    const { url, error: uploadError } = await uploadTutorAvatar(userId, file)
+    if (uploadError || !url) {
+      setBusy(false)
+      setErr(uploadError || 'Could not upload photo.')
+      return
     }
-    reader.readAsDataURL(file)
+    const next = {
+      ...hub,
+      identity: { ...hub.identity, avatarUrl: url },
+    }
+    setHub(next)
+    saveTutorHub(next)
+    const { error: profileError } = await updateProfile({ avatar_url: url })
+    const profileSync = await syncTutorListingProfile(next)
+    setBusy(false)
+    if (profileError) setErr(profileError)
+    else if (profileSync.error) setErr(profileSync.error)
+    else setMsg('Profile photo updated.')
   }
 
   const addSkill = (raw: string) => {
@@ -684,7 +716,7 @@ export default function TutorAccount() {
   const availabilityFields = (
     <section id="availability" className="glass rounded-2xl p-5 md:p-6 mb-5">
       <h2 className="text-lg font-black text-ink mb-1">My Availability</h2>
-      <p className="text-sm text-muted mb-4">This weekly schedule is what students see when they book.</p>
+      <p className="text-sm text-muted mb-4">Tap a weekday to enable it, then set start and end times. This weekly schedule is what students see when they book.</p>
       <Field id="timezone" label="Timezone">
         <input id="timezone" className="field tp-field w-full px-3 py-2 text-sm" value={hub.timezone} onChange={e => patch({ timezone: e.target.value })} />
       </Field>
@@ -816,9 +848,62 @@ export default function TutorAccount() {
         {prefsFields}
       </>
     )
-    if (step === 5) return verificationBlock
-    return publishBlock
+    if (step === 5) return (
+      <>
+        {photoFields}
+        {verificationBlock}
+      </>
+    )
+    return (
+      <>
+        {photoFields}
+        {publishBlock}
+      </>
+    )
   }
+
+  const photoFields = (
+    <section id="photo" className="glass rounded-2xl p-5 md:p-6 mb-5">
+      <h2 className="text-lg font-black text-ink mb-1">Profile Photo</h2>
+      <p className="text-sm text-muted mb-3">Students see this on your public tutor profile.</p>
+      <div className="flex items-center gap-4 mb-3">
+        <div className="tp-avatar w-20 h-20 rounded-full overflow-hidden flex items-center justify-center text-white font-black">
+          {hub.identity.avatarUrl ? <img src={hub.identity.avatarUrl} alt="" className="w-full h-full object-cover" /> : initials}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <label className="btn-primary text-sm cursor-pointer">
+            {hub.identity.avatarUrl ? 'Change Photo' : 'Upload Photo'}
+            <input type="file" accept="image/*" className="sr-only" onChange={onPhoto} disabled={busy} />
+          </label>
+          {hub.identity.avatarUrl ? (
+            <button
+              type="button"
+              className="btn-glass text-sm"
+              disabled={busy}
+              onClick={async () => {
+                const next = { ...hub, identity: { ...hub.identity, avatarUrl: null } }
+                patch({ identity: { ...hub.identity, avatarUrl: null } })
+                await updateProfile({ avatar_url: null })
+                await syncTutorListingProfile(next)
+                setMsg('Profile photo removed.')
+              }}
+            >
+              Remove
+            </button>
+          ) : null}
+        </div>
+      </div>
+      <Field id="avatar-url" label="Or paste image URL">
+        <input
+          id="avatar-url"
+          className="field tp-field w-full px-3 py-2 text-sm"
+          value={hub.identity.avatarUrl?.startsWith('data:') ? '' : hub.identity.avatarUrl ?? ''}
+          onChange={e => patch({ identity: { ...hub.identity, avatarUrl: e.target.value || null } })}
+          placeholder="https://example.com/photo.jpg"
+        />
+      </Field>
+    </section>
+  )
 
   const verificationBlock = (
     <section id="verification" className="glass rounded-2xl p-5 md:p-6 mb-5">
@@ -1079,22 +1164,25 @@ export default function TutorAccount() {
 
           <section id="photo" className="glass rounded-2xl p-5 md:p-6 mb-5">
             <h2 className="text-lg font-black text-ink mb-3">Profile Photo</h2>
+            <p className="text-sm text-muted mb-3">Upload a clear headshot for your public tutor profile.</p>
             <div className="flex items-center gap-4 mb-3">
               <div className="tp-avatar w-20 h-20 rounded-full overflow-hidden flex items-center justify-center text-white font-black">
                 {hub.identity.avatarUrl ? <img src={hub.identity.avatarUrl} alt="" className="w-full h-full object-cover" /> : initials}
               </div>
               <div className="flex flex-wrap gap-2">
-                <label className="btn-glass text-sm cursor-pointer">
-                  Upload
-                  <input type="file" accept="image/*" className="sr-only" onChange={onPhoto} />
+                <label className="btn-primary text-sm cursor-pointer">
+                  {hub.identity.avatarUrl ? 'Change Photo' : 'Upload Photo'}
+                  <input type="file" accept="image/*" className="sr-only" onChange={onPhoto} disabled={busy} />
                 </label>
-                <button type="button" className="btn-glass text-sm" onClick={() => patch({ identity: { ...hub.identity, avatarUrl: null } })}>
-                  Remove
-                </button>
+                {hub.identity.avatarUrl ? (
+                  <button type="button" className="btn-glass text-sm" disabled={busy} onClick={() => patch({ identity: { ...hub.identity, avatarUrl: null } })}>
+                    Remove
+                  </button>
+                ) : null}
               </div>
             </div>
-            <Field id="avatar-url" label="Or paste image URL">
-              <input id="avatar-url" className="field tp-field w-full px-3 py-2 text-sm" value={hub.identity.avatarUrl?.startsWith('data:') ? '' : hub.identity.avatarUrl ?? ''} onChange={e => patch({ identity: { ...hub.identity, avatarUrl: e.target.value || null } })} />
+            <Field id="avatar-url-full" label="Or paste image URL">
+              <input id="avatar-url-full" className="field tp-field w-full px-3 py-2 text-sm" value={hub.identity.avatarUrl?.startsWith('data:') ? '' : hub.identity.avatarUrl ?? ''} onChange={e => patch({ identity: { ...hub.identity, avatarUrl: e.target.value || null } })} placeholder="https://example.com/photo.jpg" />
             </Field>
           </section>
 

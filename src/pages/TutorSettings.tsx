@@ -48,6 +48,7 @@ import {
   type NotifyPrefs,
   type SettingsSection,
 } from '../lib/tutorSettings'
+import { mergeListingProfileIntoHub, syncTutorListingProfile } from '../lib/tutorListingProfile'
 import { syncPublishedTutorPricing, syncTutorListingAvailability } from '../lib/tutorSessionOffers'
 import './tutor-settings.css'
 
@@ -86,17 +87,25 @@ export default function TutorSettings() {
 
   useEffect(() => {
     if (!userId) return
-    const next = loadOrCreateHub(userId, {
+    let cancelled = false
+    const base = loadOrCreateHub(userId, {
       name: profile?.full_name || email || 'Tutor',
       headline: profile?.headline || '',
       avatarUrl: profile?.avatar_url || null,
       email,
     })
-    setHub(next)
-    setSaved(next)
+    mergeListingProfileIntoHub(base).then(merged => {
+      if (!cancelled) {
+        setHub(merged)
+        setSaved(merged)
+      }
+    })
     const prefs = loadNotifyPrefs(userId)
     setNotify(prefs)
     setSavedNotify(prefs)
+    return () => {
+      cancelled = true
+    }
   }, [userId, email, profile?.full_name, profile?.headline, profile?.avatar_url])
 
   useEffect(() => {
@@ -168,6 +177,12 @@ export default function TutorSettings() {
           setStatus('idle')
           return false
         }
+      }
+      const profileSync = await syncTutorListingProfile(next)
+      if (profileSync.error) {
+        setErr(profileSync.error)
+        setStatus('idle')
+        return false
       }
       setHub(next)
       setSaved(next)
