@@ -526,7 +526,6 @@ export default function TutorAccount() {
         {displayAvatar ? <img src={displayAvatar} alt="" className="w-full h-full object-cover" /> : initials}
       </div>
       {photoUploadActions}
-      <p className="text-[10px] text-subtle text-center sm:text-left max-w-[9rem] leading-snug">JPG, PNG or WebP. Square recommended.</p>
     </div>
   )
 
@@ -543,7 +542,6 @@ export default function TutorAccount() {
         </div>
         <div className="min-w-0">
           {photoUploadActions}
-          <p className="text-[11px] text-subtle mt-2">JPG, PNG or WebP. Recommended square image.</p>
         </div>
       </div>
     </section>
