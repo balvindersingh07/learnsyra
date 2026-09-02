@@ -13,6 +13,9 @@ alter table public.notification_email_deliveries enable row level security;
 revoke all on table public.notification_email_deliveries from anon, authenticated;
 grant select, insert on table public.notification_email_deliveries to service_role;
 
+-- PostgreSQL cannot change return type with CREATE OR REPLACE; drop the void-returning function first.
+drop function if exists public.notify_user(uuid, text, text, text);
+
 create or replace function public.notify_user(
   p_user uuid,
   p_title text,
