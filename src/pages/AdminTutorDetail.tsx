@@ -37,6 +37,7 @@ export default function AdminTutorDetail() {
   const [msg, setMsg] = useState<string | null>(null)
   const [note, setNote] = useState('')
   const [reviews, setReviews] = useState<CourseReview[] | null>(null)
+  const [busy, setBusy] = useState(false)
 
   const load = () => {
     setError(null)
@@ -74,12 +75,18 @@ export default function AdminTutorDetail() {
     return () => { live = false }
   }, [tab, index, tutor])
 
-  const applyVisibility = (mode: 'pause' | 'resume') => {
+  const applyVisibility = async (mode: 'pause' | 'resume') => {
     if (!tutor) return
-    const result = mode === 'pause' ? pauseDiscovery(tutor.id) : resumeDiscovery(tutor.id)
+    setBusy(true)
+    setMsg(null)
+    const result =
+      mode === 'pause'
+        ? await pauseDiscovery(tutor.id, tutor.listingId)
+        : await resumeDiscovery(tutor.id, tutor.listingId)
+    setBusy(false)
     setConfirm(null)
     setMsg(result.message)
-    load()
+    if (result.ok) load()
   }
 
   const tabs: { id: DetailTab; label: string }[] = [
@@ -291,8 +298,8 @@ export default function AdminTutorDetail() {
             </p>
             <div className="flex flex-wrap gap-2">
               <button type="button" className="btn-glass text-sm" onClick={() => setConfirm(null)}>Cancel</button>
-              {confirm === 'pause' && <button type="button" className="btn-primary text-sm" onClick={() => applyVisibility('pause')}>Pause Discovery</button>}
-              {confirm === 'resume' && <button type="button" className="btn-primary text-sm" onClick={() => applyVisibility('resume')}>Resume Discovery</button>}
+              {confirm === 'pause' && <button type="button" className="btn-primary text-sm" disabled={busy} onClick={() => void applyVisibility('pause')}>Pause Discovery</button>}
+              {confirm === 'resume' && <button type="button" className="btn-primary text-sm" disabled={busy} onClick={() => void applyVisibility('resume')}>Resume Discovery</button>}
             </div>
           </div>
         </div>

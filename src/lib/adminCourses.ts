@@ -1,4 +1,5 @@
 import { loadAdminStringMap, saveAdminStringMap } from './adminStorage'
+import { adminModerateCourse, isModerationBackendAvailable } from './adminModeration'
 import { getCourseCurriculum, setCoursePublished, type CourseModule, type CourseRow } from './api'
 import { formatWhen, loadAdminUserIndex, paginate, type AdminUserIndex } from './adminUsers'
 import { curriculumHealth, findStudioByAnyId, qualityScore, studioCurriculum, type StudioCourse } from './tutorCourses'
@@ -44,7 +45,7 @@ export function isCoursePublishBackendAvailable() {
 }
 
 export function isCourseModerationBackendAvailable() {
-  return false
+  return isModerationBackendAvailable()
 }
 
 export function loadCourseNotes(): Record<string, string> {
@@ -97,11 +98,12 @@ export async function loadAdminCourseIndex(): Promise<AdminCourseIndex> {
 
 export function courseStats(rows: AdminCourseRow[]) {
   const real = rows.filter(r => !r.demo && !r.catalog)
+  const pending = real.filter(r => !r.published).length
   return {
     total: String(real.length),
     published: String(real.filter(r => r.published).length),
-    draft: String(real.filter(r => !r.published).length),
-    underReview: '—',
+    draft: String(pending),
+    underReview: String(pending),
     flagged: '—',
     paused: '—',
   }
@@ -123,7 +125,8 @@ export function filterCourses(rows: AdminCourseRow[], query: CourseQuery) {
   let list = rows
   if (query.tab === 'published') list = list.filter(r => r.published)
   else if (query.tab === 'draft') list = list.filter(r => !r.published)
-  else if (query.tab === 'review' || query.tab === 'flagged' || query.tab === 'paused') list = []
+  else if (query.tab === 'review') list = list.filter(r => !r.published && r.tutorId && !r.catalog && !r.demo)
+  else if (query.tab === 'flagged' || query.tab === 'paused') list = []
   if (query.publish === 'published') list = list.filter(r => r.published)
   if (query.publish === 'unpublished') list = list.filter(r => !r.published)
   if (query.category) list = list.filter(r => r.category === query.category)
@@ -182,6 +185,14 @@ export async function publishCourse(id: string, published: boolean) {
       ? 'Course published using the existing catalog publish API. Existing records are preserved.'
       : 'Course unpublished using the existing catalog publish API. Enrollments and progress are not deleted.',
   }
+}
+
+export async function moderateCourse(
+  id: string,
+  action: 'approve' | 'reject' | 'unpublish',
+  tutorId?: string | null,
+) {
+  return adminModerateCourse(id, action, tutorId)
 }
 
 export async function loadCurriculum(courseId: string): Promise<{ modules: CourseModule[]; source: 'catalog' | 'studio' | 'none' }> {

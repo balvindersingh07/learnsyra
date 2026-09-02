@@ -11,9 +11,11 @@ import {
   userEvents,
   type AdminUserIndex,
 } from '../lib/adminUsers'
+import { adminChangeUserRole, isModerationBackendAvailable } from '../lib/adminModeration'
 import './admin-control.css'
 
 type DetailTab = 'overview' | 'learning' | 'sessions' | 'projects' | 'activity' | 'account'
+type RoleChoice = 'student' | 'tutor' | 'admin'
 
 export default function AdminUserDetail() {
   const { id } = useParams<{ id: string }>()
@@ -22,6 +24,11 @@ export default function AdminUserDetail() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<DetailTab>('overview')
+  const [roleChoice, setRoleChoice] = useState<RoleChoice>('student')
+  const [roleConfirm, setRoleConfirm] = useState(false)
+  const [roleMsg, setRoleMsg] = useState<string | null>(null)
+  const [roleError, setRoleError] = useState<string | null>(null)
+  const [roleBusy, setRoleBusy] = useState(false)
 
   const load = () => {
     setError(null)
@@ -35,6 +42,12 @@ export default function AdminUserDetail() {
   useEffect(() => { load() }, [id])
 
   const user = index?.rows.find(r => r.id === id) ?? null
+
+  useEffect(() => {
+    if (user?.role === 'student' || user?.role === 'tutor' || user?.role === 'admin') {
+      setRoleChoice(user.role)
+    }
+  }, [user?.id, user?.role])
   const hub = user?.role === 'tutor' ? loadTutorHub(user.id) : null
   const events = user && index ? userEvents(user, index) : []
   const enrolls = index && user ? index.enrollments.filter(e => e.student_id === user.id) : []
@@ -191,10 +204,75 @@ export default function AdminUserDetail() {
                 <KV k="Last active" v={formatWhen(user.lastActiveAt)} />
                 <KV k="User ID" v={user.id} />
               </dl>
-              <p className="text-xs text-muted mt-3">Account status is unavailable. No password or security secrets are displayed.</p>
+              {isModerationBackendAvailable() && !user.demo ? (
+                <>
+                  <p className="text-sm text-muted mb-3">Change account role using the existing profiles.role field. Suspend/ban status is not available in the current schema.</p>
+                  <label className="block text-xs font-semibold text-muted mb-1" htmlFor="admin-role-select">Role</label>
+                  <select
+                    id="admin-role-select"
+                    className="field w-full max-w-xs px-3 py-2 text-sm mb-3"
+                    value={roleChoice}
+                    onChange={e => setRoleChoice(e.target.value as RoleChoice)}
+                  >
+                    <option value="student">Student</option>
+                    <option value="tutor">Tutor</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                  <button
+                    type="button"
+                    className="btn-primary text-sm"
+                    disabled={roleBusy || roleChoice === user.role}
+                    onClick={() => setRoleConfirm(true)}
+                  >
+                    Update role
+                  </button>
+                  {roleMsg && <p className="text-sm mt-3" style={{ color: '#0F8A68' }}>{roleMsg}</p>}
+                  {roleError && <p className="text-sm mt-3" style={{ color: '#e11d48' }} role="alert">{roleError}</p>}
+                </>
+              ) : (
+                <p className="text-xs text-muted mt-3">
+                  {user.demo ? 'Demo accounts cannot be moderated.' : 'Account moderation requires Supabase.'} No password or security secrets are displayed.
+                </p>
+              )}
             </section>
           )}
         </>
+      )}
+
+      {roleConfirm && user && (
+        <div className="ac-drawer fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="role-confirm">
+          <button type="button" className="absolute inset-0" aria-label="Close" style={{ background: 'transparent', border: 'none' }} onClick={() => setRoleConfirm(false)} />
+          <div className="glass rounded-3xl p-6 relative z-10 w-full max-w-md">
+            <h2 id="role-confirm" className="text-lg font-black text-ink mb-2">Change user role?</h2>
+            <p className="text-sm text-muted mb-4">
+              Set {user.name} to {roleLabel(roleChoice)}. This uses the existing profile role update path protected by admin authorization.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button type="button" className="btn-glass text-sm" disabled={roleBusy} onClick={() => setRoleConfirm(false)}>Cancel</button>
+              <button
+                type="button"
+                className="btn-primary text-sm"
+                disabled={roleBusy}
+                onClick={() => {
+                  setRoleBusy(true)
+                  setRoleError(null)
+                  void adminChangeUserRole(user.id, roleChoice).then(result => {
+                    setRoleBusy(false)
+                    setRoleConfirm(false)
+                    if (result.ok) {
+                      setRoleMsg(result.message)
+                      load()
+                    } else {
+                      setRoleError(result.message)
+                    }
+                  })
+                }}
+              >
+                {roleBusy ? 'Saving…' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </AdminShell>
   )

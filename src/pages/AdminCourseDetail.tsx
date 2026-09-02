@@ -9,7 +9,7 @@ import {
   loadAdminCourseIndex,
   loadCourseNotes,
   loadCurriculum,
-  publishCourse,
+  moderateCourse,
   qualityEstimate,
   saveCourseNote,
   structureInsights,
@@ -32,7 +32,7 @@ export default function AdminCourseDetail() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<DetailTab>('overview')
-  const [confirm, setConfirm] = useState<'publish' | 'unpublish' | null>(null)
+  const [confirm, setConfirm] = useState<'publish' | 'unpublish' | 'approve' | 'reject' | null>(null)
   const [explain, setExplain] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [note, setNote] = useState('')
@@ -74,7 +74,9 @@ export default function AdminCourseDetail() {
   const quality = course ? qualityEstimate(course.id) : null
   const insights = course ? structureInsights(course.id) : []
   const moderation = isCourseModerationBackendAvailable()
-  const blocked = 'Moderation actions will be available when the course moderation backend is connected.'
+  const blocked = moderation
+    ? 'Flagged and paused states are not supported by the current schema. Use publish/unpublish for moderation.'
+    : 'Moderation actions will be available when the course moderation backend is connected.'
   const duration = durationLabel(studio?.durationHours ?? 0, modules)
   const ratingLabel = reviews == null ? '—' : reviews.length ? `${(reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1)}/5 (${reviews.length})` : 'No reviews yet'
   const linkedProjects: ProjectRow[] = (studio?.projectIds ?? [])
@@ -84,7 +86,21 @@ export default function AdminCourseDetail() {
   const applyPublish = async (published: boolean) => {
     if (!course) return
     setBusy(true)
-    const result = await publishCourse(course.id, published)
+    setMsg(null)
+    const result = published
+      ? await moderateCourse(course.id, 'approve', course.tutorId)
+      : await moderateCourse(course.id, course.published ? 'unpublish' : 'reject', course.tutorId)
+    setBusy(false)
+    setConfirm(null)
+    setMsg(result.message)
+    if (result.ok) load()
+  }
+
+  const applyModeration = async (action: 'approve' | 'reject') => {
+    if (!course) return
+    setBusy(true)
+    setMsg(null)
+    const result = await moderateCourse(course.id, action, course.tutorId)
     setBusy(false)
     setConfirm(null)
     setMsg(result.message)
@@ -101,7 +117,11 @@ export default function AdminCourseDetail() {
       if (e.key === 'Enter') {
         e.preventDefault()
         if (explain) setExplain(null)
-        else if (confirm && course && !busy) void applyPublish(confirm === 'publish')
+        else if (confirm && course && !busy) {
+          if (confirm === 'approve') void applyModeration('approve')
+          else if (confirm === 'reject') void applyModeration('reject')
+          else void applyPublish(confirm === 'publish')
+        }
       }
     }
     window.addEventListener('keydown', onKey)
@@ -133,14 +153,14 @@ export default function AdminCourseDetail() {
               <div className="min-w-0">
                 <h1 className="font-black text-ink" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>{course.title}</h1>
                 <p className="text-[13px] text-muted">
-                  {course.tutorName} · {courseStatusLabel(course.published)} · Moderation: Unavailable · {course.category || 'Not provided'} · {course.level || 'Not provided'}{duration !== 'Not provided' ? ` · ${duration}` : ''}
+                  {course.tutorName} · {courseStatusLabel(course.published)} · Moderation: {course.published ? 'Published' : 'Pending review'} · {course.category || 'Not provided'} · {course.level || 'Not provided'}{duration !== 'Not provided' ? ` · ${duration}` : ''}
                 </p>
               </div>
               <div className="flex flex-wrap gap-1.5">
                 <button type="button" className="btn-glass text-xs" onClick={() => navigate(`/courses/${course.id}`)}>View Student Preview →</button>
                 <button type="button" className="btn-glass text-xs" onClick={() => setTab('curriculum')}>Review Content</button>
-                <button type="button" className="btn-glass text-xs" aria-disabled={!moderation} onClick={() => setExplain(blocked)}>Request Changes</button>
-                <button type="button" className="btn-glass text-xs" aria-disabled={!moderation} onClick={() => setExplain('Course approval is unavailable because moderation infrastructure is not connected. Use Publish Course for catalog visibility.')}>Approve</button>
+                <button type="button" className="btn-glass text-xs" disabled={!moderation || busy} onClick={() => setConfirm('reject')}>Request Changes</button>
+                <button type="button" className="btn-glass text-xs" disabled={!moderation || busy || course.published} onClick={() => setConfirm('approve')}>Approve</button>
                 {course.published
                   ? <button type="button" className="btn-glass text-xs" onClick={() => setConfirm('unpublish')}>Unpublish</button>
                   : <button type="button" className="btn-primary text-xs" onClick={() => setConfirm('publish')}>Publish Course</button>}
@@ -267,14 +287,13 @@ export default function AdminCourseDetail() {
             {tab === 'moderation' && (
               <section className="glass rounded-2xl p-3.5">
                 <h2 className="font-black text-ink">Moderation</h2>
-                <p className="text-[13px] mb-2">Current state: Unavailable</p>
-                <p className="text-[13px] text-muted mb-3">{blocked} Catalog publish/unpublish is available through the existing course publish API.</p>
+                <p className="text-[13px] mb-2">Current state: {course.published ? 'Published' : 'Unpublished (pending review)'}</p>
+                <p className="text-[13px] text-muted mb-3">{blocked}</p>
                 <div className="flex flex-wrap gap-1.5 mb-3">
-                  <button type="button" className="btn-glass text-xs" aria-disabled={!moderation} onClick={() => setExplain('Course approval is unavailable because moderation infrastructure is not connected.')}>Approve</button>
-                  <button type="button" className="btn-glass text-xs" aria-disabled={!moderation} onClick={() => setExplain(blocked)}>Request Changes</button>
-                  <button type="button" className="btn-glass text-xs" aria-disabled={!moderation} onClick={() => setExplain('Course rejection is unavailable because moderation infrastructure is not connected.')}>Reject</button>
+                  <button type="button" className="btn-glass text-xs" disabled={!moderation || busy || course.published} onClick={() => setConfirm('approve')}>Approve</button>
+                  <button type="button" className="btn-glass text-xs" disabled={!moderation || busy} onClick={() => setConfirm('reject')}>Reject / Unpublish</button>
                 </div>
-                <p className="text-[13px] text-muted mb-3">No moderation history available.</p>
+                <p className="text-[13px] text-muted mb-3">Successful actions notify the course tutor via in-app notifications.</p>
                 <label className="block text-[12px] font-semibold text-muted">
                   Admin notes
                   <textarea className="field mt-1 w-full px-3 py-2 text-sm" rows={3} value={note} onChange={e => setNote(e.target.value)} />
@@ -290,15 +309,32 @@ export default function AdminCourseDetail() {
         <div className="ac-drawer fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="course-pub-title">
           <button type="button" className="absolute inset-0" aria-label="Cancel" style={{ background: 'transparent', border: 'none' }} onClick={() => setConfirm(null)} />
           <div className="glass rounded-3xl p-6 relative z-10 w-full max-w-md">
-            <h2 id="course-pub-title" className="text-lg font-black text-ink mb-2">{confirm === 'publish' ? 'Publish this course?' : 'Unpublish this course?'}</h2>
+            <h2 id="course-pub-title" className="text-lg font-black text-ink mb-2">
+              {confirm === 'publish' || confirm === 'approve'
+                ? 'Publish this course?'
+                : confirm === 'reject'
+                  ? 'Reject / unpublish this course?'
+                  : 'Unpublish this course?'}
+            </h2>
             <p className="text-sm text-muted mb-4">
-              {confirm === 'publish'
-                ? 'This updates catalog visibility using the existing publish API. It is not a separate moderation approval workflow.'
-                : 'This affects course availability according to the platform\'s existing publishing rules. Existing enrollments, progress, projects, reviews, and tutor ownership are preserved.'}
+              {confirm === 'publish' || confirm === 'approve'
+                ? 'This publishes the course to the catalog and notifies the tutor.'
+                : 'This unpublishes the course. Enrollments, progress, and ownership are preserved.'}
             </p>
             <div className="flex flex-wrap gap-2">
               <button type="button" className="btn-glass text-sm" onClick={() => setConfirm(null)}>Cancel</button>
-              <button type="button" className="btn-primary text-sm" disabled={busy} onClick={() => applyPublish(confirm === 'publish')}>{confirm === 'publish' ? 'Publish Course' : 'Unpublish'}</button>
+              <button
+                type="button"
+                className="btn-primary text-sm"
+                disabled={busy}
+                onClick={() => {
+                  if (confirm === 'approve') void applyModeration('approve')
+                  else if (confirm === 'reject') void applyModeration('reject')
+                  else void applyPublish(confirm === 'publish')
+                }}
+              >
+                {busy ? 'Saving…' : confirm === 'approve' || confirm === 'publish' ? 'Publish Course' : 'Unpublish'}
+              </button>
             </div>
           </div>
         </div>

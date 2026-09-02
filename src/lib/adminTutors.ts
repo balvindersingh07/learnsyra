@@ -1,4 +1,5 @@
 import { loadAdminStringMap, saveAdminStringMap } from './adminStorage'
+import { adminApproveTutor, adminSuspendTutor, isModerationBackendAvailable } from './adminModeration'
 import { getCourseReviews, type CourseReview, type ProfileLite, type TutorListing } from './api'
 import {
   bookingsForUser,
@@ -28,6 +29,7 @@ export interface AdminTutorRow {
   market: ProfileVisibility | null
   publicId: string | null
   listingId: string | null
+  listingAvailable: boolean | null
   courseCount: number
   unpublishedCount: number
   studentCount: number
@@ -98,6 +100,7 @@ function toTutorRow(user: AdminUserRow, index: AdminUserIndex): AdminTutorRow {
     market: hub?.visibility ?? null,
     publicId: hub?.publicId ?? listing?.id ?? null,
     listingId: listing?.id ?? null,
+    listingAvailable: listing ? listing.available : null,
     courseCount: taught.length,
     unpublishedCount: taught.filter(c => !c.published).length,
     studentCount: students.size,
@@ -120,11 +123,11 @@ export function tutorStats(rows: AdminTutorRow[]) {
   const real = rows.filter(r => !r.demo)
   return {
     total: real.length,
-    published: real.filter(r => r.market === 'published').length,
+    published: real.filter(r => r.market === 'published' || r.listingAvailable === true).length,
     draft: real.filter(r => r.market === 'draft').length,
-    paused: real.filter(r => r.market === 'paused').length,
-    pendingReview: real.filter(r => r.unpublishedCount > 0).length,
-    verified: null as number | null,
+    paused: real.filter(r => r.market === 'paused' || r.listingAvailable === false).length,
+    pendingReview: real.filter(r => r.unpublishedCount > 0 || r.listingAvailable === false).length,
+    verified: real.filter(r => r.listingAvailable === true).length,
   }
 }
 
@@ -192,14 +195,22 @@ export function marketLabel(v: ProfileVisibility | null) {
   return visibilityLabel(v)
 }
 
-export function pauseDiscovery(userId: string): { ok: boolean; message: string } {
+export async function pauseDiscovery(userId: string, listingId?: string | null): Promise<{ ok: boolean; message: string }> {
+  if (isModerationBackendAvailable() && listingId) {
+    const result = await adminSuspendTutor(userId)
+    return { ok: result.ok, message: result.message }
+  }
   const hub = loadTutorHub(userId)
   if (!hub) return { ok: false, message: 'Marketplace visibility control is not connected.' }
   saveTutorHub({ ...hub, visibility: 'paused' })
   return { ok: true, message: 'Discovery paused using the existing tutor visibility state. Existing sessions are not cancelled automatically.' }
 }
 
-export function resumeDiscovery(userId: string): { ok: boolean; message: string } {
+export async function resumeDiscovery(userId: string, listingId?: string | null): Promise<{ ok: boolean; message: string }> {
+  if (isModerationBackendAvailable() && listingId) {
+    const result = await adminApproveTutor(userId)
+    return { ok: result.ok, message: result.message }
+  }
   const hub = loadTutorHub(userId)
   if (!hub) return { ok: false, message: 'Marketplace visibility control is not connected.' }
   saveTutorHub({ ...hub, visibility: 'published' })

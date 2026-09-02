@@ -6,14 +6,21 @@ import { loadTutorHub, profileStrength } from '../lib/tutorProfile'
 import { verificationDisplay } from '../lib/tutorSettings'
 import { marketLabel, publicProfileHref } from '../lib/adminTutors'
 import {
+  adminApproveTutor,
+  adminRejectTutor,
+  adminSuspendTutor,
   findVerificationTutor,
   isVerificationBackendAvailable,
   loadVerificationCenter,
   loadVerificationNotes,
   saveVerificationNote,
+  tutorVerificationStatus,
+  verificationStatusLabel,
   type VerificationCenter,
 } from '../lib/adminVerification'
 import './admin-control.css'
+
+type ConfirmAction = 'approve' | 'reject' | 'suspend' | null
 
 export default function AdminVerificationDetail() {
   const { id } = useParams<{ id: string }>()
@@ -23,7 +30,9 @@ export default function AdminVerificationDetail() {
   const [error, setError] = useState<string | null>(null)
   const [note, setNote] = useState('')
   const [msg, setMsg] = useState<string | null>(null)
-  const [explain, setExplain] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [confirm, setConfirm] = useState<ConfirmAction>(null)
+  const [busy, setBusy] = useState(false)
 
   const load = () => {
     setError(null)
@@ -39,18 +48,40 @@ export default function AdminVerificationDetail() {
     if (id) setNote(loadVerificationNotes()[id] ?? '')
   }, [id])
   useEffect(() => {
-    if (!explain) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setExplain(null) }
+    if (!confirm) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setConfirm(null) }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [explain])
+  }, [confirm])
 
   const tutor = data && id ? findVerificationTutor(data.index, id) : null
+  const listing = tutor ? data?.index.listings.find(l => l.profile_id === tutor.id) ?? null : null
   const hub = tutor ? loadTutorHub(tutor.id) : null
   const publicHref = tutor ? publicProfileHref(tutor) : null
   const backend = isVerificationBackendAvailable()
   const copy = verificationDisplay()
-  const blocked = 'Verification actions unavailable until the verification backend is connected.'
+  const status = tutor ? tutorVerificationStatus(tutor, listing) : 'not_submitted'
+  const canModerate = backend && Boolean(tutor?.listingId)
+
+  const applyAction = async (action: ConfirmAction) => {
+    if (!tutor || !action) return
+    setBusy(true)
+    setActionError(null)
+    const result =
+      action === 'approve'
+        ? await adminApproveTutor(tutor.id)
+        : action === 'reject'
+          ? await adminRejectTutor(tutor.id)
+          : await adminSuspendTutor(tutor.id)
+    setBusy(false)
+    setConfirm(null)
+    if (result.ok) {
+      setMsg(result.message)
+      load()
+    } else {
+      setActionError(result.message)
+    }
+  }
 
   return (
     <AdminShell>
@@ -75,25 +106,30 @@ export default function AdminVerificationDetail() {
                   <h1 className="font-black text-ink truncate" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>{tutor.name}</h1>
                   <p className="text-[13px] text-muted">{tutor.headline || 'No headline'}</p>
                   <p className="text-[12px] text-muted mt-0.5">
-                    Marketplace: {marketLabel(tutor.market)} · Verification: Unavailable
+                    Marketplace: {marketLabel(tutor.market)} · Verification: {verificationStatusLabel(status)}
+                    {tutor.listingAvailable === true ? ' · Listing live' : tutor.listingId ? ' · Listing hidden' : ' · No listing'}
                   </p>
                 </div>
               </div>
               <div className="flex flex-wrap gap-1.5">
-                <button type="button" className="btn-glass text-xs" aria-disabled={!backend} onClick={() => setExplain(blocked)}>Review</button>
-                <button type="button" className="btn-glass text-xs" aria-disabled={!backend} onClick={() => setExplain(blocked)}>Request Changes</button>
-                <button type="button" className="btn-primary text-xs" aria-disabled={!backend} onClick={() => setExplain('Verification approval is unavailable because the verification backend is not connected.')}>Approve</button>
-                <button type="button" className="btn-glass text-xs" style={{ color: '#B45309' }} aria-disabled={!backend} onClick={() => setExplain(blocked)}>Reject</button>
+                <button type="button" className="btn-glass text-xs" disabled={!canModerate || busy} onClick={() => setConfirm('reject')}>Request Changes</button>
+                <button type="button" className="btn-primary text-xs" disabled={!canModerate || busy} onClick={() => setConfirm('approve')}>Approve</button>
+                <button type="button" className="btn-glass text-xs" style={{ color: '#B45309' }} disabled={!canModerate || busy} onClick={() => setConfirm('reject')}>Reject</button>
+                <button type="button" className="btn-glass text-xs" disabled={!canModerate || busy} onClick={() => setConfirm('suspend')}>Suspend</button>
                 {publicHref && <button type="button" className="btn-glass text-xs" onClick={() => navigate(publicHref)}>View Public Profile →</button>}
               </div>
             </div>
-            {!backend && <p className="text-[12px] text-muted mb-3">{blocked} {copy.badgeCopy}</p>}
+            {!backend && <p className="text-[12px] text-muted mb-3">Moderation requires Supabase. {copy.badgeCopy}</p>}
+            {backend && !tutor.listingId && (
+              <p className="text-[12px] text-muted mb-3">This tutor has no marketplace listing yet. Create a listing before approve/reject actions can persist.</p>
+            )}
             {msg && <p className="text-[13px] mb-3" style={{ color: '#0F8A68' }}>{msg}</p>}
+            {actionError && <p className="text-[13px] mb-3" style={{ color: '#e11d48' }} role="alert">{actionError}</p>}
 
             <div className="grid lg:grid-cols-2 gap-3 mb-3">
               <section className="glass rounded-2xl p-3.5">
                 <h2 className="font-black text-ink">Professional profile</h2>
-                <p className="text-[12px] text-muted mb-2">Read-only from the existing tutor profile. This is not a second profile system.</p>
+                <p className="text-[12px] text-muted mb-2">Read-only from Supabase profile and local tutor hub when present on this device.</p>
                 <dl className="grid gap-1.5 text-[13px]">
                   <KV k="Headline" v={hub?.identity.headline || tutor.headline || 'Not provided'} />
                   <KV k="Bio" v={hub?.bio?.trim() || 'Not provided'} />
@@ -109,18 +145,18 @@ export default function AdminVerificationDetail() {
               </section>
               <section className="glass rounded-2xl p-3.5">
                 <h2 className="font-black text-ink">Verification information</h2>
-                <div className="ac-health"><span>Identity</span><span className="text-muted">Unavailable</span></div>
-                <div className="ac-health"><span>Education</span><span className="text-muted">Unavailable</span></div>
-                <div className="ac-health"><span>Certifications</span><span className="text-muted">Unavailable</span></div>
-                <div className="ac-health"><span>Documents</span><span className="text-muted">Verification documents unavailable.</span></div>
-                <div className="ac-health"><span>Intro video</span><span className="text-muted">{hub?.introVideoUrl ? 'Provided' : 'Not provided'}</span></div>
-                <p className="text-[12px] text-muted mt-2">Admin decisions are not persisted because verification infrastructure is not connected.</p>
+                <div className="ac-health"><span>Listing status</span><span>{tutor.listingAvailable === true ? 'Available' : tutor.listingId ? 'Hidden' : 'No listing'}</span></div>
+                <div className="ac-health"><span>Identity documents</span><span className="text-muted">Not stored server-side</span></div>
+                <div className="ac-health"><span>Education</span><span className="text-muted">Not stored server-side</span></div>
+                <div className="ac-health"><span>Certifications</span><span className="text-muted">Not stored server-side</span></div>
+                <div className="ac-health"><span>Intro video</span><span>{hub?.introVideoUrl ? 'Provided locally' : 'Not provided'}</span></div>
+                <p className="text-[12px] text-muted mt-2">Approve sets tutor_listings.available=true. Reject/suspend sets available=false and notifies the tutor.</p>
               </section>
             </div>
 
             <section className="glass rounded-2xl p-3.5 mb-3">
               <h2 className="font-black text-ink">Review history</h2>
-              <p className="text-[13px] text-muted">No verification history available.</p>
+              <p className="text-[13px] text-muted">Dedicated verification audit history is unavailable. Tutors receive in-app notifications when moderation actions succeed.</p>
             </section>
 
             <section className="glass rounded-2xl p-3.5">
@@ -133,13 +169,24 @@ export default function AdminVerificationDetail() {
         )}
       </div>
 
-      {explain && (
-        <div className="ac-drawer fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="verify-unavail">
-          <button type="button" className="absolute inset-0" aria-label="Close" style={{ background: 'transparent', border: 'none' }} onClick={() => setExplain(null)} />
+      {confirm && (
+        <div className="ac-drawer fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="verify-confirm">
+          <button type="button" className="absolute inset-0" aria-label="Close" style={{ background: 'transparent', border: 'none' }} onClick={() => setConfirm(null)} />
           <div className="glass rounded-3xl p-6 relative z-10 w-full max-w-md">
-            <h2 id="verify-unavail" className="text-lg font-black text-ink mb-2">Verification infrastructure unavailable</h2>
-            <p className="text-sm text-muted mb-4">{explain}</p>
-            <button type="button" className="btn-primary text-sm" onClick={() => setExplain(null)}>Close</button>
+            <h2 id="verify-confirm" className="text-lg font-black text-ink mb-2">
+              {confirm === 'approve' ? 'Approve tutor listing?' : confirm === 'suspend' ? 'Suspend tutor listing?' : 'Reject tutor listing?'}
+            </h2>
+            <p className="text-sm text-muted mb-4">
+              {confirm === 'approve'
+                ? 'This will mark the tutor marketplace listing as available.'
+                : 'This will hide the tutor from the marketplace. Existing bookings are not cancelled automatically.'}
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button type="button" className="btn-glass text-sm" disabled={busy} onClick={() => setConfirm(null)}>Cancel</button>
+              <button type="button" className="btn-primary text-sm" disabled={busy} onClick={() => void applyAction(confirm)}>
+                {busy ? 'Saving…' : 'Confirm'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -148,5 +195,5 @@ export default function AdminVerificationDetail() {
 }
 
 function KV({ k, v }: { k: string; v: string }) {
-  return <div className="flex justify-between gap-3"><dt className="text-muted shrink-0">{k}</dt><dd className="font-medium text-right break-all">{v}</dd></div>
+  return <div className="flex justify-between gap-3 py-1" style={{ borderBottom: '1px solid rgba(99,102,241,0.06)' }}><dt className="text-muted">{k}</dt><dd className="font-medium text-right">{v}</dd></div>
 }

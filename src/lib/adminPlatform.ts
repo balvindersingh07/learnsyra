@@ -6,6 +6,7 @@ import {
   getLiveClasses,
   getProjects,
   getReviewQueue,
+  getTutorListings,
   type CourseRow,
   type ProfileLite,
 } from './api'
@@ -211,12 +212,13 @@ function buildInsights(input: {
 export async function loadAdminOverview(range: AdminRange, custom?: { from: string; to: string }): Promise<AdminOverview> {
   const win = adminWindow(range, custom)
   const monthly = range === '3m' || range === '6m' || range === '1y'
-  const [rawProfiles, rawCourses, rawBookings, rawReviews, rawLive] = await Promise.all([
+  const [rawProfiles, rawCourses, rawBookings, rawReviews, rawLive, rawListings] = await Promise.all([
     getAllProfiles().catch(() => [] as ProfileLite[]),
     getAllCoursesAdmin().catch(() => [] as CourseRow[]),
     loadBookings(),
     getReviewQueue().catch(() => []),
     getLiveClasses().catch(() => []),
+    getTutorListings().catch(() => []),
   ])
   const profiles = rawProfiles.filter(p => !isDemoRecordId(p.id))
   const courses = rawCourses.filter(c => isTutorOwnedCourse(c) && !isDemoRecordId(c.id))
@@ -229,7 +231,9 @@ export async function loadAdminOverview(range: AdminRange, custom?: { from: stri
   const pendingCourses = courses.filter(c => !c.published).length
   const activeSessions = live.filter(c => c.status === 'live').length + bookings.filter(b => b.status === 'confirmed').length
   const pendingReviews = reviews.filter(r => r.status === 'submitted').length
-  const pendingVerification = null
+  const pendingVerification = rawListings.filter(
+    l => l.profile_id && !l.available && !isDemoRecordId(l.profile_id),
+  ).length
   return {
     users: profiles.length,
     students: students.length,
