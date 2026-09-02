@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import CareerHubNav from '../components/career/CareerHubNav'
 import JobCard from '../components/career/JobCard'
 import JobFiltersPanel from '../components/career/JobFiltersPanel'
+import { useAuth } from '../context/AuthContext'
 import { getCareerSnapshot } from '../lib/careerCenter'
+import { hydrateCareerData } from '../lib/careerPersistence'
 import { loadInterviewCareerOverlay } from '../lib/interviewStudio'
 import {
   appStats,
@@ -57,6 +59,7 @@ function currentProfile(targetRole: string) {
 
 export default function CareerJobs() {
   const navigate = useNavigate()
+  const { session } = useAuth()
   const initialSnap = useMemo(() => getCareerSnapshot(), [])
   const [targetRole, setTargetRole] = useState(() => loadTargetRole(initialSnap.targetRole))
   const [roleOpen, setRoleOpen] = useState(false)
@@ -64,12 +67,37 @@ export default function CareerJobs() {
   const [why, setWhy] = useState<RankedJob | null>(null)
   const [demoApply, setDemoApply] = useState<RankedJob | null>(null)
   const [aiReady, setAiReady] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [syncError, setSyncError] = useState<string | null>(null)
   const [tab, setTab] = useState<'Recommended' | 'Saved' | 'Applied'>('Recommended')
   const [sort, setSort] = useState<JobSort>('Recommended')
   const [filters, setFilters] = useState<JobFilters>(() => loadFilters() ?? { ...EMPTY_FILTERS })
   const [apps, setApps] = useState<Record<string, JobApplication>>(() => loadApps())
   const { snap, resume, profile } = useMemo(() => currentProfile(targetRole), [targetRole])
   const ranked = useMemo(() => rankCatalog(profile), [profile])
+
+  useEffect(() => {
+    let alive = true
+    setLoading(true)
+    setSyncError(null)
+    hydrateCareerData(session?.user.id ?? null)
+      .then(() => {
+        if (!alive) return
+        setApps({ ...loadApps() })
+        setTargetRole(loadTargetRole(getCareerSnapshot({ userId: session?.user.id ?? null }).targetRole))
+      })
+      .catch(() => {
+        if (!alive) return
+        setSyncError('Could not sync job applications. Showing local data.')
+        setApps({ ...loadApps() })
+      })
+      .finally(() => {
+        if (alive) setLoading(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [session?.user.id])
 
   useEffect(() => {
     const t = window.setTimeout(() => setAiReady(true), 280)
@@ -179,6 +207,18 @@ export default function CareerJobs() {
 
   return (
     <div className="pt-20 px-4 sm:px-6 pb-16 max-w-7xl mx-auto overflow-x-hidden">
+      {syncError && (
+        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 mb-4" role="alert">
+          {syncError}
+        </p>
+      )}
+      {loading ? (
+        <>
+          <CareerHubNav />
+          <p className="text-muted text-sm mt-6">Loading job applications…</p>
+        </>
+      ) : (
+        <>
       <p className="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Career Center</p>
       <h1 className="text-3xl sm:text-4xl font-black text-ink mb-2" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif', letterSpacing: '-0.03em' }}>
         Jobs That Match Your <span className="gradient-text">Skills</span>
@@ -404,6 +444,8 @@ export default function CareerJobs() {
       )}
 
       <p className="text-xs text-muted mt-6">Listings are LearnSyra sample opportunities for career practice. Match scores are estimates, not hiring predictions.</p>
+        </>
+      )}
     </div>
   )
 }

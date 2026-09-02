@@ -1,6 +1,7 @@
 import { computeReadiness, type BookingRow, type CareerProfile, type CertificateRow, type CourseRow, type ProjectRow, type StudentProjectRow } from './api'
 import { loadSavedLessons, type SavedLesson } from './aiLearning'
 import { getCareerSnapshot, type CareerSkill, type CareerSnapshot } from './careerCenter'
+import { careerSummaryText, parseCareerBlob } from './careerPersistence'
 import { buildCatalog, loadLocalWishlist, type CatalogCourse } from './courseCatalog'
 import { getCourseDetailPack } from './courseDetail'
 import { kindLabel, loadHistory, loadInterviewCareerOverlay, relativeWhen, type InterviewRecord } from './interviewStudio'
@@ -237,6 +238,7 @@ export function buildStudentHub(input: {
     input.certs.length > 0 ||
     input.studentProjects.length > 0 ||
     input.enrolled.length > 0
+  const resumeSummary = careerSummaryText(parseCareerBlob(input.careerProfile?.resume_text), input.careerProfile?.resume_text)
   const readiness = hasActivity
     ? computeReadiness({
         enrolledCount: input.enrolled.length,
@@ -245,7 +247,7 @@ export function buildStudentHub(input: {
             ? input.enrolled.reduce((s, e) => s + (e.progress ?? 0), 0) / input.enrolled.length
             : 0,
         submittedProjects: input.studentProjects.filter(p => p.status === 'submitted' || p.status === 'completed').length,
-        resumeLength: input.careerProfile?.resume_text?.trim().length ?? 0,
+        resumeLength: resumeSummary.length,
         targetRole: input.careerProfile?.target_role ?? '',
       })
     : 0

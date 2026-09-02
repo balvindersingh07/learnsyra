@@ -19,6 +19,7 @@ import {
   type CareerMatch,
   type CareerSnapshot,
 } from '../lib/careerCenter'
+import { careerSummaryText, hydrateCareerData, parseCareerBlob } from '../lib/careerPersistence'
 import { tutorBookPath } from '../lib/paths'
 import './career-center.css'
 
@@ -73,11 +74,19 @@ export default function CareerCenter() {
   const [week, setWeek] = useState(() => emptyCareerSnapshot().weeklyActions)
   const [openMatch, setOpenMatch] = useState<CareerMatch | null>(null)
   const [certNote, setCertNote] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [syncError, setSyncError] = useState<string | null>(null)
   const shown = useCountUp(data.readinessScore)
 
   useEffect(() => {
     let alive = true
+    setLoading(true)
+    setSyncError(null)
     const load = async () => {
+      await hydrateCareerData(uid).catch(() => {
+        if (alive) setSyncError('Could not sync career data. Showing local data.')
+      })
+      if (!alive) return
       const [profile, certs, mine, catalog, enrollments] = await Promise.all([
         getCareerProfile().catch(() => null),
         getCertificates().catch(() => []),
@@ -106,6 +115,7 @@ export default function CareerCenter() {
         certs.length > 0 ||
         mine.length > 0 ||
         enrollments.length > 0
+      const resumeSummary = careerSummaryText(parseCareerBlob(profile?.resume_text), profile?.resume_text)
       const readiness = hasActivity
         ? computeReadiness({
             enrolledCount: enrollments.length,
@@ -114,7 +124,7 @@ export default function CareerCenter() {
                 ? enrollments.reduce((s, e) => s + (e.progress ?? 0), 0) / enrollments.length
                 : 0,
             submittedProjects: mine.filter(p => p.status === 'submitted' || p.status === 'completed').length,
-            resumeLength: profile?.resume_text?.trim().length ?? 0,
+            resumeLength: resumeSummary.length,
             targetRole: profile?.target_role ?? '',
           })
         : 0
@@ -128,12 +138,15 @@ export default function CareerCenter() {
       })
       setData(snap)
       setWeek(loadWeeklyActions(snap.weeklyActions, uid))
+      setLoading(false)
     }
     load().catch(() => {
       if (!alive) return
+      setSyncError('Could not load career data.')
       const snap = getCareerSnapshot({ userId: uid })
       setData(snap)
       setWeek(loadWeeklyActions(snap.weeklyActions, uid))
+      setLoading(false)
     })
     return () => {
       alive = false
@@ -184,8 +197,22 @@ export default function CareerCenter() {
     saveWeeklyActions(next, uid)
   }
 
+  if (loading) {
+    return (
+      <div className="pt-20 px-4 sm:px-6 pb-16 max-w-7xl mx-auto overflow-x-hidden">
+        <CareerHubNav />
+        <p className="text-muted text-sm mt-6">Loading career data…</p>
+      </div>
+    )
+  }
+
   return (
     <div className="pt-20 px-4 sm:px-6 pb-16 max-w-7xl mx-auto overflow-x-hidden">
+      {syncError && (
+        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 mb-4" role="alert">
+          {syncError}
+        </p>
+      )}
       <header className="mb-6">
         <p className="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Career Center</p>
         <h1
@@ -193,7 +220,7 @@ export default function CareerCenter() {
           style={{ fontFamily: 'Plus Jakarta Sans,sans-serif', letterSpacing: '-0.03em' }}
         >
           Turn Your Skills Into Your <span className="gradient-text">Career.</span>
-        </h1>
+          </h1>
         <p className="text-muted text-base sm:text-lg max-w-2xl leading-relaxed">
           Learn, build real projects, prepare for interviews, and become job-ready with an AI-guided career plan.
         </p>
@@ -217,7 +244,7 @@ export default function CareerCenter() {
                 style={{ ['--career-circ' as string]: RING, ['--career-pct' as string]: data.readinessScore }}
               >
                 <circle cx="60" cy="60" r="54" fill="none" stroke="rgba(108,92,231,0.12)" strokeWidth="10" />
-                <circle
+              <circle
                   cx="60"
                   cy="60"
                   r="54"
@@ -226,14 +253,14 @@ export default function CareerCenter() {
                   strokeWidth="10"
                   strokeLinecap="round"
                   className="career-ring-fill"
-                />
-                <defs>
+              />
+              <defs>
                   <linearGradient id={ringId} x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0%" stopColor="#6C5CE7" />
+                  <stop offset="0%" stopColor="#6C5CE7" />
                     <stop offset="100%" stopColor="#22C7D6" />
-                  </linearGradient>
-                </defs>
-              </svg>
+                </linearGradient>
+              </defs>
+            </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <span className="text-4xl sm:text-5xl font-black text-ink career-count" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
                   {shown}%
@@ -306,7 +333,7 @@ export default function CareerCenter() {
             <div className="text-xs font-semibold text-muted mb-1">{item.label}</div>
             <div className="text-2xl font-black text-ink career-count mb-2" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>
               {item.score}%
-            </div>
+        </div>
             <MiniBar value={item.score} />
             <div className="text-xs text-muted mt-2">{statusFor(item.score)}</div>
           </article>
@@ -389,8 +416,8 @@ export default function CareerCenter() {
                   <SkillRow key={s.name} skill={s} onImprove={() => navigate(`/courses?q=${encodeURIComponent(s.courseQuery)}`)} />
                 ))}
                 {strong.length === 0 && <p className="text-sm text-muted">None marked strong yet.</p>}
-              </div>
-            </div>
+                    </div>
+                  </div>
             <div>
               <h3 className="text-sm font-bold text-ink mb-3">Skills To Improve</h3>
               <div className="space-y-4">
@@ -398,7 +425,7 @@ export default function CareerCenter() {
                   <SkillRow key={s.name} skill={s} onImprove={() => navigate(`/courses?q=${encodeURIComponent(s.courseQuery)}`)} />
                 ))}
                 {improve.length === 0 && <p className="text-sm text-muted">None listed yet.</p>}
-              </div>
+                </div>
             </div>
           </div>
         )}
@@ -417,7 +444,7 @@ export default function CareerCenter() {
               </div>
               <div className="text-2xl font-black text-primary career-count my-2">
                 {m.match > 0 ? `${m.match}% Match` : 'Explore this path'}
-              </div>
+                  </div>
               {m.strong.length > 0 && <p className="text-xs text-muted mb-2">Strong: {m.strong.join(' · ')}</p>}
               <p className="text-xs text-muted mb-2">Missing: {m.missing.join(' · ')}</p>
               <p className="text-xs text-ink mb-4 flex-1">{m.nextStep}</p>
@@ -426,7 +453,7 @@ export default function CareerCenter() {
               </button>
             </article>
           ))}
-        </div>
+                    </div>
       </section>
 
       <div className="grid lg:grid-cols-2 gap-5 mb-6">
@@ -453,7 +480,7 @@ export default function CareerCenter() {
                     {p.score > 0 && (
                       <div className="text-xs" style={{ color: p.status === 'Portfolio Ready' ? '#0F8A68' : '#B45309' }}>
                         {p.status}
-                      </div>
+                    </div>
                     )}
                   </div>
                 </div>
@@ -461,9 +488,9 @@ export default function CareerCenter() {
                   View Project →
                 </button>
               </article>
-            ))}
-            </div>
-          )}
+              ))}
+        </div>
+      )}
           <div className="flex flex-wrap gap-2">
             <button type="button" className="btn-glass text-sm" onClick={() => navigate('/profile')}>
               View Portfolio
@@ -501,7 +528,7 @@ export default function CareerCenter() {
           )}
           {certNote && <p className="text-sm text-muted">{certNote}</p>}
         </section>
-      </div>
+        </div>
 
       <div className="grid lg:grid-cols-2 gap-5 mb-6">
         <section className="glass rounded-3xl p-6" aria-labelledby="impact-heading">
@@ -548,8 +575,8 @@ export default function CareerCenter() {
               <span key={d.skill} className="text-xs font-semibold" style={{ color: '#0F8A68' }}>
                 {d.skill} +{d.delta}%
               </span>
-            ))}
-          </div>
+          ))}
+        </div>
           <button type="button" className="btn-primary text-sm" onClick={() => navigate(tutorBookPath(data.tutorImpact.tutorId))}>
             Book Follow-up →
           </button>
@@ -563,7 +590,7 @@ export default function CareerCenter() {
             </>
           )}
         </section>
-      </div>
+            </div>
 
       <div className="grid md:grid-cols-3 gap-5 mb-6">
         <section className="glass rounded-3xl p-6" aria-labelledby="iv-heading">
@@ -582,7 +609,7 @@ export default function CareerCenter() {
             ].map(([l, v]) => (
               <MiniBar key={String(l)} label={String(l)} value={Number(v)} />
             ))}
-          </div>
+                </div>
           <p className="text-sm text-muted mb-4">
             <span className="font-bold text-ink">AI Recommendation</span>
             <br />
@@ -599,7 +626,7 @@ export default function CareerCenter() {
           </h2>
           <div className="text-3xl font-black text-ink career-count mb-4">
             {data.resume.score > 0 || data.resume.checks.length > 0 ? `${data.resume.score}%` : 'Not created'}
-          </div>
+                      </div>
           {data.resume.checks.length === 0 ? (
             <p className="text-sm text-muted mb-5">No resume on file yet. Create one to see completeness checks.</p>
           ) : (
@@ -636,13 +663,13 @@ export default function CareerCenter() {
                 <div className="text-xs text-muted">{j.skills.join(' · ')}</div>
               </article>
             ))}
-          </div>
+                  </div>
           )}
           <button type="button" className="btn-primary text-sm w-full" onClick={() => navigate('/career/jobs')}>
             View Job Matches →
           </button>
         </section>
-      </div>
+                </div>
 
       <div className="grid lg:grid-cols-3 gap-5 mb-6">
         <section className="glass rounded-3xl p-6" aria-labelledby="week-heading">

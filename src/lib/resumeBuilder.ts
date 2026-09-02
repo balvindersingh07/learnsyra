@@ -1,4 +1,5 @@
 import { peekAuthUserId, userStorageKey } from './supabase'
+import { syncResumeToCareerStore } from './careerPersistence'
 
 export type ResumeSectionId =
   | 'contact'
@@ -576,6 +577,7 @@ export function saveDocs(docs: ResumeDoc[]) {
   const key = userStorageKey(STORE_KEY)
   if (!key) return
   localStorage.setItem(key, JSON.stringify(docs.slice(0, 12)))
+  syncResumeToCareerStore(peekAuthUserId(), docs, loadActiveId())
 }
 
 export function loadActiveId() {
@@ -588,6 +590,7 @@ export function saveActiveId(id: string) {
   const key = userStorageKey(ACTIVE_KEY)
   if (!key) return
   localStorage.setItem(key, id)
+  syncResumeToCareerStore(peekAuthUserId(), loadDocs(), id)
 }
 
 export function loadResumeCareerOverlay(userId?: string | null): ResumeCareerOverlay | null {
@@ -605,6 +608,7 @@ export function saveResumeCareerOverlay(overlay: ResumeCareerOverlay, userId?: s
   const key = resumeOverlayKey(userId)
   if (!key) return
   localStorage.setItem(key, JSON.stringify(overlay))
+  syncResumeToCareerStore(userId ?? peekAuthUserId(), loadDocs(), loadActiveId(), overlay)
 }
 
 export function applyResumeOverlay(doc: ResumeDoc) {

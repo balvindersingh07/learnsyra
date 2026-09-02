@@ -9,9 +9,9 @@ import {
   getCertificates,
   getMyEnrolledCourses,
   getMyStudentProjects,
-  saveCareerProfile,
 } from '../lib/api'
 import { getCareerSnapshot, loadWeeklyActions, saveWeeklyActions } from '../lib/careerCenter'
+import { careerSummaryText, hydrateCareerData, persistCareerNow } from '../lib/careerPersistence'
 import {
   analyzeJob,
   applyJobSuggestion,
@@ -112,45 +112,55 @@ export default function CareerResume() {
   const [bulletHint, setBulletHint] = useState<Record<string, { original: string; improved: string; variant: number }>>({})
   const [roleOpen, setRoleOpen] = useState(false)
   const [busySave, setBusySave] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [syncError, setSyncError] = useState<string | null>(null)
+  const [saveState, setSaveState] = useState<'idle' | 'saved' | 'error'>('idle')
 
   const doc = docs.find(d => d.id === activeId) ?? docs[0]
   const scores = doc ? scoreResume(doc) : null
 
   useEffect(() => {
-    const existing = loadDocs()
-    const name = profile?.full_name?.trim() || session?.user.email?.split('@')[0] || 'Student'
-    const email = session?.user.email || ''
-    const seedCerts = (certs: { title: string; completed: string; official: boolean }[]) =>
-      createResume({
-        name,
-        email,
-        headline: profile?.headline || undefined,
-        targetRole: snap.targetRole,
-        verifiedSkills: snap.haveSkills,
-        suggestedSkills: [],
-        projects: snap.portfolio.map((p, i) => ({
-          projectId: p.id,
-          title: p.title,
-          description: `${p.title} covering ${p.skills.join(', ')}.`,
-          skills: p.skills,
-          score: p.score,
-          bullets: [],
-          included: i === 0,
-          portfolioReady: p.status === 'Portfolio Ready',
-        })),
-        certifications: certs.map(c => ({
-          id: uid('ct'),
-          title: c.title,
-          issuer: 'LearnSyra',
-          completed: c.completed,
-          official: c.official,
-          included: true,
-        })),
-        achievements: [],
-      })
+    const userId = session?.user.id ?? null
+    let alive = true
+    setLoading(true)
+    setSyncError(null)
+    hydrateCareerData(userId)
+      .then(async () => {
+        if (!alive) return
+        const existing = loadDocs()
+        const name = profile?.full_name?.trim() || session?.user.email?.split('@')[0] || 'Student'
+        const email = session?.user.email || ''
+        const seedCerts = (certs: { title: string; completed: string; official: boolean }[]) =>
+          createResume({
+            name,
+            email,
+            headline: profile?.headline || undefined,
+            targetRole: snap.targetRole,
+            verifiedSkills: snap.haveSkills,
+            suggestedSkills: [],
+            projects: snap.portfolio.map((p, i) => ({
+              projectId: p.id,
+              title: p.title,
+              description: `${p.title} covering ${p.skills.join(', ')}.`,
+              skills: p.skills,
+              score: p.score,
+              bullets: [],
+              included: i === 0,
+              portfolioReady: p.status === 'Portfolio Ready',
+            })),
+            certifications: certs.map(c => ({
+              id: uid('ct'),
+              title: c.title,
+              issuer: 'LearnSyra',
+              completed: c.completed,
+              official: c.official,
+              included: true,
+            })),
+            achievements: [],
+          })
 
-    Promise.all([getCareerProfile(), getCertificates()])
-      .then(([career, certRows]) => {
+        const [career, certRows] = await Promise.all([getCareerProfile(), getCertificates()])
+        if (!alive) return
         const certs =
           certRows.length > 0
             ? certRows.map(r => ({
@@ -170,7 +180,8 @@ export default function CareerResume() {
           return
         }
         const created = seedCerts(certs)
-        if (career?.resume_text) created.summary = career.resume_text
+        const summary = careerSummaryText(null, career?.resume_text)
+        if (summary) created.summary = summary
         if (career?.target_role) created.targetRole = career.target_role
         setDocs([created])
         setActiveId(created.id)
@@ -179,16 +190,21 @@ export default function CareerResume() {
         applyResumeOverlay(created)
       })
       .catch(() => {
+        if (!alive) return
+        setSyncError('Could not sync your resume right now. Showing local data.')
+        const existing = loadDocs()
         if (existing.length) {
           setDocs(existing)
           setActiveId(existing[0].id)
-        } else {
-          const created = seedCerts(snap.certificates)
-          setDocs([created])
-          setActiveId(created.id)
         }
       })
-  }, [profile?.full_name, profile?.headline, session?.user.email, snap])
+      .finally(() => {
+        if (alive) setLoading(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [profile?.full_name, profile?.headline, session?.user.email, session?.user.id, snap])
 
   useEffect(() => {
     if (!roleOpen && !previewOpen && !fullPreview) return
@@ -218,6 +234,7 @@ export default function CareerResume() {
   const saveBackend = async () => {
     if (!doc) return
     setBusySave(true)
+    setSaveState('idle')
     const [enrolled, projects] = await Promise.all([getMyEnrolledCourses(), getMyStudentProjects()])
     const avg = enrolled.length ? enrolled.reduce((s, c) => s + c.progress, 0) / enrolled.length : 0
     const next = computeReadiness({
@@ -227,16 +244,40 @@ export default function CareerResume() {
       resumeLength: doc.summary.trim().length,
       targetRole: doc.targetRole,
     })
-    const { error } = await saveCareerProfile({
-      target_role: doc.targetRole,
-      resume_text: doc.summary,
-      skills: doc.skills.filter(s => s.included).map(s => s.name),
-      readiness_score: next,
-    })
-    const week = loadWeeklyActions(getCareerSnapshot().weeklyActions)
-    saveWeeklyActions(week.map(w => (w.id === 'w4' ? { ...w, done: true } : w)))
+    const rows = docs.map(d => (d.id === doc.id ? { ...doc, updatedAt: new Date().toISOString() } : d))
+    const scored = scoreResume(doc)
+    const { error } = await persistCareerNow(
+      session?.user.id ?? null,
+      {
+        summary: doc.summary,
+        resume: { docs: rows, activeId: doc.id },
+        resumeOverlay: {
+          resumeScore: scored.completeness,
+          atsScore: scored.ats,
+          completeness: scored.completeness,
+          targetRole: doc.targetRole,
+          roleMatch: scored.roleMatch,
+          checks: [
+            { label: 'Skills listed', ok: scored.skills },
+            { label: 'Education', ok: scored.education },
+            { label: 'Project descriptions', ok: scored.projects },
+            { label: 'Quantified achievements', ok: scored.achievements >= 60 },
+            { label: 'ATS optimization', ok: scored.ats >= 75 },
+          ],
+        },
+      },
+      next,
+    )
+    const week = loadWeeklyActions(getCareerSnapshot().weeklyActions, session?.user.id)
+    saveWeeklyActions(week.map(w => (w.id === 'w4' ? { ...w, done: true } : w)), session?.user.id)
     setBusySave(false)
-    setToast(error ?? 'Resume saved.')
+    if (error) {
+      setSaveState('error')
+      setToast(error)
+      return
+    }
+    setSaveState('saved')
+    setToast('Resume saved to your account.')
   }
 
   const runSafe = () => {
@@ -257,11 +298,12 @@ export default function CareerResume() {
     setExportNote(ext === 'doc' ? 'Downloaded a Word-compatible text file. Open it in Word and Save As DOCX if needed.' : 'Downloaded a plain-text resume.')
   }
 
-  if (!doc || !scores) {
+  if (loading || !doc || !scores) {
     return (
       <div className="pt-20 px-6 max-w-3xl mx-auto">
         <CareerHubNav />
-        <p className="text-muted">Loading resume builder…</p>
+        <p className="text-muted">{loading ? 'Loading resume builder…' : 'Preparing resume builder…'}</p>
+        {syncError && <p className="text-sm mt-2" style={{ color: '#e11d48' }}>{syncError}</p>}
       </div>
     )
   }
@@ -285,6 +327,9 @@ export default function CareerResume() {
         Create a professional, ATS-friendly resume using the skills, projects and achievements you have built on LearnSyra.
       </p>
       <CareerHubNav />
+      {syncError && (
+        <div className="glass rounded-2xl p-3 mb-4 text-sm" style={{ color: '#e11d48' }}>{syncError}</div>
+      )}
 
       <div className="glass rounded-3xl p-5 mb-5">
         <div className="flex flex-wrap items-end justify-between gap-3 mb-3">

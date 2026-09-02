@@ -1,4 +1,5 @@
 import type { CareerProfile } from './api'
+import { careerSummaryText, parseCareerBlob } from './careerPersistence'
 import type { Page } from './paths'
 import { peekAuthUserId } from './supabase'
 
@@ -93,10 +94,11 @@ function clamp(n: number, min = 0, max = 100) {
 }
 
 function hasCareerSignal(career: CareerProfile | null) {
+  const summary = careerSummaryText(parseCareerBlob(career?.resume_text), career?.resume_text)
   return Boolean(
     career?.target_role?.trim() ||
       (career?.skills?.length ?? 0) > 0 ||
-      career?.resume_text?.trim(),
+      summary,
   )
 }
 
@@ -191,15 +193,14 @@ export function buildDashboardIntel(input: {
   const strongest = measured[0]?.name ?? ''
   const weakest = measured.length > 1 ? measured[measured.length - 1]?.name ?? '' : ''
 
+  const resumeSummary = careerSummaryText(parseCareerBlob(career?.resume_text), career?.resume_text)
   const breakdown: CareerBreakdown = {
     skills: live ? clamp(avgProgress) : 0,
     projects: live ? clamp(submittedCount * 22) : 0,
-    resume: career?.resume_text
-      ? career.resume_text.trim().length > 80
+    resume: resumeSummary
+      ? resumeSummary.length > 80
         ? 70
-        : career.resume_text.trim()
-          ? 30
-          : 0
+        : 30
       : 0,
     interview: live ? clamp(careerScore * 0.45) : 0,
     communication: 0,

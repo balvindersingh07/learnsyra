@@ -5,6 +5,7 @@ import InterviewResults from '../components/career/InterviewResults'
 import InterviewSession, { ContextBody } from '../components/career/InterviewSession'
 import { getCareerProfile } from '../lib/api'
 import { getCareerSnapshot, loadWeeklyActions, saveWeeklyActions } from '../lib/careerCenter'
+import { careerSummaryText, hydrateCareerData } from '../lib/careerPersistence'
 import {
   applyInterviewOverlay,
   appendHistory,
@@ -34,6 +35,7 @@ import {
   type LiveInterview,
 } from '../lib/interviewStudio'
 import { coursePath } from '../lib/paths'
+import { useAuth } from '../context/AuthContext'
 import './career-center.css'
 import './interview-studio.css'
 
@@ -43,6 +45,7 @@ type Phase = 'setup' | 'session' | 'complete' | 'results'
 
 export default function CareerInterview() {
   const navigate = useNavigate()
+  const { session } = useAuth()
   const [params] = useSearchParams()
   const ringId = useId()
   const [career, setCareer] = useState(() => getCareerSnapshot())
@@ -61,28 +64,51 @@ export default function CareerInterview() {
   const [hasResume, setHasResume] = useState(false)
   const [live, setLive] = useState<LiveInterview | null>(null)
   const [ctxOpen, setCtxOpen] = useState(false)
-  const [history, setHistory] = useState<InterviewRecord[]>(() => loadHistory())
+  const [history, setHistory] = useState<InterviewRecord[]>([])
   const [result, setResult] = useState<InterviewRecord | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [syncError, setSyncError] = useState<string | null>(null)
   const shown = career.interview.overall
 
   useEffect(() => {
-    getCareerProfile()
+    let alive = true
+    setLoading(true)
+    setSyncError(null)
+    hydrateCareerData(session?.user.id ?? null)
+      .then(() => {
+        if (!alive) return
+        setCareer(getCareerSnapshot({ userId: session?.user.id ?? null }))
+        setHistory(loadHistory())
+        return getCareerProfile()
+      })
       .then(p => {
-        if (p?.target_role && INTERVIEW_ROLES.includes(p.target_role as InterviewRole)) {
+        if (!alive || !p) return
+        if (p.target_role && INTERVIEW_ROLES.includes(p.target_role as InterviewRole)) {
           setRole(p.target_role as InterviewRole)
         }
-        if (p?.resume_text && p.resume_text.trim().length > 20) {
+        const summary = careerSummaryText(null, p.resume_text)
+        if (summary.length > 20) {
           setHasResume(true)
           setUseResume(true)
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        if (!alive) return
+        setSyncError('Could not sync interview history. Showing local data.')
+        setHistory(loadHistory())
+      })
+      .finally(() => {
+        if (alive) setLoading(false)
+      })
     const existing = loadLive()
     if (existing && existing.questions.length) {
       setLive(existing)
       setPhase(existing.index >= existing.questions.length ? 'complete' : 'session')
     }
-  }, [])
+    return () => {
+      alive = false
+    }
+  }, [session?.user.id])
 
   useEffect(() => {
     const practice = params.get('practice')
@@ -332,8 +358,22 @@ export default function CareerInterview() {
 
   const qHint = INTERVIEW_DURATIONS.find(d => d.min === duration)?.questions
 
+  if (loading) {
+    return (
+      <div className="pt-20 px-4 sm:px-6 pb-16 max-w-6xl mx-auto overflow-x-hidden">
+        <CareerHubNav />
+        <p className="text-muted text-sm mt-6">Loading interview data…</p>
+      </div>
+    )
+  }
+
   return (
     <div className="pt-20 px-4 sm:px-6 pb-16 max-w-6xl mx-auto overflow-x-hidden">
+      {syncError && (
+        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 mb-4" role="alert">
+          {syncError}
+        </p>
+      )}
       <header className="mb-6">
         <p className="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Career Center</p>
         <h1

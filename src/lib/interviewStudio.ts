@@ -1,4 +1,5 @@
 import { peekAuthUserId, userStorageKey } from './supabase'
+import { syncInterviewToCareerStore } from './careerPersistence'
 
 export type InterviewRole =
   | 'Frontend Developer'
@@ -759,6 +760,7 @@ export function saveHistory(rows: InterviewRecord[]) {
   const key = userStorageKey(HISTORY_KEY)
   if (!key) return
   localStorage.setItem(key, JSON.stringify(rows.slice(0, 20)))
+  syncInterviewToCareerStore(peekAuthUserId(), rows, loadInterviewCareerOverlay())
 }
 
 export function appendHistory(record: InterviewRecord) {
@@ -799,6 +801,7 @@ export function saveInterviewCareerOverlay(overlay: InterviewCareerOverlay, user
   const key = interviewOverlayKey(userId)
   if (!key) return
   localStorage.setItem(key, JSON.stringify(overlay))
+  syncInterviewToCareerStore(userId ?? peekAuthUserId(), loadHistory(), overlay)
 }
 
 export function applyInterviewOverlay(record: InterviewRecord) {

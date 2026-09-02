@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import CareerHubNav from '../components/career/CareerHubNav'
 import { useAuth } from '../context/AuthContext'
 import { getCareerSnapshot } from '../lib/careerCenter'
+import { hydrateCareerData } from '../lib/careerPersistence'
 import { loadInterviewCareerOverlay } from '../lib/interviewStudio'
 import {
   applicationReadiness,
@@ -56,8 +57,26 @@ export default function CareerJobDetail() {
   const [apps, setApps] = useState<Record<string, JobApplication>>(() => loadApps())
   const [demoApply, setDemoApply] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
+  const [loading, setLoading] = useState(true)
   const app = job ? apps[job.id] : undefined
   const ready = job ? applicationReadiness(job, profile) : null
+
+  useEffect(() => {
+    let alive = true
+    setLoading(true)
+    hydrateCareerData(session?.user.id ?? null)
+      .then(() => {
+        if (!alive) return
+        setBundle(currentProfile())
+        setApps({ ...loadApps() })
+      })
+      .finally(() => {
+        if (alive) setLoading(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [id, session?.user.id])
 
   useEffect(() => {
     setBundle(currentProfile())
@@ -113,6 +132,15 @@ export default function CareerJobDetail() {
     if (!job) return
     upsertApp(job.id, { status, saved: true, appliedAt: app?.appliedAt ?? (status === 'Saved' ? null : new Date().toISOString()) })
     refreshApps()
+  }
+
+  if (loading) {
+    return (
+      <div className="pt-20 px-4 sm:px-6 pb-16 max-w-5xl mx-auto overflow-x-hidden">
+        <CareerHubNav />
+        <p className="text-muted text-sm mt-6">Loading application data…</p>
+      </div>
+    )
   }
 
   if (!job || !ready) {

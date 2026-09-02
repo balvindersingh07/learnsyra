@@ -1,4 +1,5 @@
 import { peekAuthUserId, userStorageKey } from './supabase'
+import { syncJobAppsToCareerStore } from './careerPersistence'
 
 export type JobRole =
   | 'Frontend Developer'
@@ -417,6 +418,7 @@ export function saveApps(map: Record<string, JobApplication>) {
   const key = appsStorageKey()
   if (!key) return
   localStorage.setItem(key, JSON.stringify(map))
+  syncJobAppsToCareerStore(peekAuthUserId(), map)
 }
 
 export function upsertApp(jobId: string, patch: Partial<JobApplication>) {

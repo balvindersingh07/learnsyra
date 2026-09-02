@@ -1,4 +1,5 @@
 import { peekAuthUserId } from './supabase'
+import { syncWeeklyActionsToCareerStore } from './careerPersistence'
 import { loadInterviewCareerOverlay } from './interviewStudio'
 import { loadResumeCareerOverlay } from './resumeBuilder'
 import { getJobCatalog } from './jobRecommendations'
@@ -241,6 +242,7 @@ export function saveWeeklyActions(rows: CareerSnapshot['weeklyActions'], userId?
   const key = weekStorageKey(userId)
   if (!key) return
   localStorage.setItem(key, JSON.stringify(rows))
+  syncWeeklyActionsToCareerStore(userId ?? peekAuthUserId(), rows)
 }
 
 export function statusFor(score: number) {
