@@ -771,8 +771,23 @@ export async function askAiTutor(
   history: { role: 'user' | 'assistant'; content: string }[],
   question: string,
 ): Promise<{ reply: string; source: 'openai' } | { error: string }> {
+  if (!isSupabaseConfigured) {
+    return { error: 'AI tutor is not configured.' }
+  }
+  const uid = await currentUserId()
+  if (!uid) {
+    return { error: 'Not logged in' }
+  }
+  const q = question.trim()
+  if (!q) {
+    return { error: 'Enter a question first.' }
+  }
+  if (q.length > 4000) {
+    return { error: 'Question is too long.' }
+  }
+
   const { data, error } = await supabase.functions.invoke('ai-tutor', {
-    body: { messages: [...history, { role: 'user', content: question }] },
+    body: { messages: [...history, { role: 'user', content: q }] },
   })
   const message = invokeError(data, error)
   if (message) return { error: message }

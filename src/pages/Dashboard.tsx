@@ -83,6 +83,8 @@ function AIPanel({
   const personalized = Boolean(topic)
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [lastPrompt, setLastPrompt] = useState<string | null>(null)
   const [messages, setMessages] = useState([
     {
       role: 'ai',
@@ -92,12 +94,16 @@ function AIPanel({
     },
   ])
 
-  const send = async (preset?: string) => {
+  const send = async (preset?: string, isRetry = false) => {
     const q = (preset ?? input).trim()
     if (!q || busy) return
-    setInput('')
-    const nextMessages = [...messages, { role: 'user' as const, text: q }]
-    setMessages(nextMessages)
+    if (!isRetry) setInput('')
+    setError(null)
+    setLastPrompt(q)
+    const nextMessages = isRetry
+      ? messages
+      : [...messages, { role: 'user' as const, text: q }]
+    if (!isRetry) setMessages(nextMessages)
     setBusy(true)
     const history = nextMessages
       .slice(1)
@@ -109,13 +115,14 @@ function AIPanel({
     const res = await askAiTutor(history, q)
     setBusy(false)
     if ('error' in res) {
-      setMessages(m => [
-        ...m,
-        {
-          role: 'ai',
-          text: `${res.error} Use Full Chat for a longer conversation or try again in a moment.`,
-        },
-      ])
+      setError(res.error)
+      if (!isRetry) {
+        setMessages(m => m.slice(0, -1))
+      }
+      return
+    }
+    if (isRetry) {
+      setMessages(m => [...m, { role: 'user' as const, text: q }, { role: 'ai', text: res.reply }])
       return
     }
     setMessages(m => [...m, { role: 'ai', text: res.reply }])
@@ -167,6 +174,16 @@ function AIPanel({
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+        {error && (
+          <div className="rounded-xl px-3 py-2 text-sm text-rose-600 bg-rose-50 border border-rose-200 flex flex-wrap items-center gap-2">
+            <span>{error}</span>
+            {lastPrompt && (
+              <button type="button" className="btn-glass text-xs" disabled={busy} onClick={() => void send(lastPrompt, true)}>
+                Retry
+              </button>
+            )}
+          </div>
+        )}
         {messages.map((m, i) => (
           <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div

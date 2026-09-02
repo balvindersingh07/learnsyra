@@ -4,6 +4,7 @@ import { createClient } from "npm:@supabase/supabase-js@2"
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 }
 
 const MAX_MESSAGES = 20
@@ -34,6 +35,7 @@ function rateLimited(userId: string): boolean {
 
 Deno.serve(async req => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors })
+  if (req.method !== "POST") return json({ error: "Method not allowed" }, 405)
 
   try {
     const authHeader = req.headers.get("Authorization") ?? ""
@@ -41,11 +43,16 @@ Deno.serve(async req => {
       return json({ error: "Not logged in" }, 401)
     }
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
-      { global: { headers: { Authorization: authHeader } } },
-    )
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? ""
+    const supabaseAnon = Deno.env.get("SUPABASE_ANON_KEY") ?? ""
+    if (!supabaseUrl || !supabaseAnon) {
+      console.error("ai-tutor missing Supabase env")
+      return json({ error: "AI tutor is not configured." }, 503)
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseAnon, {
+      global: { headers: { Authorization: authHeader } },
+    })
     const { data: userData, error: userErr } = await supabase.auth.getUser()
     if (userErr || !userData.user) {
       return json({ error: "Not logged in" }, 401)
@@ -60,7 +67,17 @@ Deno.serve(async req => {
       return json({ error: "Too many requests. Try again later." }, 429)
     }
 
-    const { messages } = (await req.json()) as {
+    const contentType = req.headers.get("Content-Type") ?? ""
+    if (!contentType.toLowerCase().includes("application/json")) {
+      return json({ error: "Invalid request" }, 400)
+    }
+
+    const body = await req.json().catch(() => null)
+    if (!body || typeof body !== "object") {
+      return json({ error: "Invalid messages" }, 400)
+    }
+
+    const { messages } = body as {
       messages?: { role?: string; content?: string }[]
     }
     if (!Array.isArray(messages) || messages.length === 0) {
@@ -97,6 +114,7 @@ Deno.serve(async req => {
     })
 
     if (!res.ok) {
+      console.error("openai chat failed", res.status)
       return json({ error: "AI tutor is unavailable right now." }, 502)
     }
 
@@ -108,9 +126,7 @@ Deno.serve(async req => {
 
     return json({ reply, source: "openai" })
   } catch (e) {
-    return json(
-      { error: e instanceof Error ? e.message : "AI failed" },
-      400,
-    )
+    console.error("ai-tutor failed", e instanceof Error ? e.message : "unknown")
+    return json({ error: "AI tutor request failed." }, 500)
   }
 })
