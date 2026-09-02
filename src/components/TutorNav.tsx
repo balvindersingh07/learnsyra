@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import BrandMark from './BrandMark'
+import GlobalSearch from './GlobalSearch'
 import { useAuth } from '../context/AuthContext'
 import { unreadNotificationCount } from '../lib/api'
 import { displayInitials, TUTOR_HOME, TUTOR_LINKS, tutorLinkActive } from '../lib/roleAccess'
@@ -223,17 +224,7 @@ export default function TutorNav() {
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => go('/tutor/courses')}
-            aria-label="Search"
-            className="hidden sm:flex w-8 h-8 items-center justify-center rounded-lg cursor-pointer"
-            style={{ background: 'rgba(255,255,255,0.9)', border: '1px solid rgba(99,102,241,0.12)', color: '#667085' }}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-            </svg>
-          </button>
+          <GlobalSearch role="tutor" />
           <button
             type="button"
             onClick={() => go('/notifications')}
