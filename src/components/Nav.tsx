@@ -150,7 +150,7 @@ export default function Nav() {
           <button
             onClick={() => nav('notifications')}
             aria-label="Notifications"
-            className="hidden sm:flex w-8 h-8 items-center justify-center rounded-lg cursor-pointer relative"
+            className="flex w-8 h-8 items-center justify-center rounded-lg cursor-pointer relative"
             style={{ background: 'rgba(255,255,255,0.9)', border: '1px solid rgba(99,102,241,0.12)', color: '#667085' }}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -265,6 +265,20 @@ export default function Nav() {
                 {l.label}
               </button>
             ))}
+            {session && (
+              <button
+                type="button"
+                className="block w-full text-left px-3 py-2 rounded-lg text-sm font-semibold mb-0.5"
+                style={{
+                  background: location.pathname === '/notifications' ? 'rgba(108,92,231,0.12)' : 'transparent',
+                  color: location.pathname === '/notifications' ? '#6C5CE7' : '#172033',
+                  border: 'none',
+                }}
+                onClick={() => go('notifications')}
+              >
+                Notifications{unread > 0 ? ` (${unread})` : ''}
+              </button>
+            )}
           </div>
         </div>
       )}

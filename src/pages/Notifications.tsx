@@ -17,13 +17,29 @@ export default function Notifications() {
   const navigate = useNavigate()
   const [rows, setRows] = useState<NotificationRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    let alive = true
+    setLoading(true)
+    setError(null)
     getNotifications()
-      .then(setRows)
-      .catch(() => setRows([]))
-      .finally(() => setLoading(false))
-    markNotificationsRead()
+      .then(data => {
+        if (!alive) return
+        setRows(data)
+        void markNotificationsRead()
+      })
+      .catch(() => {
+        if (!alive) return
+        setRows([])
+        setError('Could not load notifications. Try again in a moment.')
+      })
+      .finally(() => {
+        if (alive) setLoading(false)
+      })
+    return () => {
+      alive = false
+    }
   }, [])
 
   return (
@@ -36,8 +52,13 @@ export default function Notifications() {
       </h1>
       <p className="text-muted mb-8">Enrollments, bookings, projects, and certificates land here.</p>
 
+      {error && (
+        <div className="glass rounded-2xl p-4 mb-4 text-sm text-rose-600">
+          {error}
+        </div>
+      )}
       {loading && <div className="glass rounded-2xl p-8 text-center text-muted">Loading…</div>}
-      {!loading && rows.length === 0 && (
+      {!loading && !error && rows.length === 0 && (
         <div className="glass rounded-2xl p-8 text-center text-muted">
           No notifications yet. Enroll in a course or book a tutor to get started.
         </div>

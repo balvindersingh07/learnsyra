@@ -9,6 +9,7 @@ import {
   applicationReadiness,
   buildJobProfile,
   getJobById,
+  loadServerJobCatalog,
   loadApps,
   loadTargetRole,
   rankJob,
@@ -52,8 +53,8 @@ export default function CareerJobDetail() {
   const navigate = useNavigate()
   const { session } = useAuth()
   const [{ snap, resume, profile }, setBundle] = useState(currentProfile)
-  const catalog = getJobById(id)
-  const job = catalog ? rankJob(catalog, profile) : null
+  const [catalogJob, setCatalogJob] = useState(() => getJobById(id))
+  const job = catalogJob ? rankJob(catalogJob, profile) : null
   const [apps, setApps] = useState<Record<string, JobApplication>>(() => loadApps())
   const [demoApply, setDemoApply] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
@@ -65,8 +66,11 @@ export default function CareerJobDetail() {
     let alive = true
     setLoading(true)
     hydrateCareerData(session?.user.id ?? null)
-      .then(() => {
+      .then(async () => {
         if (!alive) return
+        await loadServerJobCatalog()
+        if (!alive) return
+        setCatalogJob(getJobById(id))
         setBundle(currentProfile())
         setApps({ ...loadApps() })
       })

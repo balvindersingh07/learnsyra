@@ -12,6 +12,7 @@ import {
   getCourseReviews,
   getCourses,
   getMyEnrollments,
+  submitCourseReview,
   toggleBookmark,
   type CourseLesson,
   type CourseModule,
@@ -70,6 +71,9 @@ export default function CourseDetail({ onNav }: Props) {
   const [preview, setPreview] = useState<{ title: string; minutes: number } | null>(null)
   const [certOpen, setCertOpen] = useState(false)
   const [reviews, setReviews] = useState<CourseReview[]>([])
+  const [reviewRating, setReviewRating] = useState(5)
+  const [reviewBody, setReviewBody] = useState('')
+  const [reviewBusy, setReviewBusy] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
 
   const ping = (msg: string) => {
@@ -162,6 +166,20 @@ export default function CourseDetail({ onNav }: Props) {
     const next = allLessons.find(l => !completed.has(l.id)) ?? allLessons[0]
     if (next) navigate(lessonPath(id, next.id))
     else ping('Lessons unlock after this course is published in your account.')
+  }
+
+  const handleSubmitReview = async () => {
+    if (!id || !apiCourse) return
+    setReviewBusy(true)
+    const { error: revErr } = await submitCourseReview(id, reviewRating, reviewBody.trim())
+    setReviewBusy(false)
+    if (revErr) {
+      ping(revErr)
+      return
+    }
+    const revs = await getCourseReviews(id).catch(() => [] as CourseReview[])
+    setReviews(revs)
+    ping('Review saved')
   }
 
   const handleEnroll = async () => {
@@ -278,19 +296,19 @@ export default function CourseDetail({ onNav }: Props) {
       </nav>
 
       <section className="grid lg:grid-cols-3 gap-8 items-start mb-10">
-        <div className="lg:col-span-2">
+            <div className="lg:col-span-2">
           <div className="flex flex-wrap gap-2 mb-3">
             {(course.aiRecommended ? ['AI Recommended', 'Career Relevant'] : []).concat(course.tutorSupport ? ['Tutor Supported'] : []).map(b => (
               <span key={b} className="badge badge-primary">{b}</span>
             ))}
             {course.price === 0 && <span className="badge badge-green">Free</span>}
-          </div>
-          <h1
+              </div>
+              <h1
             className="text-3xl md:text-4xl font-black text-ink leading-tight mb-3"
-            style={{ fontFamily: 'Plus Jakarta Sans,sans-serif', letterSpacing: '-0.02em' }}
-          >
+                style={{ fontFamily: 'Plus Jakarta Sans,sans-serif', letterSpacing: '-0.02em' }}
+              >
             {course.title}
-          </h1>
+              </h1>
           {course.demo && <div className="badge badge-amber mb-3">Demo Course — Not Production Data</div>}
           <p className="text-muted text-base md:text-lg leading-relaxed mb-4">{pack.subtitle}</p>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted mb-4">
@@ -303,9 +321,9 @@ export default function CourseDetail({ onNav }: Props) {
             {course.skills.map(s => (
               <span key={s} className="badge badge-primary">{s}</span>
             ))}
-          </div>
+                </div>
           <div className="text-xs text-subtle">{pack.updated}</div>
-        </div>
+              </div>
 
         <aside className="glass rounded-2xl p-5 lg:sticky lg:top-24 dash-elevate">
           <button
@@ -327,7 +345,7 @@ export default function CourseDetail({ onNav }: Props) {
               <span className="text-3xl font-black text-ink" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>{formatInr(price)}</span>
               {original && <span className="text-sm text-subtle line-through">{formatInr(original)}</span>}
               {off > 0 && <span className="badge badge-amber">{off}% OFF</span>}
-            </div>
+                  </div>
           )}
           {enrolled && (
             <div className="text-sm text-muted mb-3">
@@ -344,7 +362,7 @@ export default function CourseDetail({ onNav }: Props) {
             aria-label={bookmarked ? 'Remove from wishlist' : 'Add to wishlist'}
           >
             {bookmarked ? '♥ Saved' : '♡ Add to Wishlist'}
-          </button>
+              </button>
           {error && <p className="text-xs text-rose-500 mb-2">{error}</p>}
           <ul className="text-sm text-muted space-y-1.5">
             <li>30-day learning access</li>
@@ -395,7 +413,7 @@ export default function CourseDetail({ onNav }: Props) {
           <div key={s.l} className="glass rounded-2xl p-4 text-center">
             <div className="text-sm font-black text-ink" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>{s.v}</div>
             <div className="text-xs text-muted mt-1">{s.l}</div>
-          </div>
+                  </div>
         ))}
       </section>
 
@@ -405,8 +423,8 @@ export default function CourseDetail({ onNav }: Props) {
         <div className="grid sm:grid-cols-2 gap-2">
           {pack.outcomes.map(o => (
             <div key={o} className="glass rounded-xl px-4 py-3 text-sm text-ink">✓ {o}</div>
-          ))}
-        </div>
+                ))}
+              </div>
       </section>
       )}
 
@@ -418,9 +436,9 @@ export default function CourseDetail({ onNav }: Props) {
             <div key={s.name} className="glass rounded-2xl p-4 card-hover">
               <div className="text-sm font-bold text-ink">{s.name}</div>
               <div className="text-xs text-primary mt-1">{s.level}</div>
-            </div>
-          ))}
-        </div>
+                      </div>
+                    ))}
+                  </div>
       </section>
       )}
 
@@ -439,14 +457,14 @@ export default function CourseDetail({ onNav }: Props) {
                 onClick={() => setExpanded(expanded === i ? null : i)}
                 aria-expanded={expanded === i}
               >
-                <div>
+                  <div>
                   <div className="text-sm font-bold text-ink">
                     {String(i + 1).padStart(2, '0')} — {sec.title}
                   </div>
                   <div className="text-xs text-muted">{sec.lessons.length} lessons · {sec.hours}h</div>
                 </div>
                 <span className="text-muted">{expanded === i ? '▴' : '▾'}</span>
-              </button>
+                  </button>
               <div className="cd-acc" data-open={expanded === i}>
                 <div>
                   {sec.lessons.map((lesson, li) => {
@@ -465,10 +483,10 @@ export default function CourseDetail({ onNav }: Props) {
                         {done && <span className="text-xs text-success">Done</span>}
                         <span className="text-xs text-muted">{lesson.minutes} min</span>
                         {canOpen ? (
-                          <button
+                    <button
                             type="button"
                             className="text-xs font-semibold text-primary cursor-pointer"
-                            style={{ background: 'none', border: 'none' }}
+                      style={{ background: 'none', border: 'none' }}
                             onClick={() => {
                               if (apiLesson && enrolled) void continueTo(apiLesson)
                               else if (apiLesson && apiLesson.is_free) handlePreviewLesson(apiLesson)
@@ -483,11 +501,11 @@ export default function CourseDetail({ onNav }: Props) {
                       </div>
                     )
                   })}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+                            </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
       </section>
 
       {pack.projects.length > 0 && (
@@ -506,9 +524,9 @@ export default function CourseDetail({ onNav }: Props) {
               <button type="button" className="btn-primary text-sm" onClick={() => onNav('projects')}>
                 View Project →
               </button>
-            </div>
-          ))}
-        </div>
+                  </div>
+                ))}
+              </div>
       </section>
       )}
 
@@ -538,12 +556,12 @@ export default function CourseDetail({ onNav }: Props) {
             {pack.instructor.rating > 0 ? `⭐ ${pack.instructor.rating}` : '—'}
             {pack.instructor.students > 0 ? ` · ${formatStudents(pack.instructor.students)}` : ' · No student data yet.'}
             {pack.instructor.rate > 0 ? ` · ₹${pack.instructor.rate}/hr` : ''}
-          </div>
+                    </div>
           <div className="flex flex-wrap gap-2">
             <button type="button" className="btn-primary text-sm" onClick={() => onNav('tutors')}>View Tutor →</button>
             <button type="button" className="btn-glass text-sm" onClick={() => onNav('tutors')}>Book Session →</button>
-          </div>
-        </div>
+                    </div>
+                  </div>
       </section>
 
       <section className="glass rounded-2xl p-5 md:p-6 mb-10">
@@ -560,11 +578,11 @@ export default function CourseDetail({ onNav }: Props) {
               <div className="rounded-xl px-3 py-2" style={{ background: 'rgba(108,92,231,0.08)' }}>
                 <div className="text-xs font-semibold text-primary">{k}</div>
                 <div className="text-ink font-medium">{v}</div>
-              </div>
+                        </div>
               {i < arr.length - 1 && <span className="text-subtle hidden sm:inline">↓</span>}
-            </div>
-          ))}
-        </div>
+                      </div>
+                    ))}
+                  </div>
         <div className="text-sm font-bold text-ink mb-1">{pack.careerRole}</div>
           {pack.match > 0 && <div className="text-primary font-semibold mb-3">{pack.match}% match</div>}
         <ul className="text-sm space-y-1 mb-4">
@@ -598,13 +616,13 @@ export default function CourseDetail({ onNav }: Props) {
           {pack.instructor.rating > 0 ? `⭐ ${pack.instructor.rating}` : '—'}
           {pack.instructor.students > 0 ? ` · ${formatStudents(pack.instructor.students)}` : ' · No student data yet.'}
           {pack.instructor.years > 0 ? ` · ${pack.instructor.years} years experience` : ''}
-        </div>
+                        </div>
         {pack.instructor.bio && <p className="text-sm text-muted leading-relaxed mb-3">"{pack.instructor.bio}"</p>}
         <div className="flex flex-wrap gap-1.5 mb-4">
           {pack.instructor.expertise.map(x => (
             <span key={x} className="badge badge-primary">{x}</span>
-          ))}
-        </div>
+                ))}
+              </div>
         <button type="button" className="btn-primary text-sm" onClick={() => onNav('tutors')}>
           View Instructor Profile →
         </button>
@@ -626,7 +644,7 @@ export default function CourseDetail({ onNav }: Props) {
               <div className="text-amber-500 text-sm mb-2">{'★'.repeat(r.rating)}</div>
               <p className="text-sm text-muted leading-relaxed mb-3">"{r.body || '—'}"</p>
               <div className="text-sm font-semibold text-ink">{r.student?.full_name || 'Student'}</div>
-            </div>
+          </div>
           )) : course.demo ? pack.reviews.map(r => (
             <div key={r.name + r.body.slice(0, 12)} className="glass rounded-2xl p-4">
               <div className="badge badge-amber mb-2">Demo Course — Not Production Data</div>
@@ -638,6 +656,35 @@ export default function CourseDetail({ onNav }: Props) {
             <p className="text-sm text-muted">No student reviews yet.</p>
           )}
         </div>
+        {enrolled && apiCourse && !course?.demo && session && (
+          <div className="glass rounded-2xl p-4 mt-4 max-w-xl">
+            <div className="text-sm font-bold text-ink mb-2">Leave a review</div>
+            <p className="text-xs text-muted mb-3">Share feedback for this course. You can update your review anytime.</p>
+            <div className="flex items-center gap-2 mb-3">
+              <label htmlFor="course-review-rating" className="text-xs text-muted">Rating</label>
+              <select
+                id="course-review-rating"
+                value={reviewRating}
+                onChange={e => setReviewRating(Number(e.target.value))}
+                className="text-sm rounded-lg px-2 py-1"
+              >
+                {[5, 4, 3, 2, 1].map(n => (
+                  <option key={n} value={n}>{n} stars</option>
+                ))}
+              </select>
+            </div>
+            <textarea
+              value={reviewBody}
+              onChange={e => setReviewBody(e.target.value)}
+              rows={3}
+              placeholder="What did you learn? What could be improved?"
+              className="w-full text-sm rounded-xl px-3 py-2 mb-3"
+            />
+            <button type="button" className="btn-primary text-sm" disabled={reviewBusy} onClick={() => void handleSubmitReview()}>
+              {reviewBusy ? 'Saving…' : 'Submit review'}
+            </button>
+          </div>
+        )}
       </section>
 
       {pack.faqs.length > 0 && (
@@ -658,9 +705,9 @@ export default function CourseDetail({ onNav }: Props) {
               <div className="cd-acc" data-open={faqOpen === i}>
                 <div className="px-5 pb-4 text-sm text-muted leading-relaxed">{f.a}</div>
               </div>
-            </div>
-          ))}
-        </div>
+                  </div>
+                ))}
+              </div>
       </section>
       )}
 
@@ -689,7 +736,7 @@ export default function CourseDetail({ onNav }: Props) {
         ) : (
           <button type="button" className="btn-primary text-sm" disabled={busy} onClick={handleEnroll}>Enroll Now →</button>
         )}
-      </div>
+            </div>
 
       {preview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(23,32,51,0.4)' }} onClick={() => setPreview(null)} role="presentation">
@@ -701,7 +748,7 @@ export default function CourseDetail({ onNav }: Props) {
               style={{ background: `linear-gradient(135deg, ${color}, #22C7D6)` }}
             >
               ▶ Preview
-            </div>
+                    </div>
             <p className="text-sm text-muted mb-4">This is a sample preview. Full lessons open after you enroll.</p>
             <div className="flex gap-2">
               <button type="button" className="btn-glass text-sm" onClick={() => setPreview(null)}>Close</button>
@@ -727,8 +774,8 @@ export default function CourseDetail({ onNav }: Props) {
               <div className="text-xs text-subtle">Lessons · Quizzes · Projects · Final assessment</div>
             </div>
             <button type="button" className="btn-primary text-sm" onClick={() => setCertOpen(false)}>Close</button>
-          </div>
         </div>
+      </div>
       )}
     </div>
   )

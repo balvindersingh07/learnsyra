@@ -1,5 +1,6 @@
-import { peekAuthUserId, userStorageKey } from './supabase'
+import { getJobs } from './api'
 import { syncJobAppsToCareerStore } from './careerPersistence'
+import { peekAuthUserId, userStorageKey } from './supabase'
 
 export type JobRole =
   | 'Frontend Developer'
@@ -31,7 +32,7 @@ export interface CatalogJob {
   yearsLabel: string
   jobType: JobType
   postedAt: string
-  source: 'mock'
+  source: 'mock' | 'server'
   externalUrl: string | null
   description: string
   responsibilities: string[]
@@ -263,16 +264,107 @@ function moreJobs(): CatalogJob[] {
 }
 
 let CATALOG: CatalogJob[] | null = null
+let SERVER_CATALOG: CatalogJob[] | null = null
+let SERVER_CATALOG_PROMISE: Promise<CatalogJob[]> | null = null
 
-export function getJobCatalog(): CatalogJob[] {
+function inferJobRole(title: string, tags: string[]): JobRole {
+  const t = title.toLowerCase()
+  if (t.includes('react')) return 'React Developer'
+  if (t.includes('full stack')) return 'Full Stack Developer'
+  if (t.includes('data analyst') || t.includes('analytics')) return 'Data Analyst'
+  if (t.includes('business analyst')) return 'Business Analyst'
+  if (t.includes('software engineer')) return 'Software Engineer'
+  if (tags.some(tag => /react/i.test(tag))) return 'React Developer'
+  return 'Frontend Developer'
+}
+
+function inferWorkMode(location: string | null | undefined): WorkMode {
+  const l = (location || '').toLowerCase()
+  if (l.includes('hybrid')) return 'Hybrid'
+  if (l.includes('on-site') || l.includes('onsite')) return 'On-site'
+  return 'Remote'
+}
+
+export function mapServerJob(row: {
+  id: string
+  title: string
+  company: string
+  location?: string | null
+  salary?: string | null
+  logo?: string | null
+  tags?: string[] | null
+  apply_url?: string | null
+  created_at?: string
+}): CatalogJob {
+  const tags = row.tags ?? []
+  const role = inferJobRole(row.title, tags)
+  return {
+    id: row.id,
+    title: row.title,
+    company: row.company,
+    companyLogo: row.logo?.trim() || row.company.slice(0, 2).toUpperCase(),
+    industry: 'Employer',
+    companySize: '—',
+    location: row.location?.trim() || 'Remote',
+    workMode: inferWorkMode(row.location),
+    salaryMin: 6,
+    salaryMax: 12,
+    salaryCurrency: 'INR',
+    experience: 'Junior',
+    yearsLabel: '1–3 years',
+    jobType: 'Full Time',
+    postedAt: row.created_at || new Date().toISOString(),
+    source: 'server',
+    externalUrl: row.apply_url ?? null,
+    description: [row.title, row.company, row.salary ? `Compensation: ${row.salary}` : null]
+      .filter(Boolean)
+      .join(' · '),
+    responsibilities: [],
+    requirements: tags,
+    niceToHave: [],
+    benefits: [],
+    skills: tags.length ? tags : [role.split(' ')[0]],
+    role,
+    relatedCourses: [],
+    relatedProjects: [],
+  }
+}
+
+export async function loadServerJobCatalog(): Promise<CatalogJob[]> {
+  if (SERVER_CATALOG) return SERVER_CATALOG
+  if (!SERVER_CATALOG_PROMISE) {
+    SERVER_CATALOG_PROMISE = getJobs()
+      .then(rows => {
+        SERVER_CATALOG = rows.map(mapServerJob)
+        return SERVER_CATALOG
+      })
+      .catch(() => {
+        SERVER_CATALOG = []
+        return []
+      })
+  }
+  return SERVER_CATALOG_PROMISE
+}
+
+function getMockJobCatalog(): CatalogJob[] {
   if (!CATALOG) {
     CATALOG = [...SEEDS.map(job), ...moreJobs()]
   }
   return CATALOG
 }
 
+function activeJobCatalog(serverJobs?: CatalogJob[] | null): CatalogJob[] {
+  if (serverJobs?.length) return serverJobs
+  if (SERVER_CATALOG?.length) return SERVER_CATALOG
+  return getMockJobCatalog()
+}
+
+export function getJobCatalog(): CatalogJob[] {
+  return activeJobCatalog()
+}
+
 export function getJobById(id: string) {
-  return getJobCatalog().find(j => j.id === id) ?? null
+  return activeJobCatalog().find(j => j.id === id) ?? null
 }
 
 export function relativePosted(iso: string) {
@@ -342,8 +434,8 @@ export function rankJob(job: CatalogJob, profile: StudentJobProfile): RankedJob 
   return { ...job, matchScore, matchReasons, skillGaps: gaps.slice(0, 4), careerFit }
 }
 
-export function rankCatalog(profile: StudentJobProfile): RankedJob[] {
-  return getJobCatalog().map(j => rankJob(j, profile))
+export function rankCatalog(profile: StudentJobProfile, serverJobs?: CatalogJob[] | null): RankedJob[] {
+  return activeJobCatalog(serverJobs).map(j => rankJob(j, profile))
 }
 
 export function defaultExperience(readiness: number): ExperienceBand {

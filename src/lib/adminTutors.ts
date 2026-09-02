@@ -80,7 +80,6 @@ function expertiseOf(hub: TutorHub | null, listing: TutorListing | null) {
 }
 
 function toTutorRow(user: AdminUserRow, index: AdminUserIndex): AdminTutorRow {
-  const hub = loadTutorHub(user.id)
   const listing = listingFor(user.id, index.listings)
   const taught = index.courses.filter(c => c.tutor_id === user.id)
   const taughtIds = new Set(taught.map(c => c.id))
@@ -90,15 +89,15 @@ function toTutorRow(user: AdminUserRow, index: AdminUserIndex): AdminTutorRow {
   const rating = listing && listing.reviews > 0 ? listing.rating : null
   return {
     id: user.id,
-    name: hub?.identity.name || user.name,
-    headline: hub?.identity.headline || user.headline || listing?.intro || null,
-    avatarUrl: hub?.identity.avatarUrl || user.avatarUrl,
+    name: user.name,
+    headline: user.headline || listing?.intro || null,
+    avatarUrl: user.avatarUrl,
     email: user.email,
-    expertise: expertiseOf(hub, listing),
-    teachingStyles: hub?.teachingStyles ?? [],
-    sessionTypes: (hub?.sessionOffers ?? []).filter(s => s.enabled).map(s => s.label),
-    market: hub?.visibility ?? null,
-    publicId: hub?.publicId ?? listing?.id ?? null,
+    expertise: expertiseOf(null, listing),
+    teachingStyles: [],
+    sessionTypes: [],
+    market: listing ? (listing.available ? 'published' : 'paused') : null,
+    publicId: listing?.id ?? null,
     listingId: listing?.id ?? null,
     listingAvailable: listing ? listing.available : null,
     courseCount: taught.length,
@@ -108,7 +107,7 @@ function toTutorRow(user: AdminUserRow, index: AdminUserIndex): AdminTutorRow {
     rating,
     reviewCount: listing?.reviews ?? 0,
     joinedAt: user.joinedAt,
-    hasHub: Boolean(hub),
+    hasHub: Boolean(listing),
     demo: isDemoUserId(user.id),
   }
 }

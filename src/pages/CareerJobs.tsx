@@ -18,6 +18,7 @@ import {
   loadApps,
   loadFilters,
   loadTargetRole,
+  loadServerJobCatalog,
   rankCatalog,
   saveFilters,
   saveTargetRole,
@@ -29,6 +30,7 @@ import {
   type JobFilters,
   type JobSort,
   type RankedJob,
+  type CatalogJob,
 } from '../lib/jobRecommendations'
 import { careerJobPath, careerResumePath } from '../lib/paths'
 import { loadActiveId, loadDocs, loadResumeCareerOverlay } from '../lib/resumeBuilder'
@@ -73,16 +75,21 @@ export default function CareerJobs() {
   const [sort, setSort] = useState<JobSort>('Recommended')
   const [filters, setFilters] = useState<JobFilters>(() => loadFilters() ?? { ...EMPTY_FILTERS })
   const [apps, setApps] = useState<Record<string, JobApplication>>(() => loadApps())
+  const [serverJobs, setServerJobs] = useState<CatalogJob[] | null>(null)
   const { snap, resume, profile } = useMemo(() => currentProfile(targetRole), [targetRole])
-  const ranked = useMemo(() => rankCatalog(profile), [profile])
+  const ranked = useMemo(() => rankCatalog(profile, serverJobs), [profile, serverJobs])
+  const usingServerJobs = (serverJobs?.length ?? 0) > 0
 
   useEffect(() => {
     let alive = true
     setLoading(true)
     setSyncError(null)
     hydrateCareerData(session?.user.id ?? null)
-      .then(() => {
+      .then(async () => {
         if (!alive) return
+        const jobs = await loadServerJobCatalog()
+        if (!alive) return
+        setServerJobs(jobs.length ? jobs : null)
         setApps({ ...loadApps() })
         setTargetRole(loadTargetRole(getCareerSnapshot({ userId: session?.user.id ?? null }).targetRole))
       })
@@ -443,7 +450,11 @@ export default function CareerJobs() {
         </div>
       )}
 
-      <p className="text-xs text-muted mt-6">Listings are LearnSyra sample opportunities for career practice. Match scores are estimates, not hiring predictions.</p>
+      <p className="text-xs text-muted mt-6">
+        {usingServerJobs
+          ? 'Live employer listings from LearnSyra. Match scores are estimates, not hiring predictions.'
+          : 'Listings are LearnSyra sample opportunities for career practice. Match scores are estimates, not hiring predictions.'}
+      </p>
         </>
       )}
     </div>
