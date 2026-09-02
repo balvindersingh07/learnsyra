@@ -34,6 +34,23 @@ export interface AdminPaymentIndex {
   rows: AdminPaymentTx[]
   provider: string | null
   profiles: ProfileLite[]
+  tutorPayoutsAvailable: boolean
+  tutorPayouts: AdminTutorPayout[]
+}
+
+export interface AdminTutorPayout {
+  id: string
+  tutorId: string
+  tutorName: string | null
+  amountMinor: number
+  currency: string
+  status: string
+  provider: string
+  providerPayoutId: string | null
+  providerTransferId: string | null
+  requestedAt: string
+  processedAt: string | null
+  failureReason: string | null
 }
 
 export interface PaymentQuery {
@@ -64,7 +81,7 @@ export function isRefundApiAvailable() {
 }
 
 export function isPayoutInfrastructureAvailable() {
-  return false
+  return isSupabaseConfigured
 }
 
 export function isFinancialExportAvailable() {
@@ -148,15 +165,48 @@ async function probeLedger(profiles: ProfileLite[]): Promise<{ available: boolea
   return { available: true, rows }
 }
 
+async function probeTutorPayouts(profiles: ProfileLite[]): Promise<{ available: boolean; rows: AdminTutorPayout[] }> {
+  if (!isSupabaseConfigured) return { available: false, rows: [] }
+  const { data, error } = await supabase
+    .from('tutor_payouts')
+    .select('id, tutor_id, amount_minor, currency, status, provider, provider_payout_id, provider_transfer_id, requested_at, processed_at, failure_reason')
+    .order('requested_at', { ascending: false })
+    .limit(200)
+  if (error) return { available: false, rows: [] }
+  const rows = ((data as Record<string, unknown>[] | null) ?? []).map(raw => {
+    const id = asStr(raw.id)
+    const tutorId = asStr(raw.tutor_id)
+    if (!id || !tutorId) return null
+    return {
+      id,
+      tutorId,
+      tutorName: profiles.find(p => p.id === tutorId)?.full_name ?? null,
+      amountMinor: asNum(raw.amount_minor) ?? 0,
+      currency: asStr(raw.currency) || 'INR',
+      status: asStr(raw.status) || 'requested',
+      provider: asStr(raw.provider) || 'razorpay',
+      providerPayoutId: asStr(raw.provider_payout_id),
+      providerTransferId: asStr(raw.provider_transfer_id),
+      requestedAt: asStr(raw.requested_at) || '',
+      processedAt: asStr(raw.processed_at),
+      failureReason: asStr(raw.failure_reason),
+    } satisfies AdminTutorPayout
+  }).filter((r): r is AdminTutorPayout => r != null)
+  return { available: true, rows }
+}
+
 export async function loadAdminPaymentIndex(): Promise<AdminPaymentIndex> {
   const profiles = await getAllProfiles().catch(() => [] as ProfileLite[])
   const ledger = await probeLedger(profiles)
+  const payouts = await probeTutorPayouts(profiles)
   const provider = ledger.rows.find(r => r.provider)?.provider ?? null
   return {
     available: ledger.available,
     rows: ledger.rows,
     provider,
     profiles,
+    tutorPayoutsAvailable: payouts.available,
+    tutorPayouts: payouts.rows,
   }
 }
 

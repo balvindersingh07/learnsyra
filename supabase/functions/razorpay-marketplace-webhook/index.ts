@@ -7,6 +7,7 @@ import {
   verifyMarketplaceWebhookSignature,
   type MarketplacePaymentRecord,
 } from "../_shared/marketplace.ts"
+import { applyMarketplaceRefundToEarnings } from "../_shared/payouts.ts"
 
 const cors = { "Access-Control-Allow-Origin": "*" }
 
@@ -168,6 +169,16 @@ async function handleRefund(
       updated_at: now,
     })
     .eq("id", payment.id)
+
+  await applyMarketplaceRefundToEarnings(admin, {
+    id: payment.id,
+    booking_id: payment.booking_id,
+    amount_minor: payment.amount_minor,
+    refund_amount_minor: refundAmount,
+    status,
+    tutor_earning_minor: payment.tutor_earning_minor,
+    platform_fee_minor: payment.platform_fee_minor,
+  }, refundAmount, fullyRefunded)
 
   return Response.json({ received: true }, { headers: cors })
 }

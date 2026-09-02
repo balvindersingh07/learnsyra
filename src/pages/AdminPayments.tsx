@@ -17,6 +17,7 @@ import {
   uniquePaymentValues,
   type AdminPaymentIndex,
   type AdminPaymentTx,
+  type AdminTutorPayout,
   type PaymentDateFilter,
   type PaymentQuery,
   type PaymentSort,
@@ -93,6 +94,8 @@ export default function AdminPayments() {
   const hasTimestamps = rows.some(r => r.createdAt)
   const exportOk = isFinancialExportAvailable()
   const payoutOk = isPayoutInfrastructureAvailable()
+  const tutorPayouts = index?.tutorPayouts ?? []
+  const tutorPayoutsAvailable = index?.tutorPayoutsAvailable ?? false
   const statementsOk = isStatementGenerationAvailable()
 
   const filters = available && (
@@ -258,6 +261,43 @@ export default function AdminPayments() {
             {!exportOk && <p className="text-[12px] text-muted mb-3">Financial export will be available when reporting is connected.</p>}
             {!payoutOk && <p className="text-[12px] text-muted mb-3">Payout infrastructure unavailable.</p>}
             {!statementsOk && <p className="text-[12px] text-muted mb-3">Statements unavailable until financial reporting is connected.</p>}
+
+            {tutorPayoutsAvailable && (
+              <section className="glass rounded-2xl p-5 mb-4">
+                <h2 className="font-black text-ink mb-1">Tutor payout requests</h2>
+                <p className="text-[12px] text-muted mb-3">
+                  Review-only. Provider transfer execution is pending Razorpay Route integration — no admin pay button is exposed.
+                </p>
+                {tutorPayouts.length === 0 ? (
+                  <p className="text-[13px] text-muted">No tutor payout requests yet.</p>
+                ) : (
+                  <div className="ac-desktop-table ac-table overflow-x-auto">
+                    <table className="w-full text-[13px]">
+                      <thead>
+                        <tr className="text-left text-[11px] text-muted">
+                          <th className="px-3 py-2">Requested</th>
+                          <th className="px-3 py-2">Tutor</th>
+                          <th className="px-3 py-2">Amount</th>
+                          <th className="px-3 py-2">Status</th>
+                          <th className="px-3 py-2">Provider ref</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tutorPayouts.map((p: AdminTutorPayout) => (
+                          <tr key={p.id} style={{ borderTop: '1px solid rgba(99,102,241,0.08)' }}>
+                            <td className="px-3 py-2">{p.requestedAt ? formatWhen(p.requestedAt) : '—'}</td>
+                            <td className="px-3 py-2">{p.tutorName || p.tutorId}</td>
+                            <td className="px-3 py-2">{formatMoney(p.amountMinor / 100, p.currency)}</td>
+                            <td className="px-3 py-2">{p.status}</td>
+                            <td className="px-3 py-2">{p.providerTransferId || p.providerPayoutId || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            )}
 
             {pager.total === 0 && <p className="text-[13px] text-muted mb-3">No transactions yet.</p>}
             {pager.total > 0 && (

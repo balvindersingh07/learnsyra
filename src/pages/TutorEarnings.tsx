@@ -37,6 +37,20 @@ import { getTutorEarningsRecords } from '../lib/tutorSessionOffers'
 import { mergeTutorCourses } from '../lib/tutorCourses'
 import { buildTutorSessions } from '../lib/tutorSessions'
 import { buildTutorRoster } from '../lib/tutorStudents'
+import {
+  canRequestPayout,
+  formatPayoutInr,
+  getTutorPayoutAccount,
+  getTutorPayoutHistory,
+  getTutorPayoutSummary,
+  payoutAccountStatusLabel,
+  payoutRequestBlockReason,
+  payoutStatusLabel,
+  requestTutorPayout,
+  type TutorPayoutAccount,
+  type TutorPayoutRecord,
+  type TutorPayoutSummary,
+} from '../lib/tutorPayouts'
 import './tutor-earnings.css'
 
 const PRESETS: { id: DatePreset; label: string }[] = [
@@ -91,6 +105,12 @@ export default function TutorEarnings() {
   const [stmtMonth, setStmtMonth] = useState(() => new Date().getMonth())
   const [stmtYear, setStmtYear] = useState(() => new Date().getFullYear())
   const [tip, setTip] = useState<string | null>(null)
+  const [payoutSummary, setPayoutSummary] = useState<TutorPayoutSummary | null>(null)
+  const [payoutAccount, setPayoutAccount] = useState<TutorPayoutAccount | null>(null)
+  const [payoutHistory, setPayoutHistory] = useState<TutorPayoutRecord[]>([])
+  const [payoutBusy, setPayoutBusy] = useState(false)
+  const [payoutMsg, setPayoutMsg] = useState<string | null>(null)
+  const [payoutErr, setPayoutErr] = useState<string | null>(null)
 
   const load = () => {
     if (!tutorId) {
@@ -105,7 +125,10 @@ export default function TutorEarnings() {
       getTutorCourses().catch(() => []),
       getTutorLiveClasses().catch(() => []),
       getTutorEarningsRecords(tutorId).catch(() => []),
-    ]).then(([enrollments, bookings, apiCourses, liveClasses, serverEarnings]) => {
+      getTutorPayoutSummary(tutorId).catch(() => null),
+      getTutorPayoutAccount().catch(() => null),
+      getTutorPayoutHistory().catch(() => []),
+    ]).then(([enrollments, bookings, apiCourses, liveClasses, serverEarnings, summary, account, history]) => {
       const roster = buildTutorRoster({ enrollments, bookings, reviews: [], localBookings: loadTutorBookings(), apiCourses })
       const built = buildTutorSessions({
         local: loadTutorBookings(),
@@ -123,6 +146,9 @@ export default function TutorEarnings() {
       const legacy = buildTransactions({ sessions: built.sessions, local: loadTutorBookings(), api: bookings, tutorPublicId: publicId })
       const server = transactionsFromServerEarnings(serverEarnings)
       setRows(mergeEarningTransactions(legacy, server))
+      setPayoutSummary(summary)
+      setPayoutAccount(account)
+      setPayoutHistory(history)
     }).catch(() => {
       setError("We couldn't load earnings right now.")
       setRows([])
@@ -151,8 +177,8 @@ export default function TutorEarnings() {
     () => filterTransactions(rows, { preset, custom: { from, to }, tab: 'all', query: '' }),
     [rows, preset, from, to],
   )
-  const totals = earningsTotals(windowRows)
-  const lifetime = earningsTotals(rows)
+  const totals = earningsTotals(windowRows, payoutSummary)
+  const lifetime = earningsTotals(rows, payoutSummary)
   const sources = sourceBreakdown(windowRows)
   const mom = monthCompare(rows)
   const globalRange = rangeForPreset(preset, { from, to })
@@ -164,11 +190,35 @@ export default function TutorEarnings() {
   const tips = advisorLines(sessions, courseRows)
   const pages = Math.max(1, Math.ceil(filtered.length / TX_PAGE_SIZE))
   const slice = filtered.slice((page - 1) * TX_PAGE_SIZE, page * TX_PAGE_SIZE)
-  const stmt = statementForMonth(rows, stmtYear, stmtMonth)
+  const stmt = statementForMonth(
+    rows,
+    stmtYear,
+    stmtMonth,
+    payoutHistory
+      .filter(p => p.status === 'paid' && p.requested_at.startsWith(`${stmtYear}-${String(stmtMonth + 1).padStart(2, '0')}`))
+      .reduce((s, p) => s + p.amount_minor, 0),
+  )
   const feeRate = platformFeeRate()
   const refunds = windowRows.filter(r => r.refundAmount > 0 || r.sourceType === 'refund')
   const topType = [...sessions].sort((a, b) => b.gross - a.gross)[0]
-  const pendingRows = windowRows.filter(r => (r.transactionStatus === 'pending' || r.transactionStatus === 'recorded') && r.grossAmount)
+  const payoutReady = canRequestPayout(payoutSummary, payoutAccount)
+  const payoutBlock = payoutRequestBlockReason(payoutSummary, payoutAccount)
+  const nextPayout = payoutHistory.find(p => ['requested', 'approved', 'processing'].includes(p.status)) ?? null
+  const activePayoutAmount = payoutSummary?.available_minor ?? 0
+
+  const submitPayout = async () => {
+    setPayoutBusy(true)
+    setPayoutErr(null)
+    const result = await requestTutorPayout(crypto.randomUUID())
+    setPayoutBusy(false)
+    if (!result.ok) {
+      setPayoutErr(result.error || 'Could not request payout.')
+      return
+    }
+    setPayoutMsg(result.message || 'Payout request recorded.')
+    setPayoutOpen(false)
+    load()
+  }
 
   const filters = (
     <div className="flex flex-wrap gap-2">
@@ -187,7 +237,7 @@ export default function TutorEarnings() {
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" className="btn-glass text-sm lg:hidden" onClick={() => setDrawer(true)}>Filters</button>
-          <button type="button" className="btn-primary text-sm" onClick={() => navigate('/tutor/profile#pricing')}>Payout Settings</button>
+          <button type="button" className="btn-primary text-sm" onClick={() => navigate('/tutor/payout-settings')}>Payout Settings</button>
         </div>
       </div>
 
@@ -210,8 +260,8 @@ export default function TutorEarnings() {
         {[
           { label: 'Total Earnings', value: loading ? null : lifetime.lifetimeNet != null ? formatEarn(lifetime.lifetimeNet) : lifetime.hasAnyAmount ? 'Fee data unavailable' : '₹0' },
           { label: 'This Month', value: loading ? null : mom.current ? formatEarnOrZero(mom.current) : '₹0' },
-          { label: 'Pending', value: loading ? null : formatEarnOrZero(totals.pendingGross) },
-          { label: 'Available for Payout', value: loading ? null : '₹0' },
+          { label: 'Pending', value: loading ? null : payoutSummary ? formatPayoutInr(payoutSummary.pending_minor) : formatEarnOrZero(totals.pendingGross) },
+          { label: 'Available for Payout', value: loading ? null : payoutSummary ? formatPayoutInr(payoutSummary.available_minor) : (totals.available != null ? formatEarnOrZero(totals.available) : 'Not available') },
         ].map(c => (
           <div key={c.label} className="te-card glass rounded-2xl p-4">
             <div className="text-xs text-muted">{c.label}</div>
@@ -295,28 +345,55 @@ export default function TutorEarnings() {
       <div className="grid md:grid-cols-2 gap-4 mb-6">
         <section className="glass rounded-2xl p-5">
           <h2 className="text-lg font-black text-ink mb-1">Pending Earnings</h2>
-          <p className="text-xs text-muted mb-3">Earnings that are recorded but not yet available for payout.</p>
-          <div className="text-2xl font-black">{formatEarnOrZero(totals.pendingGross)}</div>
-          <p className="text-sm text-muted mt-2">Expected: Settlement date unavailable</p>
-          <p className="text-sm text-muted">From: {pendingRows.length} session{pendingRows.length === 1 ? '' : 's'}</p>
+          <p className="text-xs text-muted mb-3">Session earnings awaiting completion before they become withdrawable.</p>
+          <div className="text-2xl font-black">{payoutSummary ? formatPayoutInr(payoutSummary.pending_minor) : formatEarnOrZero(totals.pendingGross)}</div>
+          {payoutSummary && payoutSummary.held_minor > 0 && (
+            <p className="text-sm text-muted mt-2">Held (refunds/adjustments): {formatPayoutInr(payoutSummary.held_minor)}</p>
+          )}
+          <p className="text-sm text-muted mt-2">Paid sessions become available after the booking is marked completed.</p>
         </section>
         <section className="glass rounded-2xl p-5">
           <h2 className="text-lg font-black text-ink mb-1">Available for Payout</h2>
-          <div className="text-2xl font-black">₹0</div>
-          <p className="text-xs text-muted mt-2">Minimum payout threshold is not configured.</p>
-          <button type="button" className="btn-primary text-sm mt-4" onClick={() => setPayoutOpen(true)}>Request Payout</button>
+          <div className="text-2xl font-black">{payoutSummary ? formatPayoutInr(payoutSummary.available_minor) : 'Not available'}</div>
+          <p className="text-xs text-muted mt-2">
+            {payoutSummary
+              ? `Minimum payout: ${formatPayoutInr(payoutSummary.minimum_payout_minor)}. Paid out to date: ${formatPayoutInr(payoutSummary.paid_minor)}.`
+              : 'Connect Supabase to load server-calculated balances.'}
+          </p>
+          {payoutBlock && <p className="text-xs text-muted mt-2">{payoutBlock}</p>}
+          <button type="button" className="btn-primary text-sm mt-4" disabled={!payoutReady || payoutBusy} onClick={() => setPayoutOpen(true)}>Request Payout</button>
         </section>
       </div>
 
       <section className="glass rounded-2xl p-5 mb-6">
         <h2 className="text-lg font-black text-ink mb-2">Next Payout</h2>
-        <p className="text-sm text-muted">No payout scheduled</p>
-        <p className="text-xs text-muted mt-1">Status: Not Available</p>
+        {nextPayout ? (
+          <>
+            <p className="text-sm">{formatPayoutInr(nextPayout.amount_minor)} · {payoutStatusLabel(nextPayout.status)}</p>
+            <p className="text-xs text-muted mt-1">Requested {new Date(nextPayout.requested_at).toLocaleString('en-IN')}</p>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-muted">No active payout request</p>
+            <p className="text-xs text-muted mt-1">Status: {payoutReady ? 'Ready to request' : payoutBlock || 'Not available'}</p>
+          </>
+        )}
       </section>
 
       <section className="glass rounded-2xl p-5 mb-6">
         <h2 className="text-lg font-black text-ink mb-3">Payout History</h2>
-        <p className="text-sm text-muted">No payouts yet.</p>
+        {payoutHistory.length === 0 ? (
+          <p className="text-sm text-muted">No payouts yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {payoutHistory.map(p => (
+              <div key={p.id} className="glass rounded-xl p-3 text-sm flex flex-wrap justify-between gap-2">
+                <span>{new Date(p.requested_at).toLocaleDateString('en-IN')} · {formatPayoutInr(p.amount_minor)}</span>
+                <span className="text-muted">{payoutStatusLabel(p.status)}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="glass rounded-2xl p-5 mb-6">
@@ -437,9 +514,18 @@ export default function TutorEarnings() {
 
       <section className="glass rounded-2xl p-5 mb-6">
         <h2 className="text-lg font-black text-ink mb-2">Payout Account</h2>
-        <p className="text-sm">○ Not Connected</p>
-        <p className="text-xs text-muted mt-1">Bank details are not collected on this page.</p>
-        <button type="button" className="btn-glass text-sm mt-3" onClick={() => navigate('/tutor/profile#pricing')}>Manage Payout Account</button>
+        {payoutAccount ? (
+          <>
+            <p className="text-sm">{payoutAccount.status === 'verified' ? '● Verified' : '○ ' + payoutAccountStatusLabel(payoutAccount.status)}</p>
+            <p className="text-xs text-muted mt-1">{payoutAccount.account_type === 'upi' ? 'UPI' : 'Bank'} · {payoutAccount.masked_account}</p>
+          </>
+        ) : (
+          <>
+            <p className="text-sm">○ Not Connected</p>
+            <p className="text-xs text-muted mt-1">Add masked payout details to enable withdrawals after verification.</p>
+          </>
+        )}
+        <button type="button" className="btn-glass text-sm mt-3" onClick={() => navigate('/tutor/payout-settings')}>Manage Payout Account</button>
       </section>
 
       <section className="glass rounded-2xl p-5 mb-6">
@@ -465,8 +551,8 @@ export default function TutorEarnings() {
           <div className="flex justify-between"><dt className="text-muted">Platform fees</dt><dd>{formatEarn(stmt.fee)}</dd></div>
           <div className="flex justify-between"><dt className="text-muted">Refunds</dt><dd>{formatEarnOrZero(stmt.refunds)}</dd></div>
           <div className="flex justify-between"><dt className="text-muted">Net earnings</dt><dd>{formatEarn(stmt.net)}</dd></div>
-          <div className="flex justify-between"><dt className="text-muted">Payouts</dt><dd>₹0</dd></div>
-          <div className="flex justify-between"><dt className="text-muted">Closing balance</dt><dd>₹0</dd></div>
+          <div className="flex justify-between"><dt className="text-muted">Payouts</dt><dd>{formatEarnOrZero(stmt.payouts)}</dd></div>
+          <div className="flex justify-between"><dt className="text-muted">Closing balance</dt><dd>{stmt.closing == null ? 'Not available' : formatEarnOrZero(stmt.closing)}</dd></div>
         </dl>
         <button type="button" className="btn-glass text-sm mt-4" onClick={() => setTip('Statement export will be available when financial reporting is connected.')}>Export Statement</button>
       </section>
@@ -498,8 +584,30 @@ export default function TutorEarnings() {
           <button type="button" className="absolute inset-0" aria-label="Close" style={{ background: 'transparent', border: 'none' }} onClick={() => setPayoutOpen(false)} />
           <div className="glass rounded-3xl p-6 relative z-10 w-full max-w-md">
             <h2 className="text-lg font-black text-ink mb-2">Request Payout</h2>
-            <p className="text-sm text-muted mb-4">Payout processing will be available once payout infrastructure is connected. No transfer was created.</p>
-            <button type="button" className="btn-primary text-sm" onClick={() => setPayoutOpen(false)}>Close</button>
+            <p className="text-sm text-muted mb-2">
+              Withdraw {formatPayoutInr(activePayoutAmount)} from your server-calculated available balance.
+            </p>
+            <p className="text-xs text-muted mb-4">
+              Razorpay Route transfer is not executed yet. Your request will be recorded as approved and reserved until provider integration is activated.
+            </p>
+            {payoutErr && <p className="text-sm mb-3" style={{ color: '#e11d48' }}>{payoutErr}</p>}
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="btn-primary text-sm" disabled={!payoutReady || payoutBusy} onClick={submitPayout}>
+                {payoutBusy ? 'Submitting…' : 'Confirm request'}
+              </button>
+              <button type="button" className="btn-glass text-sm" onClick={() => setPayoutOpen(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {payoutMsg && (
+        <div className="te-drawer fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <button type="button" className="absolute inset-0" aria-label="Close" style={{ background: 'transparent', border: 'none' }} onClick={() => setPayoutMsg(null)} />
+          <div className="glass rounded-3xl p-6 relative z-10 w-full max-w-md">
+            <h2 className="text-lg font-black text-ink mb-2">Payout requested</h2>
+            <p className="text-sm text-muted mb-4">{payoutMsg}</p>
+            <button type="button" className="btn-primary text-sm" onClick={() => setPayoutMsg(null)}>Close</button>
           </div>
         </div>
       )}

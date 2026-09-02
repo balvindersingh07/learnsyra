@@ -429,7 +429,7 @@ export default function TutorAnalytics() {
           <dl className="grid sm:grid-cols-2 gap-2 text-sm">
             <KV k="This Month (gross recorded)" v={formatEarnOrZero(earnMonth.current)} />
             <KV k="Pending" v={formatEarnOrZero(earnAll.pendingGross)} />
-            <KV k="Available" v={formatEarnOrZero(earnAll.available)} />
+            <KV k="Available" v={earnAll.available != null ? formatEarnOrZero(earnAll.available) : 'Not available'} />
             <KV k="Course revenue" v={formatEarnOrZero(earnTypes.filter(t => t.kind === 'course').reduce((s, t) => s + t.gross, 0))} />
             <KV k="Session revenue" v={formatEarnOrZero(earnTypes.filter(t => t.kind === 'session').reduce((s, t) => s + t.gross, 0))} />
             <KV k="Project revenue" v={formatEarnOrZero(earnTypes.filter(t => t.kind === 'project').reduce((s, t) => s + t.gross, 0))} />

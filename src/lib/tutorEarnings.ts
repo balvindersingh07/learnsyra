@@ -1,5 +1,6 @@
 import type { BookingRow } from './api'
 import type { TutorEarningRow } from './tutorSessionOffers'
+import type { TutorPayoutSummary } from './tutorPayouts'
 import { userStorageKey } from './supabase'
 import type { StudioCourse } from './tutorCourses'
 import type { TutorBooking } from './tutorMarketplace'
@@ -340,7 +341,7 @@ function sumGross(rows: TutorTransaction[]) {
   return rows.reduce((s, r) => s + (r.grossAmount ?? 0), 0)
 }
 
-export function earningsTotals(rows: TutorTransaction[]) {
+export function earningsTotals(rows: TutorTransaction[], payoutSummary?: TutorPayoutSummary | null) {
   const countable = rows.filter(r => r.transactionStatus !== 'cancelled' && r.grossAmount != null)
   const pending = countable.filter(r => r.transactionStatus === 'pending' || r.transactionStatus === 'recorded')
   const completed = countable.filter(r => r.transactionStatus === 'completed')
@@ -367,8 +368,11 @@ export function earningsTotals(rows: TutorTransaction[]) {
     adjustments,
     pendingCount: pending.length,
     completedCount: completed.length,
-    available: 0,
-    paid: 0,
+    available: payoutSummary ? payoutSummary.available_minor / 100 : null,
+    paid: payoutSummary ? payoutSummary.paid_minor / 100 : null,
+    pendingPayout: payoutSummary ? payoutSummary.pending_minor / 100 : null,
+    heldPayout: payoutSummary ? payoutSummary.held_minor / 100 : null,
+    minimumPayout: payoutSummary ? payoutSummary.minimum_payout_minor / 100 : null,
   }
 }
 
@@ -502,21 +506,27 @@ export function advisorLines(sessions: SessionTypeRevenue[], courses: CourseReve
   return lines
 }
 
-export function statementForMonth(rows: TutorTransaction[], year: number, month: number) {
+export function statementForMonth(
+  rows: TutorTransaction[],
+  year: number,
+  month: number,
+  payoutPaidMinor = 0,
+) {
   const from = new Date(year, month, 1)
   const to = new Date(year, month + 1, 0, 23, 59, 59)
   const slice = rows.filter(r => inRange(r.transactionDate, from, to) && r.transactionStatus !== 'cancelled')
   const completed = slice.filter(r => r.transactionStatus === 'completed')
   const gross = sumGross(completed)
   const { fee, net } = applyFee(gross || null, platformFeeRate())
+  const payouts = payoutPaidMinor / 100
   return {
     label: from.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
     gross,
     fee,
     refunds: slice.reduce((s, r) => s + r.refundAmount, 0),
     net,
-    payouts: 0,
-    closing: 0,
+    payouts,
+    closing: net != null ? net - payouts : null,
   }
 }
 

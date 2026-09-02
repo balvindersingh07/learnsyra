@@ -27,6 +27,7 @@ import Pricing from './pages/Pricing'
 import TutorDashboard from './pages/TutorDashboard'
 import TutorAiTeaching from './pages/TutorAiTeaching'
 import TutorEarnings from './pages/TutorEarnings'
+import TutorPayoutSettings from './pages/TutorPayoutSettings'
 import TutorAnalytics from './pages/TutorAnalytics'
 import TutorSettings from './pages/TutorSettings'
 import TutorAccount from './pages/TutorAccount'
@@ -242,6 +243,7 @@ export default function App() {
           <Route path="/tutor/live" element={<TutorApp><TutorDashboard /></TutorApp>} />
           <Route path="/tutor/ai" element={<TutorApp><TutorAiTeaching /></TutorApp>} />
           <Route path="/tutor/earnings" element={<TutorApp><TutorEarnings /></TutorApp>} />
+          <Route path="/tutor/payout-settings" element={<TutorApp><TutorPayoutSettings /></TutorApp>} />
           <Route path="/tutor/analytics" element={<TutorApp><TutorAnalytics /></TutorApp>} />
           <Route path="/tutor/settings" element={<TutorApp><TutorSettings /></TutorApp>} />
           <Route path="/tutor/profile" element={<TutorApp><TutorAccount /></TutorApp>} />
