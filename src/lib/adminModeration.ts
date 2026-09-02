@@ -38,7 +38,10 @@ export async function adminSetTutorListingAvailable(
   const { error } = await supabase.from('tutor_listings').update({ available }).eq('id', found.id)
   if (error) return { ok: false, message: error.message }
   if (notify) {
-    await notifyUser(profileId, notify.title, notify.body, notify.href).catch(() => {})
+    await notifyUser(profileId, notify.title, notify.body, notify.href, {
+      emailEvent: 'moderation',
+      idempotencyKey: `moderation:tutor:${profileId}:${available ? 'approved' : 'hidden'}`,
+    }).catch(() => {})
   }
   return {
     ok: true,
@@ -87,7 +90,10 @@ export async function adminModerateCourse(
     const body = published
       ? 'An administrator approved your course for the catalog.'
       : 'An administrator removed your course from the public catalog.'
-    await notifyUser(tutorId, title, body, '/tutor/courses').catch(() => {})
+    await notifyUser(tutorId, title, body, '/tutor/courses', {
+      emailEvent: 'moderation',
+      idempotencyKey: `moderation:course:${courseId}:${published ? 'approved' : 'rejected'}`,
+    }).catch(() => {})
   }
   return {
     ok: true,
@@ -108,6 +114,9 @@ export async function adminChangeUserRole(
   }
   const { error } = await setUserRole(userId, role)
   if (error) return { ok: false, message: error }
-  await notifyUser(userId, 'Account role updated', `Your account role is now ${role}.`, '/profile').catch(() => {})
+  await notifyUser(userId, 'Account role updated', `Your account role is now ${role}.`, '/profile', {
+    emailEvent: 'account',
+    idempotencyKey: `account:role:${userId}:${role}`,
+  }).catch(() => {})
   return { ok: true, message: `Role updated to ${role}.` }
 }

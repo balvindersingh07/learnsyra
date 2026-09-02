@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "npm:@supabase/supabase-js@2"
 import { razorpayBasicAuth, verifyOrderPaymentSignature } from "../_shared/marketplace.ts"
+import { createNotificationAndEmail } from "../_shared/notificationEmail.ts"
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -179,6 +180,17 @@ Deno.serve(async req => {
         return Response.json({ error: "Could not record tutor earning" }, { status: 500, headers: cors })
       }
     }
+
+    void createNotificationAndEmail(admin, {
+      userId: booking.student_id,
+      title: "Session booking confirmed",
+      body: "Your tutor session payment was successful and your booking is confirmed.",
+      href: `/sessions/${bookingId}`,
+      eventType: "booking_confirmed",
+      idempotencyKey: `booking:confirmed:${bookingId}`,
+    }).catch(err => {
+      console.error("booking confirmation notification failed", err instanceof Error ? err.message : "unknown")
+    })
 
     return Response.json({ ok: true, bookingId }, { headers: cors })
   } catch (e) {

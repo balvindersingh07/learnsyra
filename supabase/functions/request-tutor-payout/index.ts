@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "npm:@supabase/supabase-js@2"
+import { createNotificationAndEmail, serviceAdmin } from "../_shared/notificationEmail.ts"
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -41,6 +42,19 @@ Deno.serve(async req => {
         : 500
       return Response.json({ error: humanize(message) }, { status, headers: cors })
     }
+
+    const admin = serviceAdmin()
+    void createNotificationAndEmail(admin, {
+      userId: userData.user.id,
+      title: "Payout request received",
+      body:
+        "Your payout request was recorded. Funds remain reserved until Razorpay Route transfer execution is enabled.",
+      href: "/tutor/account",
+      eventType: "payout",
+      idempotencyKey: `payout:${payoutId}`,
+    }).catch(err => {
+      console.error("payout notification failed", err instanceof Error ? err.message : "unknown")
+    })
 
     return Response.json({
       ok: true,

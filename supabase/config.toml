@@ -436,6 +436,9 @@ verify_jwt = true
 [functions.save-tutor-payout-account]
 verify_jwt = true
 
+[functions.deliver-notification-email]
+verify_jwt = true
+
 # pg-delta is the schema diff engine for db diff / db pull / db remote commit.
 # Set enabled = false to fall back to the legacy migra engine.
 [experimental.pgdelta]

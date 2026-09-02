@@ -805,13 +805,39 @@ export async function startCheckout(
   return startPlanCheckout(planId)
 }
 
-export async function notifyUser(userId: string, title: string, body?: string, href?: string) {
-  await supabase.rpc('notify_user', {
+export async function notifyUser(
+  userId: string,
+  title: string,
+  body?: string,
+  href?: string,
+  options?: {
+    emailEvent?: 'booking_status' | 'booking_confirmed' | 'project_review' | 'moderation' | 'payout' | 'account'
+    idempotencyKey?: string
+  },
+): Promise<string | null> {
+  const { data, error } = await supabase.rpc('notify_user', {
     p_user: userId,
     p_title: title,
     p_body: body ?? null,
     p_href: href ?? null,
   })
+  if (error) {
+    console.warn('notify_user failed', error.message)
+    return null
+  }
+  const notificationId = typeof data === 'string' ? data : null
+  if (notificationId && options?.emailEvent) {
+    void supabase.functions
+      .invoke('deliver-notification-email', {
+        body: {
+          notificationId,
+          eventType: options.emailEvent,
+          idempotencyKey: options.idempotencyKey ?? notificationId,
+        },
+      })
+      .catch(() => {})
+  }
+  return notificationId
 }
 
 export async function getTutorCourses(): Promise<(CourseRow & { students: number })[]> {
@@ -882,7 +908,10 @@ export async function setBookingStatus(
   if (error) return { error: error.message }
   if (studentId) {
     const label = status === 'confirmed' ? 'Session confirmed' : status === 'cancelled' ? 'Session declined' : 'Session updated'
-    await notifyUser(studentId, label, `Your booking is now ${status}.`, '/dashboard')
+    await notifyUser(studentId, label, `Your booking is now ${status}.`, '/dashboard', {
+      emailEvent: 'booking_status',
+      idempotencyKey: `booking:${id}:${status}`,
+    })
   }
   return { error: null }
 }
@@ -952,6 +981,10 @@ export async function reviewProject(
     complete ? 'Project approved' : 'Tutor left a review',
     note || 'Check your Projects page.',
     '/projects',
+    {
+      emailEvent: 'project_review',
+      idempotencyKey: `project:${id}:${complete ? 'completed' : 'reviewed'}`,
+    },
   )
   return { error: null }
 }
