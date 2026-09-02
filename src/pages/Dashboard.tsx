@@ -12,6 +12,7 @@ import {
   getMyEnrolledCourses,
   getMyStudentProjects,
   getStudentStats,
+  askAiTutor,
   type BookingRow,
   type CareerProfile,
   type CertificateRow,
@@ -81,6 +82,7 @@ function AIPanel({
 }) {
   const personalized = Boolean(topic)
   const [input, setInput] = useState('')
+  const [busy, setBusy] = useState(false)
   const [messages, setMessages] = useState([
     {
       role: 'ai',
@@ -90,20 +92,33 @@ function AIPanel({
     },
   ])
 
-  const send = (preset?: string) => {
+  const send = async (preset?: string) => {
     const q = (preset ?? input).trim()
-    if (!q) return
+    if (!q || busy) return
     setInput('')
-    setMessages(m => [
-      ...m,
-      { role: 'user', text: q },
-      {
-        role: 'ai',
-        text: personalized
-          ? `Great question about "${q}"! Let's tie it back to ${topic}. I can walk through it again, quiz you, or turn it into a mini project.`
-          : `Great question about "${q}"! Browse a course or tell me a topic, and I'll help you get started.`,
-      },
-    ])
+    const nextMessages = [...messages, { role: 'user' as const, text: q }]
+    setMessages(nextMessages)
+    setBusy(true)
+    const history = nextMessages
+      .slice(1)
+      .slice(0, -1)
+      .map(m => ({
+        role: m.role === 'user' ? ('user' as const) : ('assistant' as const),
+        content: m.text,
+      }))
+    const res = await askAiTutor(history, q)
+    setBusy(false)
+    if ('error' in res) {
+      setMessages(m => [
+        ...m,
+        {
+          role: 'ai',
+          text: `${res.error} Use Full Chat for a longer conversation or try again in a moment.`,
+        },
+      ])
+      return
+    }
+    setMessages(m => [...m, { role: 'ai', text: res.reply }])
   }
 
   const chips = personalized
@@ -206,15 +221,17 @@ function AIPanel({
           <input
             value={input}
             onChange={e => setInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && send()}
-            placeholder="Ask anything about your subject..."
+            onKeyDown={e => e.key === 'Enter' && !busy && send()}
+            placeholder={busy ? 'Thinking…' : 'Ask anything about your subject...'}
+            disabled={busy}
             className="flex-1 bg-transparent text-sm text-ink outline-none placeholder-muted"
           />
           <button
             type="button"
             aria-label="Send message"
             onClick={() => send()}
-            className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 cursor-pointer"
+            disabled={busy}
+            className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 cursor-pointer disabled:opacity-60"
             style={{ background: 'linear-gradient(135deg,#6C5CE7,#22C7D6)' }}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
@@ -288,7 +305,22 @@ function MissionTaskCard({
   )
 }
 
-const EMPTY_STATS = { streak: 0, level: 1, weekHours: 0, careerScore: 0, completedLessons: 0 }
+const EMPTY_STATS = {
+  streak: 0,
+  level: 1,
+  weekHours: 0,
+  careerScore: 0,
+  completedLessons: 0,
+  weekDays: [
+    { label: 'Monday', hours: 0 },
+    { label: 'Tuesday', hours: 0 },
+    { label: 'Wednesday', hours: 0 },
+    { label: 'Thursday', hours: 0 },
+    { label: 'Friday', hours: 0 },
+    { label: 'Saturday', hours: 0 },
+    { label: 'Sunday', hours: 0 },
+  ],
+}
 
 export default function Dashboard({ onNav }: Props) {
   const { profile, session } = useAuth()

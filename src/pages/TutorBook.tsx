@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { getTutorListings, type TutorListing } from '../lib/api'
+import { getTutorListings, bookTutor, type TutorListing } from '../lib/api'
 import { setPendingAiPrompt } from '../lib/dashboardIntel'
 import { formatInr } from '../lib/courseCatalog'
 import { startTutorSessionCheckout } from '../lib/payments/tutorSessionCheckout'
@@ -174,8 +174,26 @@ export default function TutorBook() {
       return
     }
 
+    const resolvedListing = listingId ?? (await resolveTutorListingId(tutor.id))
+    if (!resolvedListing) {
+      setError('This tutor is not available for booking yet.')
+      setBusy(false)
+      return
+    }
+
+    const { id: bookingId, error: bookErr } = await bookTutor(resolvedListing, message, {
+      scheduledAt,
+      durationMinutes: selected.minutes,
+      offerKey: selected.id,
+    })
+    if (bookErr || !bookingId) {
+      setError(bookErr || 'Could not save your booking.')
+      setBusy(false)
+      return
+    }
+
     const booking: TutorBooking = {
-      id: `sess-${Date.now()}`,
+      id: bookingId,
       tutorId: tutor.id,
       studentId: session.user.id,
       sessionType: selected.id,
@@ -186,7 +204,7 @@ export default function TutorBook() {
       price: selected.price,
       goal,
       aiBrief: brief?.text ?? null,
-      status: 'confirmed',
+      status: 'pending',
       createdAt: new Date().toISOString(),
     }
     saveTutorBookings([booking, ...loadTutorBookings()])

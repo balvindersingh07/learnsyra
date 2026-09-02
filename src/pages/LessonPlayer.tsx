@@ -19,24 +19,25 @@ import { setPendingAiPrompt } from '../lib/dashboardIntel'
 import { loadSavedLessons, saveLesson } from '../lib/aiLearning'
 import { loadLocalEnroll } from '../lib/courseDetail'
 import {
+  buildWorkspaceSnapshot,
   formatClock,
   getLessonWorkspace,
   isSectionLocked,
   loadLocalDone,
-  loadNotes,
-  loadWatched,
+  loadWorkspaceSnapshot,
   mockModulesFromPack,
   nameDemoLessons,
   resolveWorkspaceCourse,
   saveLocalDone,
-  saveNotes,
-  saveWatched,
+  saveWorkspaceSnapshot,
   sectionProgress,
+  type LessonWorkspaceSnapshot,
 } from '../lib/lessonWorkspace'
 import { lessonPath } from '../lib/paths'
 import './lesson-player.css'
 
 type Tab = 'overview' | 'notes' | 'practice' | 'quiz'
+type WorkspaceSaveStatus = 'idle' | 'loading' | 'saving' | 'saved' | 'error'
 
 function MockPlayer({
   duration,
@@ -128,6 +129,8 @@ export default function LessonPlayer() {
   const [tab, setTab] = useState<Tab>('overview')
   const [notes, setNotes] = useState('')
   const [notesSaved, setNotesSaved] = useState(false)
+  const [workspaceSaveStatus, setWorkspaceSaveStatus] = useState<WorkspaceSaveStatus>('idle')
+  const [workspaceSaveError, setWorkspaceSaveError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<number | null>(1)
   const [navOpen, setNavOpen] = useState(false)
   const [assistOpen, setAssistOpen] = useState(false)
@@ -153,6 +156,8 @@ export default function LessonPlayer() {
   const [toast, setToast] = useState<string | null>(null)
   const [showNext, setShowNext] = useState(false)
   const mockRef = useRef(false)
+  const workspaceHydratedRef = useRef(false)
+  const skipWorkspaceAutosaveRef = useRef(false)
 
   const allLessons = useMemo(() => modules.flatMap(m => m.lessons), [modules])
   const lessonIndex = Math.max(0, allLessons.findIndex(l => l.id === lesson?.id))
@@ -166,6 +171,39 @@ export default function LessonPlayer() {
   const ping = (m: string) => {
     setToast(m)
     window.setTimeout(() => setToast(null), 1600)
+  }
+
+  const workspacePatch = (): Omit<LessonWorkspaceSnapshot, 'v'> => ({
+    notes,
+    watched,
+    practiceDone,
+    practiceCode: code,
+    quizDone,
+    qScore,
+  })
+
+  const persistWorkspace = (patch?: Partial<LessonWorkspaceSnapshot>, opts?: { silent?: boolean }) => {
+    if (!id || !lesson) return { ok: false as const, error: 'Lesson not loaded' }
+    if (!opts?.silent) {
+      setWorkspaceSaveStatus('saving')
+      setWorkspaceSaveError(null)
+    }
+    const result = saveWorkspaceSnapshot(
+      id,
+      lesson.id,
+      patch ?? workspacePatch(),
+      session?.user.id,
+    )
+    if (result.ok) {
+      if (!opts?.silent) setWorkspaceSaveStatus('saved')
+      if (patch?.notes !== undefined || patch === undefined) {
+        setNotesSaved((patch?.notes ?? notes).trim().length > 0)
+      }
+    } else if (!opts?.silent) {
+      setWorkspaceSaveStatus('error')
+      setWorkspaceSaveError(result.error)
+    }
+    return result
   }
 
   const goAi = (prompt: string) => {
@@ -209,7 +247,7 @@ export default function LessonPlayer() {
         setLesson(found ?? null)
         if (!l && found && found.id !== lessonId) navigate(lessonPath(id, found.id), { replace: true })
 
-        const localDone = loadLocalDone(id)
+        const localDone = loadLocalDone(id, session?.user.id)
         let doneIds = localDone
         if (session && c) {
           const [apiDone, ens] = await Promise.all([
@@ -223,21 +261,29 @@ export default function LessonPlayer() {
         }
         setCompleted(new Set(doneIds))
         if (found) {
-          setNotes(loadNotes(id, found.id))
-          setWatched(loadWatched(id, found.id))
-          setCode('')
+          workspaceHydratedRef.current = false
+          setWorkspaceSaveStatus('loading')
+          setWorkspaceSaveError(null)
+          const snap = loadWorkspaceSnapshot(id, found.id, session?.user.id)
+          setNotes(snap.notes)
+          setNotesSaved(snap.notes.trim().length > 0)
+          setWatched(snap.watched)
+          setPracticeDone(snap.practiceDone)
+          setQuizDone(snap.quizDone)
+          setQScore(snap.qScore)
+          setCode(snap.practiceCode)
           setTab('overview')
-          setQuizDone(false)
           setQi(0)
           setPicked(null)
           setLockedQ(false)
-          setQScore(0)
-          setPracticeDone(false)
           setHint(null)
           setPracticeOut(null)
           setShowNext(false)
           setTime(0)
           setPlaying(false)
+          setWorkspaceSaveStatus('saved')
+          skipWorkspaceAutosaveRef.current = true
+          workspaceHydratedRef.current = true
         }
         setSaved(loadSavedLessons().some(s => s.title === (found?.title ?? '')))
         getStudentStats().then(s => setStreak(s.streak ?? 0)).catch(() => {})
@@ -252,20 +298,53 @@ export default function LessonPlayer() {
   }, [id, lessonId, session?.user.id, navigate])
 
   useEffect(() => {
-    if (ws) setCode(ws.practice.starter)
+    if (!ws) return
+    setCode(prev => (prev.trim() ? prev : ws.practice.starter))
   }, [ws?.practice.starter])
 
+  useEffect(() => {
+    if (!workspaceHydratedRef.current || !id || !lesson) return
+    if (skipWorkspaceAutosaveRef.current) {
+      skipWorkspaceAutosaveRef.current = false
+      return
+    }
+    setWorkspaceSaveStatus('saving')
+    setWorkspaceSaveError(null)
+    const timer = window.setTimeout(() => {
+      const result = saveWorkspaceSnapshot(
+        id,
+        lesson.id,
+        { notes, watched, practiceDone, practiceCode: code, quizDone, qScore },
+        session?.user.id,
+      )
+      if (result.ok) {
+        setNotesSaved(notes.trim().length > 0)
+        setWorkspaceSaveStatus('saved')
+      } else {
+        setWorkspaceSaveStatus('error')
+        setWorkspaceSaveError(result.error)
+      }
+    }, 700)
+    return () => window.clearTimeout(timer)
+  }, [notes, watched, practiceDone, code, quizDone, qScore, id, lesson?.id, session?.user.id])
+
   const markWatched = () => {
-    if (!id || !lesson) return
+    if (!id || !lesson || watched) return
     setWatched(true)
-    saveWatched(id, lesson.id)
+    persistWorkspace({ watched: true })
   }
 
   const saveNote = () => {
     if (!id || !lesson) return
-    saveNotes(id, lesson.id, notes)
-    setNotesSaved(notes.trim().length > 0)
-    ping('Note saved')
+    const result = persistWorkspace({ notes })
+    if (result.ok) ping('Note saved')
+    else ping(result.error)
+  }
+
+  const retryWorkspaceSave = () => {
+    const result = persistWorkspace()
+    if (result.ok) ping('Progress saved')
+    else ping(result.error)
   }
 
   const toggleSave = () => {
@@ -297,7 +376,7 @@ export default function LessonPlayer() {
     const result = await completeLesson(id, lesson.id)
     setBusy(false)
     if (result.error) {
-      saveLocalDone(id, [...completed, lesson.id])
+      saveLocalDone(id, [...completed, lesson.id], session?.user.id)
       setCompleted(prev => new Set([...prev, lesson.id]))
       ping('Saved locally')
     } else {
@@ -551,16 +630,42 @@ export default function LessonPlayer() {
 
               {tab === 'notes' && (
                 <div className="glass rounded-2xl p-5">
-                  <h3 className="text-sm font-bold text-ink mb-2">My Notes</h3>
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <h3 className="text-sm font-bold text-ink">My Notes</h3>
+                    <div className="text-xs">
+                      {workspaceSaveStatus === 'loading' && <span className="text-muted">Loading…</span>}
+                      {workspaceSaveStatus === 'saving' && <span className="text-muted">Saving…</span>}
+                      {workspaceSaveStatus === 'saved' && <span className="text-success font-semibold">Saved</span>}
+                      {workspaceSaveStatus === 'error' && (
+                        <span className="text-rose-500">
+                          Save failed{workspaceSaveError ? `: ${workspaceSaveError}` : ''}.{' '}
+                          <button
+                            type="button"
+                            className="underline font-semibold cursor-pointer"
+                            style={{ background: 'none', border: 'none', padding: 0, color: 'inherit' }}
+                            onClick={retryWorkspaceSave}
+                          >
+                            Retry
+                          </button>
+                        </span>
+                      )}
+                    </div>
+                  </div>
                   <textarea
                     value={notes}
-                    onChange={e => { setNotes(e.target.value); setNotesSaved(false) }}
+                    onChange={e => {
+                      setNotes(e.target.value)
+                      setNotesSaved(false)
+                      if (workspaceSaveStatus === 'saved') setWorkspaceSaveStatus('idle')
+                    }}
                     placeholder="Write your notes for this lesson..."
                     className="field w-full p-3 text-sm mb-3"
                     style={{ minHeight: 160 }}
                   />
                   <div className="flex flex-wrap gap-2">
-                    <button type="button" className="btn-primary text-sm" onClick={saveNote}>Save Note</button>
+                    <button type="button" className="btn-primary text-sm" onClick={saveNote} disabled={workspaceSaveStatus === 'saving'}>
+                      Save Note
+                    </button>
                     <button type="button" className="btn-glass text-sm" onClick={() => goAi(`Summarize my notes for ${lesson.title}: ${notes || '(empty)'}`)}>Ask AI to Summarize</button>
                     <button type="button" className="btn-glass text-sm" onClick={() => goAi(`Generate study notes for ${lesson.title}. Include key takeaways and common mistakes.`)}>Generate Study Notes</button>
                   </div>
@@ -580,7 +685,7 @@ export default function LessonPlayer() {
                   <div className="flex flex-wrap gap-2 mb-3">
                     <button type="button" className="btn-primary text-sm" onClick={() => setPracticeOut('document.title updated (mock run)')}>Run Code</button>
                     <button type="button" className="btn-glass text-sm" onClick={() => setHint(ws.practice.hint)}>Get AI Hint</button>
-                    <button type="button" className="btn-glass text-sm" onClick={() => { setPracticeDone(true); setPracticeOut('submitted') }}>Submit Solution</button>
+                    <button type="button" className="btn-glass text-sm" onClick={() => { setPracticeDone(true); setPracticeOut('submitted'); persistWorkspace({ practiceDone: true, practiceCode: code }) }}>Submit Solution</button>
                   </div>
                   {hint && (
                     <div className="rounded-xl px-3 py-2 text-sm text-muted mb-3" style={{ background: 'rgba(108,92,231,0.08)' }}>
@@ -649,8 +754,22 @@ export default function LessonPlayer() {
                         className="btn-primary text-sm"
                         disabled={!lockedQ}
                         onClick={() => {
-                          if (qi + 1 >= ws.quiz.length) setQuizDone(true)
-                          else { setQi(qi + 1); setPicked(null); setLockedQ(false) }
+                          if (qi + 1 >= ws.quiz.length) {
+                            const finalScore = qScore
+                            setQuizDone(true)
+                            persistWorkspace(buildWorkspaceSnapshot({
+                              notes,
+                              watched,
+                              practiceDone,
+                              practiceCode: code,
+                              quizDone: true,
+                              qScore: finalScore,
+                            }))
+                          } else {
+                            setQi(qi + 1)
+                            setPicked(null)
+                            setLockedQ(false)
+                          }
                         }}
                       >
                         {qi + 1 >= ws.quiz.length ? 'See score' : 'Next'}

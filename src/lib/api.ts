@@ -480,18 +480,47 @@ export async function getTutorListings(): Promise<TutorListing[]> {
 export async function bookTutor(
   listingId: string,
   message: string,
-): Promise<{ error: string | null }> {
+  options?: {
+    scheduledAt?: string
+    durationMinutes?: number
+    offerKey?: BookingRow['offer_key']
+  },
+): Promise<{ id: string | null; error: string | null }> {
   const uid = await currentUserId()
-  if (!uid) return { error: 'Not logged in' }
-  const { error } = await supabase.from('bookings').insert({
-    student_id: uid,
-    tutor_listing_id: listingId,
-    message: message || null,
-    status: 'pending',
-  })
-  if (error) return { error: error.message }
-  await notify('Session requested', 'Your booking is pending tutor confirmation.', '/dashboard')
-  return { error: null }
+  if (!uid) return { id: null, error: 'Not logged in' }
+  const { data, error } = await supabase
+    .from('bookings')
+    .insert({
+      student_id: uid,
+      tutor_listing_id: listingId,
+      message: message || null,
+      status: 'pending',
+      payment_status: 'not_required',
+      scheduled_at: options?.scheduledAt ?? null,
+      duration_minutes: options?.durationMinutes ?? null,
+      offer_key: options?.offerKey ?? null,
+    })
+    .select('id')
+    .single()
+  if (error) return { id: null, error: error.message }
+  await notify(
+    'Session requested',
+    'Your booking is pending tutor confirmation.',
+    data?.id ? `/sessions/${data.id}` : '/dashboard',
+  )
+  return { id: data?.id ?? null, error: null }
+}
+
+export async function getBookingById(id: string): Promise<BookingRow | null> {
+  const uid = await currentUserId()
+  if (!uid || !isSupabaseConfigured) return null
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('*, listing:tutor_listings(*)')
+    .eq('id', id)
+    .maybeSingle()
+  if (error || !data) return null
+  return data as unknown as BookingRow
 }
 
 export async function getMyBookings(): Promise<BookingRow[]> {
@@ -588,10 +617,53 @@ export async function getCertificates(): Promise<CertificateRow[]> {
   return (data as CertificateRow[]) ?? []
 }
 
+export type WeekDayHours = { label: string; hours: number }
+
+const WEEK_LABELS_FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+function startOfCalendarWeek(d: Date) {
+  const day = d.getDay()
+  const mon = new Date(d)
+  mon.setHours(0, 0, 0, 0)
+  mon.setDate(mon.getDate() - (day === 0 ? 6 : day - 1))
+  return mon
+}
+
+export function buildWeekActivityDays(
+  completions: { completed_at: string; duration_min: number }[],
+  labels: string[] = WEEK_LABELS_FULL,
+): WeekDayHours[] {
+  const mon = startOfCalendarWeek(new Date())
+  const buckets = new Array(7).fill(0)
+  for (const row of completions) {
+    const at = new Date(row.completed_at)
+    if (Number.isNaN(at.getTime())) continue
+    const dayStart = new Date(at)
+    dayStart.setHours(0, 0, 0, 0)
+    const idx = Math.floor((dayStart.getTime() - mon.getTime()) / 86400000)
+    if (idx >= 0 && idx < 7) {
+      buckets[idx] += row.duration_min / 60
+    }
+  }
+  return labels.map((label, i) => ({
+    label,
+    hours: Math.round(buckets[i] * 10) / 10,
+  }))
+}
+
+const EMPTY_WEEK_DAYS = WEEK_LABELS_FULL.map(label => ({ label, hours: 0 }))
+
 export async function getStudentStats() {
   const uid = await currentUserId()
   if (!uid || !isSupabaseConfigured) {
-    return { streak: 0, level: 1, weekHours: 0, careerScore: 0, completedLessons: 0 }
+    return {
+      streak: 0,
+      level: 1,
+      weekHours: 0,
+      careerScore: 0,
+      completedLessons: 0,
+      weekDays: EMPTY_WEEK_DAYS,
+    }
   }
   const { data: progress } = await supabase
     .from('lesson_progress')
@@ -613,17 +685,25 @@ export async function getStudentStats() {
     }
   }
 
-  const weekAgo = new Date()
-  weekAgo.setDate(weekAgo.getDate() - 7)
-  const weekLessonIds = rows.filter(r => new Date(r.completed_at) >= weekAgo).map(r => r.lesson_id)
-  let weekMin = 0
+  const weekStart = startOfCalendarWeek(new Date())
+  const weekRows = rows.filter(r => new Date(r.completed_at) >= weekStart)
+  const durationByLesson = new Map<string, number>()
+  const weekLessonIds = [...new Set(weekRows.map(r => r.lesson_id))]
   if (weekLessonIds.length) {
     const { data: lessons } = await supabase
       .from('course_lessons')
-      .select('duration_min')
+      .select('id, duration_min')
       .in('id', weekLessonIds)
-    weekMin = ((lessons as { duration_min: number }[]) ?? []).reduce((s, l) => s + l.duration_min, 0)
+    for (const lesson of (lessons as { id: string; duration_min: number }[]) ?? []) {
+      durationByLesson.set(lesson.id, lesson.duration_min)
+    }
   }
+  const weekCompletions = weekRows.map(r => ({
+    completed_at: r.completed_at,
+    duration_min: durationByLesson.get(r.lesson_id) ?? 15,
+  }))
+  const weekDays = buildWeekActivityDays(weekCompletions)
+  const weekHours = Math.round(weekDays.reduce((sum, day) => sum + day.hours, 0) * 10) / 10
 
   const career = await getCareerProfile()
   const hasCareerSignal = Boolean(
@@ -632,9 +712,10 @@ export async function getStudentStats() {
   return {
     streak,
     level: Math.floor(rows.length / 4) + 1,
-    weekHours: Math.round((weekMin / 60) * 10) / 10,
+    weekHours,
     careerScore: hasCareerSignal ? career?.readiness_score ?? 0 : 0,
     completedLessons: rows.length,
+    weekDays,
   }
 }
 

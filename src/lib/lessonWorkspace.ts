@@ -41,45 +41,191 @@ export interface LessonWorkspace {
   nextSkills: string[]
 }
 
-export function loadNotes(courseId: string, lessonId: string) {
-  const key = userStorageKey('learnsyra_notes', undefined, `${courseId}_${lessonId}`)
-  if (!key) return ''
-  return localStorage.getItem(key) ?? ''
+export function loadNotes(courseId: string, lessonId: string, userId?: string | null) {
+  return loadWorkspaceSnapshot(courseId, lessonId, userId).notes
 }
 
-export function saveNotes(courseId: string, lessonId: string, text: string) {
-  const key = userStorageKey('learnsyra_notes', undefined, `${courseId}_${lessonId}`)
-  if (!key) return
-  localStorage.setItem(key, text)
+export function saveNotes(courseId: string, lessonId: string, text: string, userId?: string | null) {
+  return saveWorkspaceSnapshot(courseId, lessonId, { notes: text }, userId)
 }
 
-export function loadLocalDone(courseId: string): string[] {
-  const key = userStorageKey('learnsyra_done', undefined, courseId)
+export function loadLocalDone(courseId: string, userId?: string | null): string[] {
+  const key = userStorageKey('learnsyra_done', userId, courseId)
   if (!key) return []
   try {
     const raw = localStorage.getItem(key)
-    return raw ? (JSON.parse(raw) as string[]) : []
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) {
+      localStorage.removeItem(key)
+      return []
+    }
+    return parsed.filter((id): id is string => typeof id === 'string' && id.length > 0)
   } catch {
+    try {
+      localStorage.removeItem(key)
+    } catch {
+      /* ignore */
+    }
     return []
   }
 }
 
-export function saveLocalDone(courseId: string, ids: string[]) {
-  const key = userStorageKey('learnsyra_done', undefined, courseId)
-  if (!key) return
-  localStorage.setItem(key, JSON.stringify(ids))
+export function saveLocalDone(courseId: string, ids: string[], userId?: string | null) {
+  const key = userStorageKey('learnsyra_done', userId, courseId)
+  if (!key) return { ok: false as const, error: 'Not signed in' }
+  try {
+    const clean = [...new Set(ids.filter(id => typeof id === 'string' && id.length > 0))]
+    localStorage.setItem(key, JSON.stringify(clean))
+    return { ok: true as const }
+  } catch (e) {
+    return { ok: false as const, error: e instanceof Error ? e.message : 'Save failed' }
+  }
 }
 
-export function loadWatched(courseId: string, lessonId: string) {
-  const key = userStorageKey('learnsyra_watch', undefined, `${courseId}_${lessonId}`)
-  if (!key) return false
-  return localStorage.getItem(key) === '1'
+export function loadWatched(courseId: string, lessonId: string, userId?: string | null) {
+  return loadWorkspaceSnapshot(courseId, lessonId, userId).watched
 }
 
-export function saveWatched(courseId: string, lessonId: string) {
-  const key = userStorageKey('learnsyra_watch', undefined, `${courseId}_${lessonId}`)
-  if (!key) return
-  localStorage.setItem(key, '1')
+export function saveWatched(courseId: string, lessonId: string, userId?: string | null) {
+  return saveWorkspaceSnapshot(courseId, lessonId, { watched: true }, userId)
+}
+
+export interface LessonWorkspaceSnapshot {
+  v: 1
+  notes: string
+  watched: boolean
+  practiceDone: boolean
+  practiceCode: string
+  quizDone: boolean
+  qScore: number
+}
+
+export type WorkspaceSaveResult = { ok: true } | { ok: false; error: string }
+
+function emptyWorkspaceSnapshot(): LessonWorkspaceSnapshot {
+  return {
+    v: 1,
+    notes: '',
+    watched: false,
+    practiceDone: false,
+    practiceCode: '',
+    quizDone: false,
+    qScore: 0,
+  }
+}
+
+function normalizeWorkspaceSnapshot(input: Partial<LessonWorkspaceSnapshot>): LessonWorkspaceSnapshot {
+  return {
+    v: 1,
+    notes: typeof input.notes === 'string' ? input.notes : '',
+    watched: Boolean(input.watched),
+    practiceDone: Boolean(input.practiceDone),
+    practiceCode: typeof input.practiceCode === 'string' ? input.practiceCode : '',
+    quizDone: Boolean(input.quizDone),
+    qScore:
+      typeof input.qScore === 'number' && Number.isFinite(input.qScore)
+        ? Math.max(0, Math.floor(input.qScore))
+        : 0,
+  }
+}
+
+function workspaceStorageKey(courseId: string, lessonId: string, userId?: string | null) {
+  return userStorageKey('learnsyra_workspace', userId, `${courseId}_${lessonId}`)
+}
+
+function legacyNotesKey(courseId: string, lessonId: string, userId?: string | null) {
+  return userStorageKey('learnsyra_notes', userId, `${courseId}_${lessonId}`)
+}
+
+function legacyWatchKey(courseId: string, lessonId: string, userId?: string | null) {
+  return userStorageKey('learnsyra_watch', userId, `${courseId}_${lessonId}`)
+}
+
+function parseWorkspaceSnapshot(raw: string | null): LessonWorkspaceSnapshot | null {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as Partial<LessonWorkspaceSnapshot>
+    if (parsed.v !== 1) return null
+    return normalizeWorkspaceSnapshot(parsed)
+  } catch {
+    return null
+  }
+}
+
+function syncLegacyWorkspaceKeys(
+  courseId: string,
+  lessonId: string,
+  snapshot: LessonWorkspaceSnapshot,
+  userId?: string | null,
+) {
+  const notesKey = legacyNotesKey(courseId, lessonId, userId)
+  const watchKey = legacyWatchKey(courseId, lessonId, userId)
+  if (notesKey) localStorage.setItem(notesKey, snapshot.notes)
+  if (watchKey) localStorage.setItem(watchKey, snapshot.watched ? '1' : '0')
+}
+
+export function loadWorkspaceSnapshot(
+  courseId: string,
+  lessonId: string,
+  userId?: string | null,
+): LessonWorkspaceSnapshot {
+  const key = workspaceStorageKey(courseId, lessonId, userId)
+  const empty = emptyWorkspaceSnapshot()
+  if (!key) return empty
+
+  const unified = parseWorkspaceSnapshot(localStorage.getItem(key))
+  if (unified) return unified
+  if (localStorage.getItem(key)) {
+    try {
+      localStorage.removeItem(key)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const notesKey = legacyNotesKey(courseId, lessonId, userId)
+  const watchKey = legacyWatchKey(courseId, lessonId, userId)
+  const legacyNotes = notesKey ? localStorage.getItem(notesKey) ?? '' : ''
+  const legacyWatched = watchKey ? localStorage.getItem(watchKey) === '1' : false
+  if (!legacyNotes && !legacyWatched) return empty
+
+  const migrated = normalizeWorkspaceSnapshot({
+    notes: legacyNotes,
+    watched: legacyWatched,
+  })
+  saveWorkspaceSnapshot(courseId, lessonId, migrated, userId)
+  return migrated
+}
+
+export function saveWorkspaceSnapshot(
+  courseId: string,
+  lessonId: string,
+  patch: Partial<LessonWorkspaceSnapshot>,
+  userId?: string | null,
+): WorkspaceSaveResult {
+  const key = workspaceStorageKey(courseId, lessonId, userId)
+  if (!key) return { ok: false, error: 'Not signed in' }
+  try {
+    const current = loadWorkspaceSnapshot(courseId, lessonId, userId)
+    const next = normalizeWorkspaceSnapshot({ ...current, ...patch, v: 1 })
+    localStorage.setItem(key, JSON.stringify(next))
+    syncLegacyWorkspaceKeys(courseId, lessonId, next, userId)
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Save failed' }
+  }
+}
+
+export function buildWorkspaceSnapshot(input: {
+  notes: string
+  watched: boolean
+  practiceDone: boolean
+  practiceCode: string
+  quizDone: boolean
+  qScore: number
+}): LessonWorkspaceSnapshot {
+  return normalizeWorkspaceSnapshot({ ...input, v: 1 })
 }
 
 const USEEFFECT: LessonWorkspace = {

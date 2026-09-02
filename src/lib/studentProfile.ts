@@ -212,7 +212,7 @@ export function buildStudentHub(input: {
   apiProjects: ProjectRow[]
   studentProjects: StudentProjectRow[]
   certs: CertificateRow[]
-  stats: { streak: number; weekHours: number; completedLessons: number }
+  stats: { streak: number; weekHours: number; completedLessons: number; weekDays?: { label: string; hours: number }[] }
   careerProfile?: CareerProfile | null
   bookings?: BookingRow[]
 }): StudentHub {
@@ -356,7 +356,7 @@ export function buildStudentHub(input: {
     readiness: career.readinessScore,
   })
 
-  const week = weekActivity(input.stats.weekHours)
+  const week = weekActivity(input.stats.weekHours, input.stats.weekDays)
   const bestStreak = Math.max(extras.bestStreak, input.stats.streak)
   const recentBook = (input.bookings ?? []).slice().sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))[0]
   const tutor = recentBook
@@ -508,8 +508,15 @@ function currentLearning(
   }
 }
 
-function weekActivity(realHours: number) {
+function weekActivity(realHours: number, weekDays?: { label: string; hours: number }[]) {
   const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+  if (weekDays?.length === 7) {
+    return {
+      sample: false,
+      weekHours: realHours,
+      days: weekDays.map((day, i) => ({ label: labels[i] ?? day.label.slice(0, 3), hours: day.hours })),
+    }
+  }
   return {
     sample: false,
     weekHours: realHours,

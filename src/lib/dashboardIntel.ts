@@ -158,7 +158,14 @@ export function formatSessionWhen(iso?: string) {
 export function buildDashboardIntel(input: {
   firstName: string
   enrolled: { title: string; category: string | null; progress: number }[]
-  stats: { streak: number; level: number; weekHours: number; careerScore: number; completedLessons: number }
+  stats: {
+    streak: number
+    level: number
+    weekHours: number
+    careerScore: number
+    completedLessons: number
+    weekDays?: { label: string; hours: number }[]
+  }
   career: CareerProfile | null
   submittedCount: number
 }) {
@@ -218,7 +225,7 @@ export function buildDashboardIntel(input: {
   const activity: WeeklyActivity = {
     weekHours: stats.weekHours,
     deltaPct: 0,
-    days: labels.map(label => ({ label, hours: 0 })),
+    days: stats.weekDays?.length === 7 ? stats.weekDays : labels.map(label => ({ label, hours: 0 })),
   }
 
   const xp = stats.completedLessons * 25 + submittedCount * 50
