@@ -1,13 +1,6 @@
 import type { ChangeEvent } from 'react'
 import { PROFILE_EXPERIENCE, PROFILE_MODES, PROFILE_ROLES, type ProfileExtras } from '../../lib/studentProfile'
 
-const AVATARS = [
-  'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=96&h=96&fit=crop&auto=format',
-  'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=96&h=96&fit=crop&auto=format',
-  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=96&h=96&fit=crop&auto=format',
-  'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=96&h=96&fit=crop&auto=format',
-]
-
 const AVATAR_ACCEPT = 'image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp'
 
 function toggle(list: string[], item: string) {
@@ -25,7 +18,6 @@ export default function ProfileEditDialog({
   avatarError,
   onName,
   onHeadline,
-  onAvatar,
   onAvatarUpload,
   onRemoveAvatar,
   onExtras,
@@ -42,16 +34,12 @@ export default function ProfileEditDialog({
   avatarError?: string | null
   onName: (v: string) => void
   onHeadline: (v: string) => void
-  onAvatar: (v: string) => void
   onAvatarUpload: (e: ChangeEvent<HTMLInputElement>) => void
   onRemoveAvatar?: () => void
   onExtras: (v: ProfileExtras) => void
   onClose: () => void
   onSave: () => void
 }) {
-  const customAvatar = avatar && !AVATARS.includes(avatar)
-  const uploadSelected = customAvatar
-
   return (
     <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-4" style={{ background: 'rgba(23,32,51,0.45)' }} onClick={onClose}>
       <div
@@ -87,30 +75,16 @@ export default function ProfileEditDialog({
 
         <p className="text-xs font-semibold text-muted mb-2">Avatar</p>
         <div className="flex gap-2 mb-2 flex-wrap">
-          {AVATARS.map(url => (
-            <button
-              key={url}
-              type="button"
-              className="w-12 h-12 rounded-xl overflow-hidden"
-              style={{ border: avatar === url ? '2px solid #6C5CE7' : '2px solid transparent' }}
-              onClick={() => onAvatar(url)}
-              aria-label="Choose avatar"
-              aria-pressed={avatar === url}
-              disabled={avatarBusy}
-            >
-              <img src={url} alt="" className="w-full h-full object-cover" />
-            </button>
-          ))}
           <label
             className="w-12 h-12 rounded-xl overflow-hidden flex flex-col items-center justify-center cursor-pointer"
             style={{
-              border: uploadSelected ? '2px solid #6C5CE7' : '2px solid rgba(99,102,241,0.18)',
-              background: uploadSelected ? 'transparent' : 'rgba(108,92,231,0.06)',
+              border: avatar ? '2px solid #6C5CE7' : '2px solid rgba(99,102,241,0.18)',
+              background: avatar ? 'transparent' : 'rgba(108,92,231,0.06)',
               opacity: avatarBusy ? 0.7 : 1,
             }}
             aria-label="Upload photo"
           >
-            {customAvatar ? (
+            {avatar ? (
               <img src={avatar} alt="" className="w-full h-full object-cover" />
             ) : (
               <>

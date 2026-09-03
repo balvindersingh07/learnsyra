@@ -847,7 +847,6 @@ export default function Profile() {
           avatarError={editAvatarErr}
           onName={setEditName}
           onHeadline={setEditHeadline}
-          onAvatar={setEditAvatar}
           onAvatarUpload={onEditDialogAvatarUpload}
           onRemoveAvatar={() => void onEditDialogRemoveAvatar()}
           onExtras={setEditExtras}
