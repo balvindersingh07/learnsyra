@@ -1,4 +1,14 @@
+import type { ChangeEvent } from 'react'
 import { PROFILE_EXPERIENCE, PROFILE_MODES, PROFILE_ROLES, type ProfileExtras } from '../../lib/studentProfile'
+
+const AVATARS = [
+  'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=96&h=96&fit=crop&auto=format',
+  'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=96&h=96&fit=crop&auto=format',
+  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=96&h=96&fit=crop&auto=format',
+  'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=96&h=96&fit=crop&auto=format',
+]
+
+const AVATAR_ACCEPT = 'image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp'
 
 function toggle(list: string[], item: string) {
   return list.includes(item) ? list.filter(x => x !== item) : [...list, item]
@@ -7,26 +17,41 @@ function toggle(list: string[], item: string) {
 export default function ProfileEditDialog({
   name,
   headline,
+  avatar,
   email,
   extras,
   busy,
+  avatarBusy,
+  avatarError,
   onName,
   onHeadline,
+  onAvatar,
+  onAvatarUpload,
+  onRemoveAvatar,
   onExtras,
   onClose,
   onSave,
 }: {
   name: string
   headline: string
+  avatar: string
   email: string
   extras: ProfileExtras
   busy: boolean
+  avatarBusy?: boolean
+  avatarError?: string | null
   onName: (v: string) => void
   onHeadline: (v: string) => void
+  onAvatar: (v: string) => void
+  onAvatarUpload: (e: ChangeEvent<HTMLInputElement>) => void
+  onRemoveAvatar?: () => void
   onExtras: (v: ProfileExtras) => void
   onClose: () => void
   onSave: () => void
 }) {
+  const customAvatar = avatar && !AVATARS.includes(avatar)
+  const uploadSelected = customAvatar
+
   return (
     <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-4" style={{ background: 'rgba(23,32,51,0.45)' }} onClick={onClose}>
       <div
@@ -60,7 +85,69 @@ export default function ProfileEditDialog({
           <input className="field w-full mt-1 px-3 py-2 text-sm" value={extras.location} onChange={e => onExtras({ ...extras, location: e.target.value })} placeholder="City, country" />
         </label>
 
-        <p className="text-xs text-muted mb-5">Update your profile photo from the avatar on your profile page.</p>
+        <p className="text-xs font-semibold text-muted mb-2">Avatar</p>
+        <div className="flex gap-2 mb-2 flex-wrap">
+          {AVATARS.map(url => (
+            <button
+              key={url}
+              type="button"
+              className="w-12 h-12 rounded-xl overflow-hidden"
+              style={{ border: avatar === url ? '2px solid #6C5CE7' : '2px solid transparent' }}
+              onClick={() => onAvatar(url)}
+              aria-label="Choose avatar"
+              aria-pressed={avatar === url}
+              disabled={avatarBusy}
+            >
+              <img src={url} alt="" className="w-full h-full object-cover" />
+            </button>
+          ))}
+          <label
+            className="w-12 h-12 rounded-xl overflow-hidden flex flex-col items-center justify-center cursor-pointer"
+            style={{
+              border: uploadSelected ? '2px solid #6C5CE7' : '2px solid rgba(99,102,241,0.18)',
+              background: uploadSelected ? 'transparent' : 'rgba(108,92,231,0.06)',
+              opacity: avatarBusy ? 0.7 : 1,
+            }}
+            aria-label="Upload photo"
+          >
+            {customAvatar ? (
+              <img src={avatar} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6C5CE7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                  <circle cx="12" cy="13" r="4" />
+                </svg>
+                <span className="text-[9px] font-semibold text-primary leading-none mt-0.5">Upload</span>
+              </>
+            )}
+            <input
+              type="file"
+              accept={AVATAR_ACCEPT}
+              className="sr-only"
+              onChange={onAvatarUpload}
+              disabled={avatarBusy || busy}
+            />
+          </label>
+        </div>
+        {avatarBusy && <p className="text-xs text-muted mb-2">Uploading photo…</p>}
+        {avatarError && (
+          <p className="text-xs mb-2" style={{ color: '#E11D48' }} role="alert">
+            {avatarError}
+          </p>
+        )}
+        {avatar && onRemoveAvatar && (
+          <button
+            type="button"
+            className="text-xs font-semibold mb-5 cursor-pointer"
+            style={{ background: 'none', border: 'none', padding: 0, color: '#667085' }}
+            disabled={avatarBusy || busy}
+            onClick={onRemoveAvatar}
+          >
+            Remove photo
+          </button>
+        )}
+        {!avatar && <div className="mb-5" />}
 
         <h3 className="text-xs font-bold uppercase tracking-wide text-muted mb-2">Career</h3>
         <fieldset className="mb-3">
@@ -129,7 +216,7 @@ export default function ProfileEditDialog({
         </label>
 
         <div className="flex flex-wrap gap-2">
-          <button type="button" className="btn-primary text-sm" disabled={busy} onClick={onSave}>{busy ? 'Saving…' : 'Save profile'}</button>
+          <button type="button" className="btn-primary text-sm" disabled={busy || avatarBusy} onClick={onSave}>{busy ? 'Saving…' : 'Save profile'}</button>
           <button type="button" className="btn-glass text-sm" onClick={onClose}>Cancel</button>
         </div>
       </div>

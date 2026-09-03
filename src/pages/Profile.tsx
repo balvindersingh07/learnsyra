@@ -68,7 +68,10 @@ export default function Profile() {
   const [savedTab, setSavedTab] = useState<SavedTab>('Courses')
   const [editName, setEditName] = useState(profile?.full_name ?? '')
   const [editHeadline, setEditHeadline] = useState(profile?.headline ?? '')
+  const [editAvatar, setEditAvatar] = useState(profile?.avatar_url ?? '')
   const [editExtras, setEditExtras] = useState(extras)
+  const [editAvatarBusy, setEditAvatarBusy] = useState(false)
+  const [editAvatarErr, setEditAvatarErr] = useState<string | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [avatarBusy, setAvatarBusy] = useState(false)
   const avatarInputRef = useRef<HTMLInputElement>(null)
@@ -85,6 +88,7 @@ export default function Profile() {
   useEffect(() => {
     setEditName(profile?.full_name ?? '')
     setEditHeadline(profile?.headline ?? '')
+    setEditAvatar(profile?.avatar_url ?? '')
   }, [profile])
 
   useEffect(() => {
@@ -176,6 +180,7 @@ export default function Profile() {
     const { error } = await updateProfile({
       full_name: editName.trim(),
       headline: editHeadline.trim() || null,
+      avatar_url: editAvatar || null,
     })
     persistExtras(editExtras)
     if (editExtras.targetRole) {
@@ -208,15 +213,71 @@ export default function Profile() {
     }
   }
 
+  const openEditDialog = () => {
+    setEditName(profile?.full_name ?? '')
+    setEditHeadline(profile?.headline ?? '')
+    setEditAvatar(profile?.avatar_url ?? '')
+    setEditExtras(hub.extras)
+    setEditAvatarErr(null)
+    setEditOpen(true)
+  }
+
   const completeNext = () => {
     if (!hub.nextStep || hub.nextStep.id === 'basic' || hub.nextStep.id === 'portfolio') {
-      setEditName(profile?.full_name ?? '')
-      setEditHeadline(profile?.headline ?? '')
-      setEditExtras(hub.extras)
-      setEditOpen(true)
+      openEditDialog()
       return
     }
     navigate(hub.nextStep.href)
+  }
+
+  const onEditDialogAvatarUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !uid) return
+    const validation = validateAvatarFile(file)
+    if (validation) {
+      setEditAvatarErr(validation)
+      return
+    }
+
+    setEditAvatarBusy(true)
+    setEditAvatarErr(null)
+    const previousAvatar = editAvatar || profile?.avatar_url || ''
+    const localPreview = URL.createObjectURL(file)
+    setEditAvatar(localPreview)
+
+    const { url, error: uploadError } = await uploadProfileAvatar(uid, file)
+    URL.revokeObjectURL(localPreview)
+
+    if (uploadError || !url) {
+      setEditAvatar(previousAvatar)
+      setEditAvatarBusy(false)
+      setEditAvatarErr(uploadError || 'Could not upload photo.')
+      return
+    }
+
+    setEditAvatar(url)
+    const { error: profileError } = await updateProfile({ avatar_url: url })
+    setEditAvatarBusy(false)
+    if (profileError) setEditAvatarErr(profileError)
+  }
+
+  const onEditDialogRemoveAvatar = async () => {
+    if (!uid) return
+    setEditAvatarBusy(true)
+    setEditAvatarErr(null)
+
+    const { error: removeError } = await removeProfileAvatar(uid)
+    if (removeError) {
+      setEditAvatarBusy(false)
+      setEditAvatarErr(removeError)
+      return
+    }
+
+    const { error: profileError } = await updateProfile({ avatar_url: null })
+    setEditAvatar('')
+    setEditAvatarBusy(false)
+    if (profileError) setEditAvatarErr(profileError)
   }
 
   const validateAvatarFile = (file: File): string | null => {
@@ -363,7 +424,7 @@ export default function Profile() {
               <div className="progress-fill" style={{ width: `${hub.completion}%` }} />
             </div>
             <div className="flex flex-wrap gap-2 sm:justify-end">
-              <button type="button" className="btn-glass text-sm" onClick={() => { setEditName(profile?.full_name ?? ''); setEditHeadline(profile?.headline ?? ''); setEditExtras(hub.extras); setEditOpen(true) }}>Edit Profile</button>
+              <button type="button" className="btn-glass text-sm" onClick={openEditDialog}>Edit Profile</button>
               <button type="button" className="btn-primary text-sm" onClick={() => navigate('/career')}>View Career →</button>
               <button type="button" className="btn-glass text-sm" onClick={() => setPreviewOpen(true)}>Preview Profile</button>
             </div>
@@ -778,11 +839,17 @@ export default function Profile() {
         <ProfileEditDialog
           name={editName}
           headline={editHeadline}
+          avatar={editAvatar}
           email={session?.user.email ?? ''}
           extras={editExtras}
           busy={busy}
+          avatarBusy={editAvatarBusy}
+          avatarError={editAvatarErr}
           onName={setEditName}
           onHeadline={setEditHeadline}
+          onAvatar={setEditAvatar}
+          onAvatarUpload={onEditDialogAvatarUpload}
+          onRemoveAvatar={() => void onEditDialogRemoveAvatar()}
           onExtras={setEditExtras}
           onClose={() => setEditOpen(false)}
           onSave={saveEdits}
