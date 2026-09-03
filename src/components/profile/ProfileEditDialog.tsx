@@ -1,12 +1,5 @@
 import { PROFILE_EXPERIENCE, PROFILE_MODES, PROFILE_ROLES, type ProfileExtras } from '../../lib/studentProfile'
 
-const AVATARS = [
-  'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=96&h=96&fit=crop&auto=format',
-  'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=96&h=96&fit=crop&auto=format',
-  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=96&h=96&fit=crop&auto=format',
-  'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=96&h=96&fit=crop&auto=format',
-]
-
 function toggle(list: string[], item: string) {
   return list.includes(item) ? list.filter(x => x !== item) : [...list, item]
 }
@@ -14,26 +7,22 @@ function toggle(list: string[], item: string) {
 export default function ProfileEditDialog({
   name,
   headline,
-  avatar,
   email,
   extras,
   busy,
   onName,
   onHeadline,
-  onAvatar,
   onExtras,
   onClose,
   onSave,
 }: {
   name: string
   headline: string
-  avatar: string
   email: string
   extras: ProfileExtras
   busy: boolean
   onName: (v: string) => void
   onHeadline: (v: string) => void
-  onAvatar: (v: string) => void
   onExtras: (v: ProfileExtras) => void
   onClose: () => void
   onSave: () => void
@@ -71,22 +60,7 @@ export default function ProfileEditDialog({
           <input className="field w-full mt-1 px-3 py-2 text-sm" value={extras.location} onChange={e => onExtras({ ...extras, location: e.target.value })} placeholder="City, country" />
         </label>
 
-        <p className="text-xs font-semibold text-muted mb-2">Avatar</p>
-        <div className="flex gap-2 mb-5 flex-wrap">
-          {AVATARS.map(url => (
-            <button
-              key={url}
-              type="button"
-              className="w-12 h-12 rounded-xl overflow-hidden"
-              style={{ border: avatar === url ? '2px solid #6C5CE7' : '2px solid transparent' }}
-              onClick={() => onAvatar(url)}
-              aria-label="Choose avatar"
-              aria-pressed={avatar === url}
-            >
-              <img src={url} alt="" className="w-full h-full object-cover" />
-            </button>
-          ))}
-        </div>
+        <p className="text-xs text-muted mb-5">Update your profile photo from the avatar on your profile page.</p>
 
         <h3 className="text-xs font-bold uppercase tracking-wide text-muted mb-2">Career</h3>
         <fieldset className="mb-3">

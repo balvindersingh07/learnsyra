@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ProfileEditDialog from '../components/profile/ProfileEditDialog'
 import ProfilePreviewDialog from '../components/profile/ProfilePreviewDialog'
@@ -37,10 +37,13 @@ import {
   type ProfileVisibility,
   type SavedTab,
 } from '../lib/studentProfile'
+import { removeProfileAvatar, uploadProfileAvatar } from '../lib/tutorAvatarUpload'
 import './career-center.css'
 import './student-profile.css'
 
 const SAVED_TABS: SavedTab[] = ['Courses', 'Projects', 'Lessons', 'Jobs', 'Tutors']
+const AVATAR_ACCEPT = 'image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp'
+const AVATAR_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
 const VIS: { id: ProfileVisibility; label: string; note: string }[] = [
   { id: 'private', label: 'Private', note: 'Only you can see this profile.' },
   { id: 'recruiter', label: 'Recruiter Ready', note: 'Professional summary only — no private contact by default.' },
@@ -65,8 +68,10 @@ export default function Profile() {
   const [savedTab, setSavedTab] = useState<SavedTab>('Courses')
   const [editName, setEditName] = useState(profile?.full_name ?? '')
   const [editHeadline, setEditHeadline] = useState(profile?.headline ?? '')
-  const [editAvatar, setEditAvatar] = useState(profile?.avatar_url ?? '')
   const [editExtras, setEditExtras] = useState(extras)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [avatarBusy, setAvatarBusy] = useState(false)
+  const avatarInputRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -80,7 +85,6 @@ export default function Profile() {
   useEffect(() => {
     setEditName(profile?.full_name ?? '')
     setEditHeadline(profile?.headline ?? '')
-    setEditAvatar(profile?.avatar_url ?? '')
   }, [profile])
 
   useEffect(() => {
@@ -172,7 +176,6 @@ export default function Profile() {
     const { error } = await updateProfile({
       full_name: editName.trim(),
       headline: editHeadline.trim() || null,
-      avatar_url: editAvatar || null,
     })
     persistExtras(editExtras)
     if (editExtras.targetRole) {
@@ -209,13 +212,81 @@ export default function Profile() {
     if (!hub.nextStep || hub.nextStep.id === 'basic' || hub.nextStep.id === 'portfolio') {
       setEditName(profile?.full_name ?? '')
       setEditHeadline(profile?.headline ?? '')
-      setEditAvatar(profile?.avatar_url ?? '')
       setEditExtras(hub.extras)
       setEditOpen(true)
       return
     }
     navigate(hub.nextStep.href)
   }
+
+  const validateAvatarFile = (file: File): string | null => {
+    const ext = file.name.split('.').pop()?.toLowerCase()
+    const extOk = ext === 'jpg' || ext === 'jpeg' || ext === 'png' || ext === 'webp'
+    if (!AVATAR_TYPES.has(file.type) && !extOk) {
+      return 'Please choose a JPG, PNG, or WebP image under 5 MB.'
+    }
+    if (file.size > 5 * 1024 * 1024) return 'Image must be under 5 MB.'
+    return null
+  }
+
+  const onAvatarSelected = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !uid) return
+    const validation = validateAvatarFile(file)
+    if (validation) {
+      setErr(validation)
+      setMsg(null)
+      return
+    }
+
+    setAvatarBusy(true)
+    setErr(null)
+    setMsg(null)
+    const localPreview = URL.createObjectURL(file)
+    setPhotoPreview(localPreview)
+
+    const { url, error: uploadError } = await uploadProfileAvatar(uid, file)
+    URL.revokeObjectURL(localPreview)
+
+    if (uploadError || !url) {
+      setPhotoPreview(null)
+      setAvatarBusy(false)
+      setErr(uploadError || 'Could not upload photo.')
+      return
+    }
+
+    const { error: profileError } = await updateProfile({ avatar_url: url })
+    setPhotoPreview(null)
+    setAvatarBusy(false)
+    if (profileError) {
+      setErr(profileError)
+      return
+    }
+    setMsg('Profile photo updated.')
+  }
+
+  const removeAvatarPhoto = async () => {
+    if (!uid) return
+    setAvatarBusy(true)
+    setErr(null)
+    setMsg(null)
+    setPhotoPreview(null)
+
+    const { error: removeError } = await removeProfileAvatar(uid)
+    if (removeError) {
+      setAvatarBusy(false)
+      setErr(removeError)
+      return
+    }
+
+    const { error: profileError } = await updateProfile({ avatar_url: null })
+    setAvatarBusy(false)
+    if (profileError) setErr(profileError)
+    else setMsg('Profile photo removed.')
+  }
+
+  const displayAvatar = photoPreview || profile?.avatar_url || hub.avatar
 
   const maxHours = Math.max(...hub.activityWeek.map(d => d.hours), 0.1)
   const milestones = goalMilestones(hub)
@@ -231,8 +302,46 @@ export default function Profile() {
 
       <section className="glass rounded-3xl p-5 sm:p-7 mb-5 sp-hero">
         <div className="flex flex-col sm:flex-row sm:items-center gap-5">
-          <div className="w-20 h-20 rounded-2xl overflow-hidden flex items-center justify-center text-white text-2xl font-bold flex-shrink-0" style={{ background: 'linear-gradient(135deg,#6C5CE7,#8B5CF6)' }}>
-            {hub.avatar ? <img src={hub.avatar} alt="" className="w-full h-full object-cover" /> : initials(hub.name)}
+          <div className="sp-avatar-wrap">
+            <button
+              type="button"
+              className="sp-avatar-btn w-20 h-20 rounded-2xl overflow-hidden flex items-center justify-center text-white text-2xl font-bold"
+              style={{ background: 'linear-gradient(135deg,#6C5CE7,#8B5CF6)' }}
+              onClick={() => avatarInputRef.current?.click()}
+              disabled={avatarBusy}
+              aria-label={displayAvatar ? 'Change profile photo' : 'Upload profile photo'}
+            >
+              {displayAvatar ? (
+                <img src={displayAvatar} alt="" className="w-full h-full object-cover" />
+              ) : (
+                initials(hub.name)
+              )}
+              <span className="sp-avatar-edit" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                  <circle cx="12" cy="13" r="4" />
+                </svg>
+              </span>
+              {avatarBusy && <span className="sp-avatar-busy">…</span>}
+            </button>
+            <input
+              ref={avatarInputRef}
+              type="file"
+              accept={AVATAR_ACCEPT}
+              className="sr-only"
+              onChange={onAvatarSelected}
+              disabled={avatarBusy}
+            />
+            {(profile?.avatar_url || photoPreview) && (
+              <button
+                type="button"
+                className="btn-glass text-xs mt-2 w-full sm:w-auto"
+                disabled={avatarBusy}
+                onClick={() => void removeAvatarPhoto()}
+              >
+                Remove photo
+              </button>
+            )}
           </div>
           <div className="min-w-0 flex-1">
             <h2 className="text-2xl font-black text-ink" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif' }}>{hub.name}</h2>
@@ -254,7 +363,7 @@ export default function Profile() {
               <div className="progress-fill" style={{ width: `${hub.completion}%` }} />
             </div>
             <div className="flex flex-wrap gap-2 sm:justify-end">
-              <button type="button" className="btn-glass text-sm" onClick={() => { setEditName(profile?.full_name ?? ''); setEditHeadline(profile?.headline ?? ''); setEditAvatar(profile?.avatar_url ?? ''); setEditExtras(hub.extras); setEditOpen(true) }}>Edit Profile</button>
+              <button type="button" className="btn-glass text-sm" onClick={() => { setEditName(profile?.full_name ?? ''); setEditHeadline(profile?.headline ?? ''); setEditExtras(hub.extras); setEditOpen(true) }}>Edit Profile</button>
               <button type="button" className="btn-primary text-sm" onClick={() => navigate('/career')}>View Career →</button>
               <button type="button" className="btn-glass text-sm" onClick={() => setPreviewOpen(true)}>Preview Profile</button>
             </div>
@@ -669,13 +778,11 @@ export default function Profile() {
         <ProfileEditDialog
           name={editName}
           headline={editHeadline}
-          avatar={editAvatar}
           email={session?.user.email ?? ''}
           extras={editExtras}
           busy={busy}
           onName={setEditName}
           onHeadline={setEditHeadline}
-          onAvatar={setEditAvatar}
           onExtras={setEditExtras}
           onClose={() => setEditOpen(false)}
           onSave={saveEdits}

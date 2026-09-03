@@ -72,3 +72,36 @@ export async function uploadTutorAvatar(
   if (!base) return { url: null, error: 'Upload succeeded but the public photo URL could not be generated.' }
   return { url: `${base}${base.includes('?') ? '&' : '?'}t=${Date.now()}`, error: null }
 }
+
+/** Alias for student/tutor profile photos — same bucket, path, and RLS rules. */
+export const uploadProfileAvatar = uploadTutorAvatar
+
+export async function removeProfileAvatar(userId: string): Promise<{ error: string | null }> {
+  if (!isSupabaseConfigured) return { error: 'Profile photo removal is unavailable (Supabase not configured).' }
+  if (!userId) return { error: 'Not logged in.' }
+
+  const {
+    data: { session },
+    error: sessionError,
+  } = await supabase.auth.getSession()
+  if (sessionError) return { error: formatUploadError(sessionError.message) }
+  if (!session?.user) return { error: 'Your session expired. Sign in again and retry.' }
+  if (session.user.id !== userId) return { error: 'Account mismatch. Sign out and sign in again.' }
+
+  const { data: files, error: listErr } = await supabase.storage.from(BUCKET).list(userId)
+  if (listErr) {
+    console.warn('avatar list failed', listErr.message)
+    return { error: formatUploadError(listErr.message) }
+  }
+
+  const paths = (files ?? []).map(file => `${userId}/${file.name}`)
+  if (paths.length) {
+    const { error: removeErr } = await supabase.storage.from(BUCKET).remove(paths)
+    if (removeErr) {
+      console.warn('avatar remove failed', removeErr.message)
+      return { error: formatUploadError(removeErr.message) }
+    }
+  }
+
+  return { error: null }
+}
