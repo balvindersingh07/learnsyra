@@ -139,12 +139,14 @@ export async function razorpayRouteRequest<T = Record<string, unknown>>(
   method: string,
   path: string,
   body?: Record<string, unknown> | null,
+  extraHeaders?: Record<string, string>,
 ): Promise<{ ok: boolean; status: number; data: T | null; errorMessage: string | null }> {
   const res = await fetch(`https://api.razorpay.com${path}`, {
     method,
     headers: {
       Authorization: `Basic ${razorpayBasicAuth(keyId, keySecret)}`,
       "Content-Type": "application/json",
+      ...(extraHeaders ?? {}),
     },
     body: body ? JSON.stringify(body) : undefined,
   })

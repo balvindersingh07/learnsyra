@@ -93,10 +93,10 @@ export function formatPayoutInr(minor: number) {
 
 export function payoutStatusLabel(status: string) {
   if (status === 'requested') return 'Requested'
-  if (status === 'approved') return 'Approved — awaiting provider transfer'
+  if (status === 'approved') return 'Approved — preparing transfer'
   if (status === 'processing') return 'Processing'
   if (status === 'paid') return 'Paid'
-  if (status === 'failed') return 'Failed'
+  if (status === 'failed') return 'Failed — retryable'
   if (status === 'rejected') return 'Rejected'
   if (status === 'cancelled') return 'Cancelled'
   return status
@@ -246,6 +246,7 @@ export async function requestTutorPayout(idempotencyKey: string): Promise<{
   status?: string
   message?: string
   error?: string
+  provider_transfer_id?: string | null
 }> {
   if (!isSupabaseConfigured) {
     return { ok: false, error: 'Payout requests require Supabase to be configured.' }
@@ -260,13 +261,23 @@ export async function requestTutorPayout(idempotencyKey: string): Promise<{
     status?: string
     message?: string
     error?: string
+    provider_transfer_id?: string | null
   }
-  if (payload.error) return { ok: false, error: payload.error }
+  if (payload.error) {
+    return {
+      ok: false,
+      error: payload.error,
+      payout_id: payload.payout_id,
+      status: payload.status,
+      provider_transfer_id: payload.provider_transfer_id,
+    }
+  }
   return {
     ok: true,
     payout_id: payload.payout_id,
     status: payload.status,
     message: payload.message,
+    provider_transfer_id: payload.provider_transfer_id,
   }
 }
 

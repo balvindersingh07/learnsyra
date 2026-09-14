@@ -352,7 +352,7 @@ export default function TutorPayoutSettings() {
           <li>Earnings from paid sessions stay pending until the booking is marked completed.</li>
           <li>Available balance is calculated on the server when you view Earnings or request a payout.</li>
           <li>Withdrawals require an activated Razorpay Route Linked Account and the minimum threshold.</li>
-          <li>Route Linked Account onboarding is automated. Money transfers are not executed in this phase.</li>
+          <li>Requesting a payout reserves available earnings and sends a Razorpay Route transfer. Paid status updates after Razorpay confirms processing.</li>
         </ul>
         <p className="text-sm mt-4">
           <Link to="/tutor/earnings" className="text-primary">View earnings & request payout →</Link>

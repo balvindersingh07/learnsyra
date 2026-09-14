@@ -371,6 +371,12 @@ export default function TutorEarnings() {
           <>
             <p className="text-sm">{formatPayoutInr(nextPayout.amount_minor)} · {payoutStatusLabel(nextPayout.status)}</p>
             <p className="text-xs text-muted mt-1">Requested {new Date(nextPayout.requested_at).toLocaleString('en-IN')}</p>
+            {nextPayout.provider_transfer_id && (
+              <p className="text-xs text-muted mt-1">Transfer ref: {nextPayout.provider_transfer_id}</p>
+            )}
+            {nextPayout.failure_reason && nextPayout.status === 'failed' && (
+              <p className="text-xs mt-1" style={{ color: '#e11d48' }}>{nextPayout.failure_reason}</p>
+            )}
           </>
         ) : (
           <>
@@ -388,7 +394,15 @@ export default function TutorEarnings() {
           <div className="space-y-2">
             {payoutHistory.map(p => (
               <div key={p.id} className="glass rounded-xl p-3 text-sm flex flex-wrap justify-between gap-2">
-                <span>{new Date(p.requested_at).toLocaleDateString('en-IN')} · {formatPayoutInr(p.amount_minor)}</span>
+                <div>
+                  <span>{new Date(p.requested_at).toLocaleDateString('en-IN')} · {formatPayoutInr(p.amount_minor)}</span>
+                  {p.provider_transfer_id && (
+                    <p className="text-xs text-muted mt-0.5">Transfer: {p.provider_transfer_id}</p>
+                  )}
+                  {p.failure_reason && p.status === 'failed' && (
+                    <p className="text-xs mt-0.5" style={{ color: '#e11d48' }}>{p.failure_reason}</p>
+                  )}
+                </div>
                 <span className="text-muted">{payoutStatusLabel(p.status)}</span>
               </div>
             ))}
@@ -588,7 +602,7 @@ export default function TutorEarnings() {
               Withdraw {formatPayoutInr(activePayoutAmount)} from your server-calculated available balance.
             </p>
             <p className="text-xs text-muted mb-4">
-              Razorpay Route transfer is not executed yet. Your request will be recorded as approved and reserved until provider integration is activated.
+              LearnSyra will reserve your available balance and send a Razorpay Route transfer to your verified Linked Account. Funds are marked paid only after Razorpay confirms the transfer is processed.
             </p>
             {payoutErr && <p className="text-sm mb-3" style={{ color: '#e11d48' }}>{payoutErr}</p>}
             <div className="flex flex-wrap gap-2">

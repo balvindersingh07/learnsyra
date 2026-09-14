@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "npm:@supabase/supabase-js@2"
 import { createNotificationAndEmail, serviceAdmin } from "../_shared/notificationEmail.ts"
+import { executeRouteTransferForPayout } from "../_shared/routeTransfers.ts"
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -44,25 +45,48 @@ Deno.serve(async req => {
     }
 
     const admin = serviceAdmin()
+    const transfer = await executeRouteTransferForPayout(admin, String(payoutId), userData.user.id)
+
+    const notifyTitle =
+      transfer.status === "paid" ? "Payout paid"
+      : transfer.status === "processing" ? "Payout processing"
+      : transfer.status === "failed" ? "Payout transfer failed"
+      : "Payout request received"
+
+    const notifyBody =
+      transfer.message ||
+      (transfer.error
+        ? transfer.error
+        : "Your payout request was recorded.")
+
     void createNotificationAndEmail(admin, {
       userId: userData.user.id,
-      title: "Payout request received",
-      body:
-        "Your payout request was recorded. Funds remain reserved until Razorpay Route transfer execution is enabled.",
-      href: "/tutor/account",
+      title: notifyTitle,
+      body: notifyBody,
+      href: "/tutor/earnings",
       eventType: "payout",
-      idempotencyKey: `payout:${payoutId}`,
+      idempotencyKey: `payout:${payoutId}:${transfer.status}`,
     }).catch(err => {
       console.error("payout notification failed", err instanceof Error ? err.message : "unknown")
     })
 
+    if (!transfer.ok && transfer.status === "failed") {
+      return Response.json({
+        ok: false,
+        payout_id: payoutId,
+        status: transfer.status,
+        provider_transfer_id: transfer.provider_transfer_id,
+        error: transfer.error || "Transfer failed. Your available balance was restored for retry.",
+      }, { status: 400, headers: cors })
+    }
+
     return Response.json({
       ok: true,
       payout_id: payoutId,
-      status: "approved",
-      provider_execution: "pending",
-      message:
-        "Payout request recorded. Razorpay Route/transfer execution is not enabled yet; funds remain reserved until provider integration is activated.",
+      status: transfer.status,
+      provider_transfer_id: transfer.provider_transfer_id,
+      provider_execution: transfer.provider_transfer_id ? transfer.status : "pending",
+      message: transfer.message,
     }, { headers: cors })
   } catch (e) {
     console.error("request-tutor-payout error", e instanceof Error ? e.message : "unknown")
