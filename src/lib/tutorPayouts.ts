@@ -12,6 +12,36 @@ export interface TutorPayoutSummary {
   minimum_payout_minor: number
 }
 
+export type RouteOnboardingPhase =
+  | 'not_connected'
+  | 'submitted'
+  | 'needs_clarification'
+  | 'under_review'
+  | 'activated'
+  | 'failed'
+  | 'unknown'
+
+export interface RouteRequirement {
+  field_reference: string
+  reason_code: string
+  status: string
+}
+
+export interface RouteVerificationMetadata {
+  route_enabled?: boolean
+  onboarding_phase?: RouteOnboardingPhase | string
+  provider_account_id?: string
+  product_id?: string | null
+  stakeholder_id?: string | null
+  account_status?: string | null
+  activation_status?: string | null
+  requirements?: RouteRequirement[]
+  last_error?: string | null
+  submitted_at?: string
+  last_synced_at?: string
+  reference_id?: string
+}
+
 export interface TutorPayoutAccount {
   id: string
   account_type: 'bank' | 'upi'
@@ -19,6 +49,8 @@ export interface TutorPayoutAccount {
   account_holder_name: string | null
   status: 'pending' | 'verified' | 'failed' | 'disabled'
   provider: string
+  provider_account_id?: string | null
+  verification_metadata?: RouteVerificationMetadata | null
   created_at: string
   updated_at: string
 }
@@ -34,6 +66,21 @@ export interface TutorPayoutRecord {
   requested_at: string
   processed_at: string | null
   failure_reason: string | null
+}
+
+export interface RouteOnboardInput {
+  contact_name: string
+  phone: string
+  email: string
+  street: string
+  city: string
+  state: string
+  postal_code: string
+  pan: string
+  account_number: string
+  ifsc: string
+  beneficiary_name: string
+  tnc_accepted: true
 }
 
 export function minorToInr(minor: number) {
@@ -63,6 +110,29 @@ export function payoutAccountStatusLabel(status: TutorPayoutAccount['status']) {
   return status
 }
 
+export function routeOnboardingPhase(account: TutorPayoutAccount | null): RouteOnboardingPhase {
+  if (!account) return 'not_connected'
+  if (account.status === 'verified') return 'activated'
+  if (account.status === 'failed') return 'failed'
+  const meta = account.verification_metadata
+  const phase = (meta?.onboarding_phase || meta?.activation_status || '').toString().toLowerCase()
+  if (phase === 'activated' || phase === 'active') return 'activated'
+  if (phase === 'needs_clarification') return 'needs_clarification'
+  if (phase === 'under_review' || phase === 'pending' || phase === 'in_review' || phase === 'processing') return 'under_review'
+  if (phase === 'failed' || phase === 'rejected') return 'failed'
+  if (account.provider_account_id || phase === 'submitted') return 'submitted'
+  return 'not_connected'
+}
+
+export function routeOnboardingStatusLabel(phase: RouteOnboardingPhase) {
+  if (phase === 'not_connected') return 'Not connected'
+  if (phase === 'submitted') return 'Onboarding submitted'
+  if (phase === 'needs_clarification' || phase === 'under_review') return 'Under review'
+  if (phase === 'activated') return 'Active / verified'
+  if (phase === 'failed') return 'Failed'
+  return 'Unknown'
+}
+
 export async function getTutorPayoutSummary(tutorId: string): Promise<TutorPayoutSummary | null> {
   if (!isSupabaseConfigured || !tutorId) return null
   const { data, error } = await supabase.rpc('get_tutor_payout_summary', { p_tutor_id: tutorId })
@@ -85,8 +155,8 @@ export async function getTutorPayoutAccount(): Promise<TutorPayoutAccount | null
   if (!isSupabaseConfigured) return null
   const { data, error } = await supabase
     .from('tutor_payout_accounts')
-    .select('id, account_type, masked_account, account_holder_name, status, provider, created_at, updated_at')
-    .in('status', ['pending', 'verified'])
+    .select('id, account_type, masked_account, account_holder_name, status, provider, provider_account_id, verification_metadata, created_at, updated_at')
+    .in('status', ['pending', 'verified', 'failed'])
     .order('updated_at', { ascending: false })
     .limit(1)
     .maybeSingle()
@@ -118,6 +188,56 @@ export async function saveTutorPayoutAccount(input: {
   const payload = data as { ok?: boolean; account?: TutorPayoutAccount; message?: string; error?: string }
   if (payload.error) return { ok: false, error: payload.error }
   return { ok: true, account: payload.account, message: payload.message }
+}
+
+export async function onboardTutorRouteAccount(input: RouteOnboardInput): Promise<{
+  ok: boolean
+  account?: TutorPayoutAccount | null
+  message?: string
+  error?: string
+  code?: string
+  onboarding?: {
+    phase?: string
+    activation_status?: string | null
+    provider_account_id?: string | null
+    product_id?: string | null
+    requirements?: RouteRequirement[]
+  }
+}> {
+  if (!isSupabaseConfigured) {
+    return { ok: false, error: 'Payout onboarding requires Supabase to be configured.' }
+  }
+  const { data, error } = await supabase.functions.invoke('onboard-tutor-route-account', { body: input })
+  if (error) return { ok: false, error: error.message || 'Could not complete Route onboarding' }
+  const payload = data as {
+    ok?: boolean
+    account?: TutorPayoutAccount | null
+    message?: string
+    error?: string
+    code?: string
+    onboarding?: {
+      phase?: string
+      activation_status?: string | null
+      provider_account_id?: string | null
+      product_id?: string | null
+      requirements?: RouteRequirement[]
+    }
+  }
+  if (payload.error && !payload.ok) {
+    return {
+      ok: false,
+      error: payload.error,
+      code: payload.code,
+      account: payload.account,
+      onboarding: payload.onboarding,
+    }
+  }
+  return {
+    ok: true,
+    account: payload.account,
+    message: payload.message,
+    onboarding: payload.onboarding,
+  }
 }
 
 export async function requestTutorPayout(idempotencyKey: string): Promise<{

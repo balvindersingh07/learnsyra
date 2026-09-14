@@ -436,6 +436,9 @@ verify_jwt = true
 [functions.save-tutor-payout-account]
 verify_jwt = true
 
+[functions.onboard-tutor-route-account]
+verify_jwt = true
+
 [functions.deliver-notification-email]
 verify_jwt = true
 
