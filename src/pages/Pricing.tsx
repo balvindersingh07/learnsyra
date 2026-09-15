@@ -46,7 +46,7 @@ const plans: {
   {
     name: 'Student Pro',
     planId: 'student_pro',
-    price: 29,
+    price: 399,
     period: 'month',
     desc: 'Everything you need to learn faster and get career-ready.',
     color: '#6C5CE7',
@@ -68,7 +68,7 @@ const plans: {
   {
     name: 'Career Pro',
     planId: 'career_pro',
-    price: 59,
+    price: 799,
     period: 'month',
     desc: 'The complete package for serious career changers and job seekers.',
     color: '#22C7D6',
@@ -283,11 +283,11 @@ export default function Pricing({ onNav }: Props) {
               <button
                 className="btn-primary px-6 py-2.5"
                 style={{ background: 'linear-gradient(135deg,#20C997,#22C7D6)' }}
-                onClick={() => {}}
+                onClick={() => onNav('signup')}
               >
                 Become a Tutor →
               </button>
-              <button className="btn-glass px-6 py-2.5">
+              <button type="button" className="btn-glass px-6 py-2.5" onClick={() => onNav('tutors')}>
                 Learn More
               </button>
             </div>
