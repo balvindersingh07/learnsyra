@@ -146,6 +146,32 @@ export async function adminModerateCourse(
   }
 }
 
+function invokeFunctionError(data: unknown, error: { message: string } | null): string | null {
+  if (data && typeof data === 'object' && 'error' in data) {
+    const message = (data as { error?: unknown }).error
+    if (typeof message === 'string' && message.trim()) return message
+  }
+  return error?.message ?? null
+}
+
+export async function adminDeleteUser(userId: string): Promise<ModerationResult> {
+  const gate = await assertAdminActor()
+  if (!gate.ok) return { ok: false, message: gate.message }
+  if (gate.userId === userId) {
+    return { ok: false, message: 'You cannot delete your own account.' }
+  }
+
+  const { data, error } = await supabase.functions.invoke('admin-delete-user', {
+    body: { userId },
+  })
+  const message = invokeFunctionError(data, error)
+  if (message) return { ok: false, message }
+  if (!data || typeof data !== 'object' || !('ok' in data) || !(data as { ok?: boolean }).ok) {
+    return { ok: false, message: 'Could not delete user.' }
+  }
+  return { ok: true, message: 'User account deleted.' }
+}
+
 export async function adminChangeUserRole(
   userId: string,
   role: 'student' | 'tutor' | 'admin',

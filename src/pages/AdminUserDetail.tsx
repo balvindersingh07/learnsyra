@@ -11,7 +11,8 @@ import {
   userEvents,
   type AdminUserIndex,
 } from '../lib/adminUsers'
-import { adminChangeUserRole, isModerationBackendAvailable } from '../lib/adminModeration'
+import { useAuth } from '../context/AuthContext'
+import { adminChangeUserRole, adminDeleteUser, isModerationBackendAvailable } from '../lib/adminModeration'
 import './admin-control.css'
 
 type DetailTab = 'overview' | 'learning' | 'sessions' | 'projects' | 'activity' | 'account'
@@ -20,6 +21,7 @@ type RoleChoice = 'student' | 'tutor' | 'admin'
 export default function AdminUserDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { profile } = useAuth()
   const [index, setIndex] = useState<AdminUserIndex | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -29,6 +31,9 @@ export default function AdminUserDetail() {
   const [roleMsg, setRoleMsg] = useState<string | null>(null)
   const [roleError, setRoleError] = useState<string | null>(null)
   const [roleBusy, setRoleBusy] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const load = () => {
     setError(null)
@@ -57,6 +62,7 @@ export default function AdminUserDetail() {
   const taughtStudentCount = index && user
     ? new Set(index.enrollments.filter(e => taught.some(c => c.id === e.course_id)).map(e => e.student_id)).size
     : 0
+  const isSelf = profile?.id === user?.id
 
   const tabs: { id: DetailTab; label: string }[] = user?.role === 'tutor'
     ? [
@@ -228,6 +234,26 @@ export default function AdminUserDetail() {
                   </button>
                   {roleMsg && <p className="text-sm mt-3" style={{ color: '#0F8A68' }}>{roleMsg}</p>}
                   {roleError && <p className="text-sm mt-3" style={{ color: '#e11d48' }} role="alert">{roleError}</p>}
+                  <div className="mt-6 pt-4" style={{ borderTop: '1px solid rgba(99,102,241,0.12)' }}>
+                    <h3 className="text-sm font-black text-ink mb-2">Delete account</h3>
+                    <p className="text-sm text-muted mb-3">
+                      {isSelf
+                        ? 'You cannot delete your own signed-in admin account.'
+                        : 'Permanently remove this user from Supabase Auth. Related learning data is removed according to existing foreign keys. Accounts with payment or payout records cannot be deleted.'}
+                    </p>
+                    <button
+                      type="button"
+                      className="btn-glass text-sm"
+                      disabled={deleteBusy || isSelf}
+                      onClick={() => {
+                        setDeleteError(null)
+                        setDeleteConfirm(true)
+                      }}
+                    >
+                      Delete User
+                    </button>
+                    {deleteError && <p className="text-sm mt-3" style={{ color: '#e11d48' }} role="alert">{deleteError}</p>}
+                  </div>
                 </>
               ) : (
                 <p className="text-xs text-muted mt-3">
@@ -237,6 +263,39 @@ export default function AdminUserDetail() {
             </section>
           )}
         </>
+      )}
+
+      {deleteConfirm && user && (
+        <div className="ac-drawer fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="delete-confirm">
+          <button type="button" className="absolute inset-0" aria-label="Close" style={{ background: 'transparent', border: 'none' }} onClick={() => setDeleteConfirm(false)} />
+          <div className="glass rounded-3xl p-6 relative z-10 w-full max-w-md">
+            <h2 id="delete-confirm" className="text-lg font-black text-ink mb-2">Delete this user?</h2>
+            <p className="text-sm text-muted mb-4">Delete this user? This action cannot be undone.</p>
+            <div className="flex gap-2 justify-end">
+              <button type="button" className="btn-glass text-sm" disabled={deleteBusy} onClick={() => setDeleteConfirm(false)}>Cancel</button>
+              <button
+                type="button"
+                className="btn-primary text-sm"
+                disabled={deleteBusy}
+                onClick={() => {
+                  setDeleteBusy(true)
+                  setDeleteError(null)
+                  void adminDeleteUser(user.id).then(result => {
+                    setDeleteBusy(false)
+                    setDeleteConfirm(false)
+                    if (result.ok) {
+                      navigate('/admin/users')
+                    } else {
+                      setDeleteError(result.message)
+                    }
+                  })
+                }}
+              >
+                {deleteBusy ? 'Deleting…' : 'Delete User'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {roleConfirm && user && (
