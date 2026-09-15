@@ -11,8 +11,10 @@ import {
   loadAdminReportIndex,
   loadReportNotes,
   saveReportNote,
+  updateReportStatus,
   type AdminReportIndex,
   type AdminReportRow,
+  type ReportModerationStatus,
 } from '../lib/adminReports'
 import './admin-control.css'
 
@@ -25,6 +27,7 @@ export default function AdminReportDetail() {
   const [explain, setExplain] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [note, setNote] = useState('')
+  const [acting, setActing] = useState(false)
 
   const load = () => {
     setError(null)
@@ -65,6 +68,20 @@ export default function AdminReportDetail() {
   const audit = isReportAuditAvailable()
   const ai = isAiModerationAvailable()
   const blocked = 'Moderation actions are not connected.'
+
+  const handleStatus = async (status: ReportModerationStatus) => {
+    if (!report || !actions) return
+    setActing(true)
+    setMsg(null)
+    const result = await updateReportStatus(report.id, status)
+    setActing(false)
+    if (result.ok) {
+      setMsg(result.message)
+      load()
+    } else {
+      setExplain(result.message)
+    }
+  }
 
   return (
     <AdminShell>
@@ -135,11 +152,11 @@ export default function AdminReportDetail() {
                 <div className="ac-health"><span>Status</span><span>{report.status || '—'}</span></div>
                 <div className="ac-health"><span>Priority</span><span>{report.priority || '—'}</span></div>
                 <h2 className="font-black text-ink mt-3">Actions</h2>
-                <p className="text-[13px] text-muted mb-2">{blocked}</p>
+                <p className="text-[13px] text-muted mb-2">{actions ? 'Update report status. Changes are recorded in the audit log.' : blocked}</p>
                 <div className="flex flex-wrap gap-1.5 mb-3">
-                  <button type="button" className="btn-glass text-xs" aria-disabled={!actions} onClick={() => setExplain(blocked)}>Mark Investigating</button>
-                  <button type="button" className="btn-glass text-xs" aria-disabled={!actions} onClick={() => setExplain(blocked)}>Resolve</button>
-                  <button type="button" className="btn-glass text-xs" aria-disabled={!actions} onClick={() => setExplain(blocked)}>Dismiss</button>
+                  <button type="button" className="btn-glass text-xs" disabled={!actions || acting} onClick={() => (actions ? handleStatus('investigating') : setExplain(blocked))}>Mark Investigating</button>
+                  <button type="button" className="btn-glass text-xs" disabled={!actions || acting} onClick={() => (actions ? handleStatus('resolved') : setExplain(blocked))}>Resolve</button>
+                  <button type="button" className="btn-glass text-xs" disabled={!actions || acting} onClick={() => (actions ? handleStatus('dismissed') : setExplain(blocked))}>Dismiss</button>
                   <button type="button" className="btn-glass text-xs" aria-disabled={!escalate} onClick={() => setExplain('Escalation workflow unavailable.')}>Escalate</button>
                 </div>
                 <h2 className="font-black text-ink">AI Moderation Insight</h2>

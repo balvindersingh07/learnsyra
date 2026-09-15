@@ -1,4 +1,6 @@
+import { logAdminAuditEvent } from './adminAudit'
 import { loadAdminStringMap, saveAdminStringMap } from './adminStorage'
+import { assertAdminActor } from './adminModeration'
 import { getAllProfiles, type ProfileLite } from './api'
 import { formatWhen, paginate } from './adminUsers'
 import { isSupabaseConfigured, supabase } from './supabase'
@@ -53,7 +55,7 @@ export function reportsPageSize() {
 }
 
 export function isReportModerationAvailable() {
-  return false
+  return isSupabaseConfigured
 }
 
 export function isReportEscalationAvailable() {
@@ -61,7 +63,7 @@ export function isReportEscalationAvailable() {
 }
 
 export function isReportAuditAvailable() {
-  return false
+  return isSupabaseConfigured
 }
 
 export function isAiModerationAvailable() {
@@ -126,6 +128,51 @@ export async function loadAdminReportIndex(): Promise<AdminReportIndex> {
   const profiles = await getAllProfiles().catch(() => [] as ProfileLite[])
   const pack = await probeReports(profiles)
   return { available: pack.available, rows: pack.rows, profiles }
+}
+
+export type ReportModerationStatus = 'investigating' | 'resolved' | 'dismissed'
+
+export async function updateReportStatus(
+  reportId: string,
+  status: ReportModerationStatus,
+): Promise<{ ok: boolean; message: string }> {
+  const gate = await assertAdminActor()
+  if (!gate.ok) return { ok: false, message: gate.message }
+
+  const { data: current, error: readErr } = await supabase
+    .from('reports')
+    .select('id, status, entity_type, entity_id, entity_name, reason')
+    .eq('id', reportId)
+    .maybeSingle()
+  if (readErr) return { ok: false, message: readErr.message }
+  if (!current) return { ok: false, message: 'Report not found.' }
+
+  const previous = typeof current.status === 'string' ? current.status : null
+  const { error } = await supabase
+    .from('reports')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', reportId)
+  if (error) return { ok: false, message: error.message }
+
+  await logAdminAuditEvent({
+    action: 'report.status.update',
+    entityType: 'report',
+    entityId: reportId,
+    entityName: typeof current.reason === 'string' ? current.reason : reportId,
+    description: `Report status changed to ${status}.`,
+    oldStatus: previous,
+    newStatus: status,
+    changedField: 'status',
+    metadata: {
+      entity_type: current.entity_type,
+      entity_id: current.entity_id,
+      entity_name: current.entity_name,
+    },
+  })
+
+  const label =
+    status === 'investigating' ? 'marked investigating' : status === 'resolved' ? 'resolved' : 'dismissed'
+  return { ok: true, message: `Report ${label}.` }
 }
 
 export function reportStats(index: AdminReportIndex) {

@@ -1,3 +1,4 @@
+import { logAdminAuditEvent } from './adminAudit'
 import { loadAdminStringMap, saveAdminStringMap } from './adminStorage'
 import { getAllProfiles, getLiveClasses, getTutorListings, setBookingStatus, type LiveClass, type ProfileLite, type TutorListing } from './api'
 import { formatWhen, paginate } from './adminUsers'
@@ -391,8 +392,27 @@ export function timeline(row: AdminSessionRow) {
 }
 
 export async function cancelAdminBooking(sourceId: string) {
+  const { data: before, error: readErr } = await supabase
+    .from('bookings')
+    .select('status, student_id')
+    .eq('id', sourceId)
+    .maybeSingle()
+  if (readErr) return { ok: false, message: readErr.message }
+
   const { error } = await setBookingStatus(sourceId, 'cancelled')
   if (error) return { ok: false, message: error }
+
+  await logAdminAuditEvent({
+    action: 'booking.cancel',
+    entityType: 'booking',
+    entityId: sourceId,
+    description: 'Booking cancelled from the admin sessions workspace.',
+    oldStatus: typeof before?.status === 'string' ? before.status : null,
+    newStatus: 'cancelled',
+    changedField: 'status',
+    metadata: before?.student_id ? { student_id: before.student_id } : undefined,
+  })
+
   return {
     ok: true,
     message: 'Booking cancelled using the existing booking status API. The student, tutor, and payment records were not deleted. Refunds are not issued from this screen.',

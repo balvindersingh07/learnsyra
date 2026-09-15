@@ -7,6 +7,7 @@ import {
   loadAdminReportIndex,
   paginate,
   reportStats,
+  isReportModerationAvailable,
   reportsPageSize,
   uniqueReportEntities,
   uniqueReportValues,
@@ -284,7 +285,9 @@ export default function AdminReports() {
                 </div>
               </div>
             )}
-            <p className="text-[11px] text-muted mt-2">Page size {reportsPageSize()}. Moderation actions stay disabled until a reporting backend can persist them.</p>
+            {!isReportModerationAvailable() && (
+              <p className="text-[11px] text-muted mt-2">Page size {reportsPageSize()}. Moderation actions stay disabled until a reporting backend can persist them.</p>
+            )}
           </>
         )}
       </div>

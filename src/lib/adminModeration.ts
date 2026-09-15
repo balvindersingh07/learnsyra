@@ -1,3 +1,4 @@
+import { logAdminAuditEvent } from './adminAudit'
 import { notifyUser, setCoursePublished, setUserRole } from './api'
 import { isSupabaseConfigured, supabase } from './supabase'
 
@@ -35,8 +36,29 @@ export async function adminSetTutorListingAvailable(
   if (!found.id) {
     return { ok: false, message: 'No marketplace listing exists for this tutor yet.' }
   }
+  const { data: before, error: readErr } = await supabase
+    .from('tutor_listings')
+    .select('available, name')
+    .eq('id', found.id)
+    .maybeSingle()
+  if (readErr) return { ok: false, message: readErr.message }
+
   const { error } = await supabase.from('tutor_listings').update({ available }).eq('id', found.id)
   if (error) return { ok: false, message: error.message }
+
+  await logAdminAuditEvent({
+    action: available ? 'tutor.listing.approve' : 'tutor.listing.hide',
+    entityType: 'tutor',
+    entityId: profileId,
+    entityName: typeof before?.name === 'string' ? before.name : profileId,
+    description: available
+      ? 'Tutor listing approved and marked available in the marketplace.'
+      : 'Tutor listing hidden from the marketplace.',
+    oldStatus: before?.available == null ? null : before.available ? 'available' : 'hidden',
+    newStatus: available ? 'available' : 'hidden',
+    changedField: 'available',
+  })
+
   if (notify) {
     await notifyUser(profileId, notify.title, notify.body, notify.href, {
       emailEvent: 'moderation',
@@ -83,8 +105,29 @@ export async function adminModerateCourse(
   const gate = await assertAdminActor()
   if (!gate.ok) return { ok: false, message: gate.message }
   const published = action === 'approve'
+  const { data: before, error: readErr } = await supabase
+    .from('courses')
+    .select('title, published')
+    .eq('id', courseId)
+    .maybeSingle()
+  if (readErr) return { ok: false, message: readErr.message }
+
   const { error } = await setCoursePublished(courseId, published)
   if (error) return { ok: false, message: error }
+
+  await logAdminAuditEvent({
+    action: published ? 'course.publish' : action === 'unpublish' ? 'course.unpublish' : 'course.reject',
+    entityType: 'course',
+    entityId: courseId,
+    entityName: typeof before?.title === 'string' ? before.title : courseId,
+    description: published
+      ? 'Course published to the catalog.'
+      : 'Course removed from the public catalog.',
+    oldStatus: before?.published == null ? null : before.published ? 'published' : 'unpublished',
+    newStatus: published ? 'published' : 'unpublished',
+    changedField: 'published',
+  })
+
   if (tutorId) {
     const title = published ? 'Course approved' : action === 'unpublish' ? 'Course unpublished' : 'Course not approved'
     const body = published
@@ -112,8 +155,27 @@ export async function adminChangeUserRole(
   if (userId === gate.userId && role !== 'admin') {
     return { ok: false, message: 'You cannot remove your own admin access.' }
   }
+  const { data: before, error: readErr } = await supabase
+    .from('profiles')
+    .select('full_name, role')
+    .eq('id', userId)
+    .maybeSingle()
+  if (readErr) return { ok: false, message: readErr.message }
+
   const { error } = await setUserRole(userId, role)
   if (error) return { ok: false, message: error }
+
+  await logAdminAuditEvent({
+    action: 'user.role.change',
+    entityType: 'user',
+    entityId: userId,
+    entityName: typeof before?.full_name === 'string' ? before.full_name : userId,
+    description: `Account role updated to ${role}.`,
+    oldStatus: typeof before?.role === 'string' ? before.role : null,
+    newStatus: role,
+    changedField: 'role',
+  })
+
   await notifyUser(userId, 'Account role updated', `Your account role is now ${role}.`, '/profile', {
     emailEvent: 'account',
     idempotencyKey: `account:role:${userId}:${role}`,

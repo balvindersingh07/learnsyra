@@ -69,6 +69,40 @@ export function isAuditRealtimeAvailable() {
   return false
 }
 
+export interface AdminAuditLogInput {
+  action: string
+  entityType: string
+  entityId?: string | null
+  entityName?: string | null
+  status?: string
+  source?: string
+  description?: string | null
+  oldStatus?: string | null
+  newStatus?: string | null
+  changedField?: string | null
+  metadata?: Record<string, unknown>
+}
+
+export async function logAdminAuditEvent(input: AdminAuditLogInput): Promise<void> {
+  if (!isSupabaseConfigured) return
+  const { error } = await supabase.rpc('log_admin_audit_event', {
+    p_action: input.action,
+    p_entity_type: input.entityType,
+    p_entity_id: input.entityId ?? null,
+    p_entity_name: input.entityName ?? null,
+    p_status: input.status ?? 'success',
+    p_source: input.source ?? 'admin',
+    p_description: input.description ?? null,
+    p_old_status: input.oldStatus ?? null,
+    p_new_status: input.newStatus ?? null,
+    p_changed_field: input.changedField ?? null,
+    p_metadata: input.metadata ?? {},
+  })
+  if (error) {
+    console.warn('audit log failed', error.message)
+  }
+}
+
 function asStr(v: unknown) {
   if (typeof v === 'string' && v.trim()) return v.trim()
   if (typeof v === 'number' && Number.isFinite(v)) return String(v)
