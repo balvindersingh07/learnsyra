@@ -1,7 +1,16 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import CareerHubNav from '../components/career/CareerHubNav'
+import ResumeAnalysisPanel from '../components/career/resume-studio/ResumeAnalysisPanel'
+import ResumeCoachPanel from '../components/career/resume-studio/ResumeCoachPanel'
+import ResumePhotoUpload from '../components/career/resume-studio/ResumePhotoUpload'
+import ResumeSectionNav from '../components/career/resume-studio/ResumeSectionNav'
+import ResumeStylePanel from '../components/career/resume-studio/ResumeStylePanel'
 import ResumePreview from '../components/career/ResumePreview'
+import { analyzeResume } from '../lib/resumeAnalysis'
+import { generateCoverLetter, runCoachAction } from '../lib/resumeCoach'
+import { downloadResumeDocx, printResumePreview } from '../lib/resumeExport'
+import { styleForTemplate, TEMPLATE_CATALOG } from '../lib/resumeStudioTypes'
 import { useAuth } from '../context/AuthContext'
 import {
   computeReadiness,
@@ -21,26 +30,25 @@ import {
   createResume,
   emptyEducation,
   emptyExperience,
-  exportPlain,
   generateSummary,
   improveBullet,
   loadActiveId,
   loadDocs,
   projectBullets,
   relativeWhen,
+  reorderLayout,
   RESUME_ROLES,
   rewriteSummary,
   saveActiveId,
   saveDocs,
   scoreResume,
-  sectionState,
-  SECTIONS,
-  TEMPLATES,
+  toggleSectionVisibility,
   uid,
   type JobSuggestion,
   type ResumeDoc,
   type ResumeSectionId,
   type ResumeSkill,
+  type ResumeTemplate,
   type SkillCategory,
 } from '../lib/resumeBuilder'
 import { careerInterviewPath } from '../lib/paths'
@@ -96,7 +104,9 @@ function AddSkill({ onAdd }: { onAdd: (s: ResumeSkill) => void }) {
 
 export default function CareerResume() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { profile, session } = useAuth()
+  const autosaveTimer = useRef<number | null>(null)
   const snap = useMemo(() => getCareerSnapshot(), [])
   const [docs, setDocs] = useState<ResumeDoc[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -115,9 +125,13 @@ export default function CareerResume() {
   const [loading, setLoading] = useState(true)
   const [syncError, setSyncError] = useState<string | null>(null)
   const [saveState, setSaveState] = useState<'idle' | 'saved' | 'error'>('idle')
+  const [autosavedAt, setAutosavedAt] = useState<string | null>(null)
+  const [renameId, setRenameId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
 
   const doc = docs.find(d => d.id === activeId) ?? docs[0]
   const scores = doc ? scoreResume(doc) : null
+  const analysis = doc ? analyzeResume(doc) : null
 
   useEffect(() => {
     const userId = session?.user.id ?? null
@@ -172,7 +186,12 @@ export default function CareerResume() {
         if (existing.length) {
           const patched = existing.map(d => ({
             ...d,
-            contact: { ...d.contact, name: d.contact.name || name, email: d.contact.email || email },
+            contact: {
+              ...d.contact,
+              name: d.contact.name || name,
+              email: d.contact.email || email,
+              photoUrl: d.contact.photoUrl ?? profile?.avatar_url ?? null,
+            },
           }))
           setDocs(patched)
           const aid = loadActiveId()
@@ -207,6 +226,11 @@ export default function CareerResume() {
   }, [profile?.full_name, profile?.headline, session?.user.email, session?.user.id, snap])
 
   useEffect(() => {
+    const jobId = searchParams.get('jobId')
+    if (jobId && doc && !jobText) setJobText(`Target role context: ${doc.targetRole}`)
+  }, [searchParams, doc, jobText])
+
+  useEffect(() => {
     if (!roleOpen && !previewOpen && !fullPreview) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -220,10 +244,15 @@ export default function CareerResume() {
   }, [roleOpen, previewOpen, fullPreview])
 
   const persist = (next: ResumeDoc, list = docs) => {
-    const rows = list.map(d => (d.id === next.id ? { ...next, updatedAt: new Date().toISOString() } : d))
+    const rows = list.map(d => (d.id === next.id ? { ...next, updatedAt: new Date().toISOString(), autosaveNote: 'Saved locally' } : d))
     setDocs(rows)
     saveDocs(rows)
     applyResumeOverlay(next)
+    if (autosaveTimer.current) window.clearTimeout(autosaveTimer.current)
+    autosaveTimer.current = window.setTimeout(() => {
+      setAutosavedAt(new Date().toLocaleTimeString())
+      setSaveState('saved')
+    }, 400)
   }
 
   const patch = (partial: Partial<ResumeDoc>) => {
@@ -287,18 +316,7 @@ export default function CareerResume() {
     setImproved({ from: result.from, to: result.to, deltas: result.deltas })
   }
 
-  const downloadText = (ext: 'txt' | 'doc') => {
-    if (!doc) return
-    const blob = new Blob([exportPlain(doc)], { type: ext === 'doc' ? 'application/msword' : 'text/plain' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `${doc.versionName.replace(/\s+/g, '-')}.${ext}`
-    a.click()
-    URL.revokeObjectURL(a.href)
-    setExportNote(ext === 'doc' ? 'Downloaded a Word-compatible text file. Open it in Word and Save As DOCX if needed.' : 'Downloaded a plain-text resume.')
-  }
-
-  if (loading || !doc || !scores) {
+  if (loading || !doc || !scores || !analysis) {
     return (
       <div className="pt-20 px-6 max-w-3xl mx-auto">
         <CareerHubNav />
@@ -308,24 +326,18 @@ export default function CareerResume() {
     )
   }
 
-  const recs = [
-    !scores.summary ? 'Improve professional summary' : null,
-    'Add measurable project outcomes where verified',
-    scores.missingKeywords.includes('TypeScript') ? 'Keep TypeScript off the resume until you have learned it' : null,
-    'Improve experience bullet clarity',
-  ].filter(Boolean) as string[]
-
   const statusLabel = scores.completeness >= 80 ? 'Strong' : scores.completeness >= 70 ? 'On track' : 'Needs Improvement'
 
   return (
     <div className="pt-20 px-4 sm:px-6 pb-24 max-w-7xl mx-auto overflow-x-hidden rv-shell">
       <p className="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Career Center</p>
       <h1 className="text-3xl sm:text-4xl font-black text-ink mb-2" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif', letterSpacing: '-0.03em' }}>
-        Build Your Career <span className="gradient-text">Resume</span>
+        Resume <span className="gradient-text">Studio</span>
       </h1>
-      <p className="text-muted mb-5 max-w-2xl leading-relaxed">
-        Create a professional, ATS-friendly resume using the skills, projects and achievements you have built on LearnSyra.
+      <p className="text-muted mb-2 max-w-2xl leading-relaxed">
+        Build production-quality resumes with market-specific templates, live preview, AI coaching, and export tools.
       </p>
+      {autosavedAt && <p className="text-xs text-muted mb-4">Autosaved locally at {autosavedAt}</p>}
       <CareerHubNav />
       {syncError && (
         <div className="glass rounded-2xl p-3 mb-4 text-sm" style={{ color: '#e11d48' }}>{syncError}</div>
@@ -349,48 +361,8 @@ export default function CareerResume() {
         <p className="text-xs text-muted mt-2">AI-generated readiness estimate — not an official ATS vendor score.</p>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-4 mb-5">
-        <section className="glass rounded-3xl p-5">
-          <h2 className="text-base font-black text-ink mb-1">Resume Strength</h2>
-          <div className="text-3xl font-black career-count mb-3">{scores.completeness} / 100</div>
-          <ul className="text-sm space-y-1 mb-4">
-            <li>{scores.contact ? '✓' : '⚠'} Contact</li>
-            <li>{scores.summary ? '✓' : '⚠'} Summary</li>
-            <li>{scores.skills ? '✓' : '⚠'} Skills</li>
-            <li>{scores.projects ? '✓' : '⚠'} Projects</li>
-            <li>⚠ Experience — {scores.experience}%</li>
-            <li>{scores.education ? '✓' : '○'} Education</li>
-            <li>⚠ Achievements — {scores.achievements}%</li>
-          </ul>
-          <p className="text-sm text-muted mb-3">
-            <span className="font-bold text-ink">AI Recommendation</span> — Your projects are strong, but your experience descriptions need measurable outcomes from work you actually did.
-          </p>
-          <button type="button" className="btn-primary text-sm" onClick={runSafe}>Fix With AI →</button>
-        </section>
-        <section className="glass rounded-3xl p-5">
-          <h2 className="text-base font-black text-ink mb-1">📊 ATS Readiness</h2>
-          <div className="text-3xl font-black career-count mb-3">{scores.ats} / 100</div>
-          <ul className="text-sm space-y-1 mb-3">
-            <li>Keywords — {scores.keywords}</li>
-            <li>Structure — {scores.structure}</li>
-            <li>Readability — {scores.readability}</li>
-            <li>Role Match — {scores.roleMatch}</li>
-            <li>Missing Keywords — {scores.missingKeywords.length}</li>
-          </ul>
-          <p className="text-xs font-bold text-ink mb-1">Missing For {doc.targetRole}</p>
-          <p className="text-sm text-muted mb-3">{scores.missingKeywords.join(' · ') || 'None from this estimate'}</p>
-          <button type="button" className="btn-glass text-xs" onClick={() => setSection('skills')}>Improve Match →</button>
-          <p className="text-xs text-muted mt-3">ATS-style readiness estimate. Not tied to a specific ATS vendor.</p>
-        </section>
-        <section className="glass rounded-3xl p-5">
-          <h2 className="text-base font-black text-ink mb-2">✨ LearnSyra Resume Coach</h2>
-          <p className="text-sm text-muted mb-2">Current Analysis · Resume Strength {scores.completeness} / 100</p>
-          <ol className="text-sm space-y-1 mb-4 list-decimal pl-4">
-            {recs.slice(0, 4).map(r => <li key={r}>{r}</li>)}
-          </ol>
-          <button type="button" className="btn-primary text-xs" onClick={runSafe}>Fix All Safe Improvements</button>
-        </section>
-      </div>
+      <ResumeAnalysisPanel analysis={analysis} />
+      <ResumeCoachPanel doc={doc} onApply={next => persist(next)} />
 
       <div className="flex lg:hidden gap-2 mb-4">
         {(['sections', 'edit', 'preview'] as MobilePane[]).map(p => (
@@ -401,31 +373,28 @@ export default function CareerResume() {
       </div>
 
       <div className="grid lg:grid-cols-[16rem_minmax(0,1fr)_minmax(18rem,0.9fr)] gap-4 mb-6">
-        <nav className={`glass rounded-3xl p-4 ${pane !== 'preview' ? '' : 'hidden'} lg:block`} aria-label="Resume sections">
-          <h2 className="text-sm font-black text-ink mb-3">Resume Sections</h2>
-          <ul className="space-y-1">
-            {SECTIONS.map(s => {
-              const st = sectionState(doc, s.id)
-              return (
-                <li key={s.id}>
-                  <button
-                    type="button"
-                    className="w-full text-left px-3 py-2 rounded-xl text-sm"
-                    style={{ background: section === s.id ? 'rgba(108,92,231,0.12)' : 'transparent', color: section === s.id ? '#5B4BD6' : '#172033' }}
-                    onClick={() => { setSection(s.id); setPane('edit') }}
-                  >
-                    {s.label} {st === 'done' ? '✓' : st === 'warn' ? '⚠' : ''}
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-        </nav>
+        <div className={`${pane !== 'preview' ? '' : 'hidden'} lg:block`}>
+          <ResumeSectionNav
+            doc={doc}
+            active={section}
+            onSelect={id => { setSection(id); setPane('edit') }}
+            onReorder={(from, to) => persist(reorderLayout(doc, from, to))}
+            onToggle={(id, visible) => persist(toggleSectionVisibility(doc, id, visible))}
+          />
+        </div>
 
         <div className={`glass rounded-3xl p-5 ${pane === 'edit' ? '' : 'hidden'} lg:block`}>
           {section === 'contact' && (
             <>
               <h2 className="text-lg font-black text-ink mb-3">Contact Information</h2>
+              {session?.user.id && (
+                <ResumePhotoUpload
+                  userId={session.user.id}
+                  photoUrl={doc.contact.photoUrl}
+                  usePhoto={doc.contact.usePhoto}
+                  onChange={next => patch({ contact: { ...doc.contact, ...next } })}
+                />
+              )}
               <Field id="nm" label="Full Name" value={doc.contact.name} onChange={v => patch({ contact: { ...doc.contact, name: v } })} />
               <Field id="tt" label="Professional Title" value={doc.contact.title} onChange={v => patch({ contact: { ...doc.contact, title: v } })} />
               <Field id="em" label="Email" value={doc.contact.email} onChange={v => patch({ contact: { ...doc.contact, email: v } })} />
@@ -611,23 +580,48 @@ export default function CareerResume() {
             </>
           )}
 
+          {section === 'languages' && (
+            <>
+              <h2 className="text-lg font-black text-ink mb-3">Languages</h2>
+              <Field id="lang" label="Languages" value={doc.extra.languages} onChange={v => patch({ extra: { ...doc.extra, languages: v } })} />
+            </>
+          )}
+
+          {section === 'publications' && (
+            <>
+              <h2 className="text-lg font-black text-ink mb-3">Publications</h2>
+              <textarea className="field w-full p-3 text-sm" rows={5} value={doc.extra.publications} onChange={e => patch({ extra: { ...doc.extra, publications: e.target.value } })} />
+            </>
+          )}
+
+          {section === 'volunteer' && (
+            <>
+              <h2 className="text-lg font-black text-ink mb-3">Volunteer Work</h2>
+              <textarea className="field w-full p-3 text-sm" rows={5} value={doc.extra.volunteer} onChange={e => patch({ extra: { ...doc.extra, volunteer: e.target.value } })} />
+            </>
+          )}
+
           {section === 'extra' && (
             <>
               <h2 className="text-lg font-black text-ink mb-2">Additional Information</h2>
-              <button type="button" className="btn-glass text-xs mb-3" onClick={() => patch({ extraOpen: !doc.extraOpen })}>
-                {doc.extraOpen ? 'Hide optional fields' : 'Show optional fields'}
-              </button>
-              {doc.extraOpen && (
-                <>
-                  <Field id="lang" label="Languages" value={doc.extra.languages} onChange={v => patch({ extra: { ...doc.extra, languages: v } })} />
-                  <Field id="int" label="Interests" value={doc.extra.interests} onChange={v => patch({ extra: { ...doc.extra, interests: v } })} />
-                  <Field id="vol" label="Volunteer work" value={doc.extra.volunteer} onChange={v => patch({ extra: { ...doc.extra, volunteer: v } })} />
-                  <Field id="pub" label="Publications" value={doc.extra.publications} onChange={v => patch({ extra: { ...doc.extra, publications: v } })} />
-                  <Field id="aw" label="Awards" value={doc.extra.awards} onChange={v => patch({ extra: { ...doc.extra, awards: v } })} />
-                  <Field id="os" label="Open source" value={doc.extra.opensource} onChange={v => patch({ extra: { ...doc.extra, opensource: v } })} />
-                  <Field id="lk" label="Links" value={doc.extra.links} onChange={v => patch({ extra: { ...doc.extra, links: v } })} />
-                </>
-              )}
+              <Field id="int" label="Interests" value={doc.extra.interests} onChange={v => patch({ extra: { ...doc.extra, interests: v } })} />
+              <Field id="aw" label="Awards" value={doc.extra.awards} onChange={v => patch({ extra: { ...doc.extra, awards: v } })} />
+              <Field id="os" label="Open source" value={doc.extra.opensource} onChange={v => patch({ extra: { ...doc.extra, opensource: v } })} />
+              <Field id="lk" label="Links" value={doc.extra.links} onChange={v => patch({ extra: { ...doc.extra, links: v } })} />
+              <div className="mt-4">
+                <h3 className="text-sm font-black text-ink mb-2">Custom Sections</h3>
+                {(doc.customSections ?? []).map(cs => (
+                  <article key={cs.id} className="rounded-2xl p-3 mb-3" style={{ border: '1px solid rgba(99,102,241,0.12)' }}>
+                    <Field id={`${cs.id}-t`} label="Section title" value={cs.title} onChange={v => patch({ customSections: (doc.customSections ?? []).map(s => (s.id === cs.id ? { ...s, title: v } : s)) })} />
+                    <textarea className="field w-full p-2 text-sm" rows={3} value={cs.body} onChange={e => patch({ customSections: (doc.customSections ?? []).map(s => (s.id === cs.id ? { ...s, body: e.target.value } : s)) })} />
+                    <div className="flex gap-2 mt-2">
+                      <button type="button" className="btn-glass text-xs" onClick={() => patch({ customSections: (doc.customSections ?? []).map(s => (s.id === cs.id ? { ...s, visible: !s.visible } : s)) })}>{cs.visible ? 'Hide' : 'Show'}</button>
+                      <button type="button" className="btn-glass text-xs" onClick={() => patch({ customSections: (doc.customSections ?? []).filter(s => s.id !== cs.id) })}>Remove</button>
+                    </div>
+                  </article>
+                ))}
+                <button type="button" className="btn-primary text-sm" onClick={() => patch({ customSections: [...(doc.customSections ?? []), { id: uid('cs'), title: 'Custom Section', body: '', visible: true }] })}>+ Add Custom Section</button>
+              </div>
             </>
           )}
         </div>
@@ -638,7 +632,7 @@ export default function CareerResume() {
             <button type="button" className="btn-glass text-xs" onClick={() => setPreviewMode('mobile')}>Mobile Preview</button>
             <button type="button" className="btn-glass text-xs" onClick={() => setFullPreview(true)}>Full Screen</button>
             <button type="button" className="btn-glass text-xs" onClick={() => setPane('edit')}>Edit</button>
-            <button type="button" className="btn-primary text-xs" onClick={() => window.print()}>Download</button>
+            <button type="button" className="btn-primary text-xs" onClick={() => printResumePreview()}>Download PDF</button>
           </div>
           <div className="overflow-x-auto">
             <ResumePreview doc={doc} mode={previewMode} />
@@ -647,16 +641,19 @@ export default function CareerResume() {
       </div>
 
       <section className="glass rounded-3xl p-5 mb-6">
-        <h2 className="text-lg font-black text-ink mb-3">Choose Your Resume Style</h2>
-        <div className="grid sm:grid-cols-4 gap-3">
-          {TEMPLATES.map(t => (
-            <button key={t.id} type="button" className="rv-choice text-left rounded-2xl p-3 border" data-on={doc.template === t.id} onClick={() => patch({ template: t.id })}>
+        <h2 className="text-lg font-black text-ink mb-3">Choose Your Resume Template</h2>
+        <div className="grid sm:grid-cols-2 xl:grid-cols-5 gap-3">
+          {TEMPLATE_CATALOG.map(t => (
+            <button key={t.id} type="button" className="rv-choice text-left rounded-2xl p-3 border" data-on={doc.template === t.id} onClick={() => patch({ template: t.id as ResumeTemplate, style: styleForTemplate(t.id, { ...(doc.style ?? {}), columns: t.defaultColumns }) })}>
               <div className="text-sm font-black text-ink">{t.title}{t.id === 'minimal' ? ' · Default' : ''}</div>
               <div className="text-xs text-muted mt-1">{t.desc}</div>
+              {t.supportsPhoto && <div className="text-[10px] text-primary mt-1">Photo supported</div>}
             </button>
           ))}
         </div>
       </section>
+
+      <ResumeStylePanel doc={doc} onChange={style => patch({ style })} />
 
       <section className="glass rounded-3xl p-5 mb-6">
         <h2 className="text-lg font-black text-ink mb-2">🎯 Tailor Resume For a Job</h2>
@@ -667,7 +664,8 @@ export default function CareerResume() {
           ))}
         </div>
         <textarea className="field w-full p-3 text-sm mb-3" rows={4} placeholder="Paste job description here..." value={jobText} onChange={e => setJobText(e.target.value)} />
-        <button type="button" className="btn-primary text-sm mb-4" onClick={() => patch({ jobTarget: analyzeJob(jobText || doc.targetRole, doc) })}>Analyze Job →</button>
+        <button type="button" className="btn-primary text-sm mb-2" onClick={() => patch({ jobTarget: analyzeJob(jobText || doc.targetRole, doc) })}>Analyze Job →</button>
+        <button type="button" className="btn-glass text-sm mb-4" onClick={() => persist(runCoachAction(doc, 'tailor-job'))}>Tailor Resume For Job</button>
         {doc.jobTarget && (
           <div>
             <p className="text-sm font-bold text-ink">Job Match {doc.jobTarget.matchScore}%</p>
@@ -715,6 +713,7 @@ export default function CareerResume() {
               </div>
               <div className="flex flex-wrap gap-2">
                 <button type="button" className="btn-glass text-xs" onClick={() => { setActiveId(d.id); saveActiveId(d.id) }}>Edit</button>
+                <button type="button" className="btn-glass text-xs" onClick={() => { setRenameId(d.id); setRenameValue(d.versionName) }}>Rename</button>
                 <button type="button" className="btn-glass text-xs" onClick={() => {
                   const copy = cloneResume(d, `${d.versionName} copy`)
                   copy.isDefault = false
@@ -745,11 +744,25 @@ export default function CareerResume() {
       <section className="glass rounded-3xl p-5 mb-6">
         <h2 className="text-lg font-black text-ink mb-2">Export Resume</h2>
         <div className="flex flex-wrap gap-2">
-          <button type="button" className="btn-primary text-sm" onClick={() => { window.print(); setExportNote("Use your browser's Print to PDF. A generated PDF binary is not attached yet.") }}>Download PDF</button>
-          <button type="button" className="btn-glass text-sm" onClick={() => downloadText('doc')}>Download DOCX</button>
-          <button type="button" className="btn-glass text-sm" onClick={() => window.print()}>Print</button>
+          <button type="button" className="btn-primary text-sm" onClick={() => { printResumePreview(); setExportNote("Use your browser's Print dialog and choose Save as PDF. The export matches the live preview template.") }}>Download PDF</button>
+          <button type="button" className="btn-glass text-sm" onClick={() => { downloadResumeDocx(doc); setExportNote('Downloaded DOCX with ATS-friendly plain structure.') }}>Download DOCX</button>
+          <button type="button" className="btn-glass text-sm" onClick={() => printResumePreview()}>Print</button>
         </div>
         {exportNote && <p className="text-sm text-muted mt-3">{exportNote}</p>}
+      </section>
+
+      <section className="glass rounded-3xl p-5 mb-6">
+        <h2 className="text-lg font-black text-ink mb-2">Cover Letter</h2>
+        <p className="text-sm text-muted mb-3">Generated from your resume and current job-targeting context. No invented experience is added.</p>
+        <div className="flex flex-wrap gap-2 mb-3">
+          <button type="button" className="btn-primary text-sm" onClick={() => {
+            const letter = generateCoverLetter(doc)
+            patch({ coverLetter: { ...letter, updatedAt: new Date().toISOString() } })
+          }}>Generate Cover Letter</button>
+        </div>
+        {doc.coverLetter && (
+          <textarea className="field w-full p-3 text-sm" rows={12} value={doc.coverLetter.body} onChange={e => patch({ coverLetter: { ...doc.coverLetter!, body: e.target.value, updatedAt: new Date().toISOString() } })} />
+        )}
       </section>
 
       <section className="glass rounded-3xl p-5 mb-6">
@@ -797,6 +810,21 @@ export default function CareerResume() {
         <div className="fixed inset-0 z-[70] overflow-auto p-6" style={{ background: 'rgba(247,249,252,0.96)' }}>
           <button type="button" className="btn-glass text-sm mb-4" onClick={() => setFullPreview(false)}>Close</button>
           <ResumePreview doc={doc} mode={previewMode} />
+        </div>
+      )}
+
+      {renameId && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: 'rgba(23,32,51,0.45)' }} onClick={() => setRenameId(null)}>
+          <div role="dialog" aria-modal="true" className="glass rounded-3xl p-6 max-w-md w-full" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-black text-ink mb-3">Rename Resume</h2>
+            <input className="field w-full px-3 py-2 text-sm mb-4" value={renameValue} onChange={e => setRenameValue(e.target.value)} />
+            <button type="button" className="btn-primary text-sm" onClick={() => {
+              const rows = docs.map(d => d.id === renameId ? { ...d, versionName: renameValue.trim() || d.versionName, updatedAt: new Date().toISOString() } : d)
+              setDocs(rows)
+              saveDocs(rows)
+              setRenameId(null)
+            }}>Save name</button>
+          </div>
         </div>
       )}
     </div>

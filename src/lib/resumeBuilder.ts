@@ -1,20 +1,32 @@
 import { peekAuthUserId, userStorageKey } from './supabase'
 import { syncResumeToCareerStore } from './careerPersistence'
+import { normalizeResumeDoc } from './resumeStudioMigrate'
+import {
+  defaultLayout,
+  SECTION_CATALOG,
+  TEMPLATE_CATALOG,
+  type CoverLetterDoc,
+  type ResumeCustomSection,
+  type ResumeFont,
+  type ResumeLayoutItem,
+  type ResumeSectionId,
+  type ResumeSpacing,
+  type ResumeStyle,
+  type ResumeTemplate,
+  type SkillCategory,
+} from './resumeStudioTypes'
 
-export type ResumeSectionId =
-  | 'contact'
-  | 'summary'
-  | 'target'
-  | 'experience'
-  | 'education'
-  | 'skills'
-  | 'projects'
-  | 'certs'
-  | 'achievements'
-  | 'extra'
-
-export type ResumeTemplate = 'minimal' | 'modern' | 'professional' | 'technical'
-export type SkillCategory = 'Technical' | 'Tools' | 'Languages' | 'Soft Skills'
+export type {
+  CoverLetterDoc,
+  ResumeCustomSection,
+  ResumeFont,
+  ResumeLayoutItem,
+  ResumeSectionId,
+  ResumeSpacing,
+  ResumeStyle,
+  ResumeTemplate,
+  SkillCategory,
+} from './resumeStudioTypes'
 
 export const RESUME_ROLES = [
   'Frontend Developer',
@@ -37,6 +49,8 @@ export interface ResumeContact {
   linkedin: string
   github: string
   portfolio: string
+  photoUrl?: string | null
+  usePhoto?: boolean
 }
 
 export interface ResumeExperience {
@@ -160,6 +174,11 @@ export interface ResumeDoc {
   extra: ResumeExtra
   extraOpen: boolean
   jobTarget: JobTarget | null
+  layout?: ResumeLayoutItem[]
+  style?: ResumeStyle
+  customSections?: ResumeCustomSection[]
+  coverLetter?: CoverLetterDoc | null
+  autosaveNote?: string | null
 }
 
 export interface ResumeCareerOverlay {
@@ -180,25 +199,8 @@ function resumeOverlayKey(userId?: string | null) {
   return uid ? `${OVERLAY_KEY}:${uid}` : null
 }
 
-export const SECTIONS: { id: ResumeSectionId; label: string }[] = [
-  { id: 'contact', label: 'Contact' },
-  { id: 'summary', label: 'Professional Summary' },
-  { id: 'target', label: 'Target Role' },
-  { id: 'experience', label: 'Experience' },
-  { id: 'education', label: 'Education' },
-  { id: 'skills', label: 'Skills' },
-  { id: 'projects', label: 'Projects' },
-  { id: 'certs', label: 'Certifications' },
-  { id: 'achievements', label: 'Achievements' },
-  { id: 'extra', label: 'Additional Information' },
-]
-
-export const TEMPLATES: { id: ResumeTemplate; title: string; desc: string }[] = [
-  { id: 'minimal', title: 'Minimal', desc: 'Clean ATS-first layout.' },
-  { id: 'modern', title: 'Modern', desc: 'Subtle LearnSyra visual style.' },
-  { id: 'professional', title: 'Professional', desc: 'Traditional corporate layout.' },
-  { id: 'technical', title: 'Technical', desc: 'Developer-focused layout.' },
-]
+export const SECTIONS = SECTION_CATALOG
+export const TEMPLATES = TEMPLATE_CATALOG.map(t => ({ id: t.id, title: t.title, desc: t.desc }))
 
 const KNOWN_SKILLS = [
   'React',
@@ -312,6 +314,10 @@ export function createResume(input: {
     extra: emptyExtra(),
     extraOpen: false,
     jobTarget: null,
+    layout: defaultLayout(),
+    customSections: [],
+    coverLetter: null,
+    autosaveNote: null,
   }
 }
 
@@ -567,7 +573,8 @@ export function loadDocs(): ResumeDoc[] {
   if (!key) return []
   try {
     const raw = localStorage.getItem(key)
-    return raw ? (JSON.parse(raw) as ResumeDoc[]) : []
+    const docs = raw ? (JSON.parse(raw) as ResumeDoc[]) : []
+    return docs.map(normalizeResumeDoc)
   } catch {
     return []
   }
@@ -649,7 +656,30 @@ export function sectionState(doc: ResumeDoc, id: ResumeSectionId): 'done' | 'war
   if (id === 'projects') return s.projects ? 'done' : 'warn'
   if (id === 'certs') return doc.certifications.some(c => c.included) ? 'done' : 'empty'
   if (id === 'achievements') return s.achievements >= 60 ? 'done' : 'warn'
+  if (id === 'languages') return doc.extra.languages.trim() ? 'done' : 'empty'
+  if (id === 'publications') return doc.extra.publications.trim() ? 'done' : 'empty'
+  if (id === 'volunteer') return doc.extra.volunteer.trim() ? 'done' : 'empty'
   return Object.values(doc.extra).some(v => v.trim()) ? 'done' : 'empty'
+}
+
+export function visibleSections(doc: ResumeDoc) {
+  const layout = doc.layout?.length ? doc.layout : defaultLayout()
+  return layout.filter(item => item.visible && item.id !== 'contact')
+}
+
+export function reorderLayout(doc: ResumeDoc, from: number, to: number): ResumeDoc {
+  const layout = [...(doc.layout?.length ? doc.layout : defaultLayout())]
+  const [item] = layout.splice(from, 1)
+  if (!item) return doc
+  layout.splice(to, 0, item)
+  return { ...doc, layout, updatedAt: new Date().toISOString() }
+}
+
+export function toggleSectionVisibility(doc: ResumeDoc, id: ResumeSectionId | string, visible: boolean): ResumeDoc {
+  const layout = (doc.layout?.length ? doc.layout : defaultLayout()).map(item =>
+    item.id === id ? { ...item, visible } : item,
+  )
+  return { ...doc, layout, updatedAt: new Date().toISOString() }
 }
 
 export function exportPlain(doc: ResumeDoc) {
@@ -674,6 +704,19 @@ export function exportPlain(doc: ResumeDoc) {
     '',
     'CERTIFICATIONS',
     ...doc.certifications.filter(c => c.included).map(c => `${c.title} — ${c.issuer} (${c.completed}${c.official ? '' : ', course record'})`),
+    '',
+    'LANGUAGES',
+    doc.extra.languages,
+    '',
+    'PUBLICATIONS',
+    doc.extra.publications,
+    '',
+    'VOLUNTEER',
+    doc.extra.volunteer,
+    '',
+    'ADDITIONAL',
+    [doc.extra.interests, doc.extra.awards, doc.extra.opensource, doc.extra.links].filter(Boolean).join('\n'),
+    ...(doc.customSections ?? []).flatMap(s => ['', s.title.toUpperCase(), s.body]),
   ]
   return lines.join('\n')
 }
