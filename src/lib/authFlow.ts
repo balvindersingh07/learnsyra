@@ -26,13 +26,31 @@ export const ROLE_OPTIONS: {
   },
 ]
 
+export function isSignupAuthRole(value: string | null | undefined): value is SignupAuthRole {
+  return value === 'student' || value === 'tutor'
+}
+
 export function parseAuthRole(search: string): SignupAuthRole | null {
   const role = new URLSearchParams(search).get('role')
   if (role === 'student' || role === 'tutor') return role
   return null
 }
 
+export function parseAuthRoleFromPath(pathname: string): SignupAuthRole | null {
+  const match = pathname.match(/^\/login\/(student|tutor)\/?$/)
+  const segment = match?.[1]
+  return isSignupAuthRole(segment) ? segment : null
+}
+
+export function parseAuthRoleFromLocation(pathname: string, search: string): SignupAuthRole | null {
+  return parseAuthRoleFromPath(pathname) ?? parseAuthRole(search)
+}
+
 export function authLoginPath(role: SignupAuthRole) {
+  return `/login/${role}`
+}
+
+export function authLoginQueryPath(role: SignupAuthRole) {
   return `/login?role=${role}`
 }
 
@@ -46,31 +64,4 @@ export function roleLabel(role: SignupAuthRole) {
 
 export function roleEmoji(role: SignupAuthRole) {
   return ROLE_OPTIONS.find(r => r.id === role)?.emoji ?? '✨'
-}
-
-export function isSignupAuthRole(value: string | null | undefined): value is SignupAuthRole {
-  return value === 'student' || value === 'tutor'
-}
-
-/** Role chosen before OAuth redirect; survives the callback via sessionStorage. */
-export function readPendingOAuthRole(): SignupAuthRole | null {
-  try {
-    const stored = sessionStorage.getItem(AUTH_ROLE_KEY)
-    return isSignupAuthRole(stored) ? stored : null
-  } catch {
-    return null
-  }
-}
-
-export function clearPendingOAuthRole() {
-  try {
-    sessionStorage.removeItem(AUTH_ROLE_KEY)
-  } catch {
-    /* ignore */
-  }
-}
-
-/** Prefer sessionStorage; fall back to the OAuth redirect URL query param. */
-export function resolvePendingOAuthRole(search = ''): SignupAuthRole | null {
-  return readPendingOAuthRole() ?? parseAuthRole(search)
 }

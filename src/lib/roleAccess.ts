@@ -59,7 +59,14 @@ export function displayInitials(name: string) {
 }
 
 export function postLoginPath(from: string | undefined, role: UserRole) {
-  const dest = from && from !== '/' && from !== '/login' && from !== '/signup' ? from : roleHome(role)
+  const dest =
+    from &&
+    from !== '/' &&
+    from !== '/login' &&
+    !from.startsWith('/login/') &&
+    from !== '/signup'
+      ? from
+      : roleHome(role)
   if (role === 'admin') {
     if (dest.startsWith('/admin')) return dest
     return ADMIN_HOME

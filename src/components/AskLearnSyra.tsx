@@ -14,6 +14,7 @@ export default function AskLearnSyra() {
     profile.role === 'admin' ||
     location.pathname === '/' ||
     location.pathname === '/login' ||
+    location.pathname.startsWith('/login/') ||
     location.pathname === '/signup' ||
     location.pathname === '/ai-learning'
     || location.pathname.startsWith('/tutor')

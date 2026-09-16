@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { Link, Navigate, useLocation, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth, consumeAuthReturnPath } from '../context/AuthContext'
 import { postLoginPath } from '../lib/roleAccess'
 import { normalizeEmail } from '../lib/authValidation'
 import {
   authSignupPath,
-  parseAuthRole,
+  isSignupAuthRole,
+  parseAuthRoleFromLocation,
   roleEmoji,
   roleLabel,
   type SignupAuthRole,
@@ -25,8 +26,11 @@ export default function Intro() {
     configured,
   } = useAuth()
   const location = useLocation()
+  const { authRole } = useParams<{ authRole?: string }>()
   const [searchParams] = useSearchParams()
-  const role = parseAuthRole(searchParams.toString())
+  const role =
+    (isSignupAuthRole(authRole) ? authRole : null) ??
+    parseAuthRoleFromLocation(location.pathname, location.search)
 
   const storedReturn = useState(() => consumeAuthReturnPath())[0]
   const from =

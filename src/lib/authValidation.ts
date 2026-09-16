@@ -1,8 +1,7 @@
 export const MIN_PASSWORD_LENGTH = 8
 
-/** Production auth redirects use learnsyra.com; local dev uses the current origin. */
+/** OAuth redirect origin must match the tab the user started from (www vs apex). */
 export function authSiteOrigin(): string {
-  if (import.meta.env.PROD) return 'https://learnsyra.com'
   return window.location.origin
 }
 

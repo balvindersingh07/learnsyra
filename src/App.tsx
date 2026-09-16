@@ -113,6 +113,7 @@ export default function App() {
   const hideNav =
     location.pathname === '/' ||
     location.pathname === '/login' ||
+    location.pathname.startsWith('/login/') ||
     location.pathname === '/signup' ||
     location.pathname === '/reset-password' ||
     location.pathname === '/verify-email'
@@ -125,6 +126,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<AuthRoleSelect />} />
           <Route path="/login" element={<Intro />} />
+          <Route path="/login/:authRole" element={<Intro />} />
           <Route path="/home" element={<LandingRoute />} />
           <Route path="/blog" element={<Blog />} />
           <Route path="/blog/:slug" element={<BlogPost />} />
