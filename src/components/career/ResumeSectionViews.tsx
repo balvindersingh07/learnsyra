@@ -1,12 +1,21 @@
 import type { ResumeCustomSection, ResumeDoc, ResumeSectionId } from '../../lib/resumeBuilder'
 import { templateMeta } from '../../lib/resumeStudioTypes'
 
+function contactRows(doc: ResumeDoc) {
+  const rows: { label: string; value: string }[] = []
+  if (doc.contact.location) rows.push({ label: 'Location', value: doc.contact.location })
+  if (doc.contact.email) rows.push({ label: 'Email', value: doc.contact.email })
+  if (doc.contact.phone) rows.push({ label: 'Phone', value: doc.contact.phone })
+  if (doc.contact.linkedin) rows.push({ label: 'LinkedIn', value: doc.contact.linkedin })
+  if (doc.contact.github) rows.push({ label: 'GitHub', value: doc.contact.github })
+  if (doc.contact.portfolio) rows.push({ label: 'Portfolio', value: doc.contact.portfolio })
+  return rows
+}
+
 export function ResumeHeader({ doc, showPhoto }: { doc: ResumeDoc; showPhoto: boolean }) {
   const meta = templateMeta(doc.template)
   const photo = showPhoto && meta.supportsPhoto && doc.contact.usePhoto && doc.contact.photoUrl
-  const contactLine = [doc.contact.email, doc.contact.phone, doc.contact.location, doc.contact.linkedin, doc.contact.github, doc.contact.portfolio]
-    .filter(Boolean)
-    .join(' · ')
+  const rows = contactRows(doc)
 
   return (
     <header className={`rv-header ${photo ? 'rv-header--photo' : ''}`}>
@@ -17,8 +26,17 @@ export function ResumeHeader({ doc, showPhoto }: { doc: ResumeDoc; showPhoto: bo
       )}
       <div className="rv-header-main">
         <h1>{doc.contact.name || 'Your name'}</h1>
-        <p className="rv-title">{doc.contact.title || doc.targetRole}</p>
-        {contactLine && <p className="rv-contact-line">{contactLine}</p>}
+        <p className="rv-title">{doc.contact.title || doc.targetRole || 'Software Engineer'}</p>
+        {rows.length > 0 && (
+          <div className="rv-contact-grid">
+            {rows.map(row => (
+              <div key={row.label} className="rv-contact-item">
+                <span className="rv-contact-label">{row.label}</span>
+                <span className="rv-contact-value">{row.value}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </header>
   )
@@ -33,6 +51,7 @@ export function renderBuiltinSection(doc: ResumeDoc, id: ResumeSectionId) {
   const projects = doc.projects.filter(p => p.included)
   const certs = doc.certifications.filter(c => c.included)
   const ach = doc.achievements.filter(a => a.included)
+  const ats = templateMeta(doc.template).atsFocused
 
   switch (id) {
     case 'summary':
@@ -58,8 +77,11 @@ export function renderBuiltinSection(doc: ResumeDoc, id: ResumeSectionId) {
           <SectionTitle>Experience</SectionTitle>
           {doc.experience.filter(e => e.title || e.company).map(e => (
             <div key={e.id} className="rv-entry">
-              <p className="rv-entry-title">{e.title}{e.company ? ` · ${e.company}` : ''}</p>
-              <p className="rv-entry-meta">{[e.location, e.startDate, e.current ? 'Present' : e.endDate].filter(Boolean).join(' · ')}</p>
+              <div className="rv-entry-head">
+                <p className="rv-entry-title">{e.title}</p>
+                <p className="rv-entry-dates">{[e.startDate, e.current ? 'Present' : e.endDate].filter(Boolean).join(' – ')}</p>
+              </div>
+              <p className="rv-entry-sub">{[e.company, e.location].filter(Boolean).join(' · ')}</p>
               <ul className="rv-list">{e.bullets.filter(Boolean).map(b => <li key={b}>{b}</li>)}</ul>
             </div>
           ))}
@@ -72,9 +94,10 @@ export function renderBuiltinSection(doc: ResumeDoc, id: ResumeSectionId) {
           <SectionTitle>Education</SectionTitle>
           {doc.education.filter(e => e.institution || e.degree).map(e => (
             <div key={e.id} className="rv-entry">
-              <p className="rv-entry-title">{e.degree}{e.institution ? `, ${e.institution}` : ''}</p>
-              <p className="rv-entry-meta">{[e.location, e.startDate, e.endDate, e.grade].filter(Boolean).join(' · ')}</p>
-              {e.coursework && <p className="rv-body">Coursework: {e.coursework}</p>}
+              <p className="rv-entry-title">{e.degree}</p>
+              <p className="rv-entry-sub">{[e.institution, e.location].filter(Boolean).join(' · ')}</p>
+              <p className="rv-entry-meta">{[e.startDate, e.endDate, e.grade].filter(Boolean).join(' · ')}</p>
+              {e.coursework && <p className="rv-body">Relevant coursework: {e.coursework}</p>}
             </div>
           ))}
         </section>
@@ -83,8 +106,22 @@ export function renderBuiltinSection(doc: ResumeDoc, id: ResumeSectionId) {
       if (!skills.length) return null
       return (
         <section data-section="skills">
-          <SectionTitle>Skills</SectionTitle>
-          <p className="rv-body">{skills.map(s => s.name).join(' · ')}</p>
+          <SectionTitle>Technical Skills</SectionTitle>
+          {ats ? (
+            <p className="rv-body rv-skills-line">{skills.map(s => s.name).join(' · ')}</p>
+          ) : (
+            <div className="rv-skill-groups">
+              {(['Technical', 'Tools', 'Languages', 'Soft Skills'] as const).map(cat => {
+                const group = skills.filter(s => s.category === cat)
+                if (!group.length) return null
+                return (
+                  <p key={cat} className="rv-body rv-skills-line">
+                    <strong>{cat}:</strong> {group.map(s => s.name).join(', ')}
+                  </p>
+                )
+              })}
+            </div>
+          )}
         </section>
       )
     case 'projects':
@@ -95,7 +132,7 @@ export function renderBuiltinSection(doc: ResumeDoc, id: ResumeSectionId) {
           {projects.map(p => (
             <div key={p.projectId} className="rv-entry">
               <p className="rv-entry-title">{p.title}</p>
-              <p className="rv-entry-meta">{p.skills.join(' · ')}</p>
+              {p.skills.length > 0 && <p className="rv-tech-stack"><span>Tech Stack:</span> {p.skills.join(' · ')}</p>}
               <ul className="rv-list">{(p.bullets.length ? p.bullets : [p.description]).filter(Boolean).map(b => <li key={b}>{b}</li>)}</ul>
             </div>
           ))}
@@ -116,7 +153,7 @@ export function renderBuiltinSection(doc: ResumeDoc, id: ResumeSectionId) {
       return (
         <section data-section="achievements">
           <SectionTitle>Achievements</SectionTitle>
-          <p className="rv-body">{ach.map(a => a.label).join(' · ')}</p>
+          <ul className="rv-list">{ach.map(a => <li key={a.id}>{a.label}</li>)}</ul>
         </section>
       )
     case 'languages':

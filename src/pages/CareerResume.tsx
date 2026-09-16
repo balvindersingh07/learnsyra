@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import CareerHubNav from '../components/career/CareerHubNav'
-import ResumeAnalysisPanel from '../components/career/resume-studio/ResumeAnalysisPanel'
-import ResumeCoachPanel from '../components/career/resume-studio/ResumeCoachPanel'
+import ResumeAnalysisBar from '../components/career/resume-studio/ResumeAnalysisBar'
 import ResumePhotoUpload from '../components/career/resume-studio/ResumePhotoUpload'
 import ResumeSectionNav from '../components/career/resume-studio/ResumeSectionNav'
+import ResumeStudioToolbar from '../components/career/resume-studio/ResumeStudioToolbar'
 import ResumeStylePanel from '../components/career/resume-studio/ResumeStylePanel'
+import ResumeTemplatePicker, { applyTemplate } from '../components/career/resume-studio/ResumeTemplatePicker'
+import SectionAiBar from '../components/career/resume-studio/SectionAiBar'
 import ResumePreview from '../components/career/ResumePreview'
 import { analyzeResume } from '../lib/resumeAnalysis'
 import { generateCoverLetter, runCoachAction } from '../lib/resumeCoach'
 import { downloadResumeDocx, printResumePreview } from '../lib/resumeExport'
-import { styleForTemplate, TEMPLATE_CATALOG } from '../lib/resumeStudioTypes'
+import { templateMeta } from '../lib/resumeStudioTypes'
 import { useAuth } from '../context/AuthContext'
 import {
   computeReadiness,
@@ -48,7 +50,6 @@ import {
   type ResumeDoc,
   type ResumeSectionId,
   type ResumeSkill,
-  type ResumeTemplate,
   type SkillCategory,
 } from '../lib/resumeBuilder'
 import { careerInterviewPath } from '../lib/paths'
@@ -69,9 +70,9 @@ function Field({
   onChange: (v: string) => void
 }) {
   return (
-    <label className="block mb-3" htmlFor={id}>
-      <span className="text-xs font-semibold text-muted uppercase">{label}</span>
-      <input id={id} value={value} onChange={e => onChange(e.target.value)} className="field w-full mt-1 px-3 py-2 text-sm" />
+    <label className="rs-field" htmlFor={id}>
+      <span>{label}</span>
+      <input id={id} value={value} onChange={e => onChange(e.target.value)} className="rs-input" />
     </label>
   )
 }
@@ -81,15 +82,15 @@ function AddSkill({ onAdd }: { onAdd: (s: ResumeSkill) => void }) {
   const [category, setCategory] = useState<SkillCategory>('Technical')
   return (
     <div className="flex flex-wrap gap-2 items-end">
-      <input className="field px-3 py-2 text-sm" placeholder="Add a skill you actually have" value={name} onChange={e => setName(e.target.value)} />
-      <select className="field px-3 py-2 text-sm" value={category} onChange={e => setCategory(e.target.value as SkillCategory)}>
+      <input className="rs-input" placeholder="Add a skill you actually have" value={name} onChange={e => setName(e.target.value)} />
+      <select className="rs-input" value={category} onChange={e => setCategory(e.target.value as SkillCategory)}>
         {['Technical', 'Tools', 'Languages', 'Soft Skills'].map(c => (
           <option key={c} value={c}>{c}</option>
         ))}
       </select>
       <button
         type="button"
-        className="btn-primary text-xs"
+        className="rs-btn rs-btn-primary"
         onClick={() => {
           if (!name.trim()) return
           onAdd({ id: uid('sk'), name: name.trim(), category, verified: false, included: true })
@@ -128,6 +129,8 @@ export default function CareerResume() {
   const [autosavedAt, setAutosavedAt] = useState<string | null>(null)
   const [renameId, setRenameId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [analysisOpen, setAnalysisOpen] = useState(false)
+  const templatesRef = useRef<HTMLDetailsElement>(null)
 
   const doc = docs.find(d => d.id === activeId) ?? docs[0]
   const scores = doc ? scoreResume(doc) : null
@@ -326,54 +329,40 @@ export default function CareerResume() {
     )
   }
 
-  const statusLabel = scores.completeness >= 80 ? 'Strong' : scores.completeness >= 70 ? 'On track' : 'Needs Improvement'
+  const scrollToTemplates = () => {
+    templatesRef.current?.setAttribute('open', '')
+    templatesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 
   return (
-    <div className="pt-20 px-4 sm:px-6 pb-24 max-w-7xl mx-auto overflow-x-hidden rv-shell">
-      <p className="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Career Center</p>
-      <h1 className="text-3xl sm:text-4xl font-black text-ink mb-2" style={{ fontFamily: 'Plus Jakarta Sans,sans-serif', letterSpacing: '-0.03em' }}>
-        Resume <span className="gradient-text">Studio</span>
-      </h1>
-      <p className="text-muted mb-2 max-w-2xl leading-relaxed">
-        Build production-quality resumes with market-specific templates, live preview, AI coaching, and export tools.
-      </p>
-      {autosavedAt && <p className="text-xs text-muted mb-4">Autosaved locally at {autosavedAt}</p>}
+    <div className="pt-16 px-3 sm:px-5 pb-20 max-w-[1600px] mx-auto rs-studio">
       <CareerHubNav />
-      {syncError && (
-        <div className="glass rounded-2xl p-3 mb-4 text-sm" style={{ color: '#e11d48' }}>{syncError}</div>
-      )}
+      {syncError && <p className="text-sm mb-2" style={{ color: '#e11d48' }}>{syncError}</p>}
 
-      <div className="glass rounded-3xl p-5 mb-5">
-        <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
-          <div>
-            <div className="text-sm font-semibold text-muted">Resume Readiness</div>
-            <div className="text-3xl font-black text-ink career-count">{scores.completeness}%</div>
-            <div className="text-sm font-semibold" style={{ color: scores.completeness >= 80 ? '#0F8A68' : '#B45309' }}>{statusLabel}</div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className="btn-primary text-sm" onClick={runSafe}>✨ Improve With AI</button>
-            <button type="button" className="btn-glass text-sm" onClick={() => { setPreviewOpen(true); setPane('preview') }}>Preview Resume</button>
-          </div>
-        </div>
-        <div className="progress-bar" aria-label={`Resume readiness ${scores.completeness} percent`}>
-          <div className="progress-fill" style={{ width: `${scores.completeness}%` }} />
-        </div>
-        <p className="text-xs text-muted mt-2">AI-generated readiness estimate — not an official ATS vendor score.</p>
-      </div>
-
-      <ResumeAnalysisPanel analysis={analysis} />
-      <ResumeCoachPanel doc={doc} onApply={next => persist(next)} />
-
-      <div className="flex lg:hidden gap-2 mb-4">
+      <div className={`${pane === 'sections' || pane === 'edit' || pane === 'preview' ? '' : ''} lg:hidden rs-mobile-tabs`}>
         {(['sections', 'edit', 'preview'] as MobilePane[]).map(p => (
-          <button key={p} type="button" className="rv-choice flex-1 py-2 rounded-xl text-xs font-semibold border capitalize" data-on={pane === p} onClick={() => setPane(p)}>
-            {p === 'edit' ? 'Editor' : p}
+          <button key={p} type="button" className={`rs-mobile-tab${pane === p ? ' rs-mobile-tab--on' : ''}`} onClick={() => setPane(p)}>
+            {p === 'edit' ? 'Editor' : p === 'sections' ? 'Sections' : 'Preview'}
           </button>
         ))}
       </div>
 
-      <div className="grid lg:grid-cols-[16rem_minmax(0,1fr)_minmax(18rem,0.9fr)] gap-4 mb-6">
-        <div className={`${pane !== 'preview' ? '' : 'hidden'} lg:block`}>
+      <ResumeStudioToolbar
+        resumeName={doc.versionName}
+        autosaveLabel={autosavedAt ? `Autosaved ${autosavedAt}` : saveState === 'saved' ? 'Saved locally' : null}
+        template={doc.template}
+        busySave={busySave}
+        onTemplates={scrollToTemplates}
+        onPreview={() => { setPane('preview'); setFullPreview(true) }}
+        onPdf={() => { printResumePreview(); setExportNote("Use Print → Save as PDF to match the live preview.") }}
+        onDocx={() => { downloadResumeDocx(doc); setExportNote('DOCX downloaded.') }}
+        onSave={saveBackend}
+      />
+
+      <ResumeAnalysisBar analysis={analysis} expanded={analysisOpen} onToggle={() => setAnalysisOpen(v => !v)} />
+
+      <div className="rs-workspace">
+        <div className={`${pane === 'sections' || pane === 'edit' ? '' : 'hidden'} lg:block`}>
           <ResumeSectionNav
             doc={doc}
             active={section}
@@ -383,10 +372,12 @@ export default function CareerResume() {
           />
         </div>
 
-        <div className={`glass rounded-3xl p-5 ${pane === 'edit' ? '' : 'hidden'} lg:block`}>
+        <div className={`rs-editor ${pane === 'edit' ? '' : 'hidden'} lg:block`}>
+          <SectionAiBar section={section} doc={doc} onApply={next => persist(next)} />
           {section === 'contact' && (
             <>
-              <h2 className="text-lg font-black text-ink mb-3">Contact Information</h2>
+              <h2 className="rs-editor-title">Contact Information</h2>
+              <p className="rs-editor-sub">Professional contact details shown in the resume header.</p>
               {session?.user.id && (
                 <ResumePhotoUpload
                   userId={session.user.id}
@@ -408,22 +399,16 @@ export default function CareerResume() {
 
           {section === 'summary' && (
             <>
-              <h2 className="text-lg font-black text-ink mb-3">Professional Summary</h2>
-              <textarea className="field w-full p-3 text-sm mb-3" rows={6} placeholder="Write a short professional summary..." value={doc.summary} onChange={e => patch({ summary: e.target.value })} />
-              <div className="flex flex-wrap gap-2">
-                <button type="button" className="btn-primary text-xs" onClick={() => patch({ summary: generateSummary(doc) })}>✨ Generate With AI</button>
-                <button type="button" className="btn-glass text-xs" onClick={() => patch({ summary: rewriteSummary(doc.summary, 'improve', doc) })}>Improve</button>
-                <button type="button" className="btn-glass text-xs" onClick={() => patch({ summary: rewriteSummary(doc.summary, 'concise', doc) })}>Make More Concise</button>
-                <button type="button" className="btn-glass text-xs" onClick={() => patch({ summary: rewriteSummary(doc.summary, 'technical', doc) })}>Make More Technical</button>
-                <button type="button" className="btn-glass text-xs" onClick={() => patch({ summary: rewriteSummary(doc.summary, 'career', doc) })}>Make More Career-Focused</button>
-              </div>
-              <p className="text-xs text-muted mt-3">AI uses your target role, listed skills, and LearnSyra projects. It does not invent jobs or metrics.</p>
+              <h2 className="rs-editor-title">Professional Summary</h2>
+              <p className="rs-editor-sub">2–4 lines focused on your engineering profile and target role.</p>
+              <textarea className="rs-input mb-3" rows={6} placeholder="Write a short professional summary..." value={doc.summary} onChange={e => patch({ summary: e.target.value })} />
+              <button type="button" className="rs-btn rs-btn-ai" onClick={() => patch({ summary: generateSummary(doc) })}>Generate from profile</button>
             </>
           )}
 
           {section === 'target' && (
             <>
-              <h2 className="text-lg font-black text-ink mb-2">Target Role</h2>
+              <h2 className="rs-editor-title">Target Role</h2>
               <div className="text-2xl font-black text-ink">{doc.targetRole}</div>
               <p className="text-sm font-bold text-primary mb-4">{snap.targetMatch}% Match</p>
               <button type="button" className="btn-glass text-sm" onClick={() => setRoleOpen(true)}>Change Career Goal</button>
@@ -432,10 +417,10 @@ export default function CareerResume() {
 
           {section === 'experience' && (
             <>
-              <h2 className="text-lg font-black text-ink mb-2">Experience</h2>
-              <p className="text-xs text-muted mb-4">Add only roles you actually held. AI may improve wording, never invent employers or metrics.</p>
+              <h2 className="rs-editor-title">Experience</h2>
+              <p className="rs-editor-sub">Add only roles you actually held. Lead bullets with action, technology, and outcome.</p>
               {doc.experience.map(exp => (
-                <article key={exp.id} className="rounded-2xl p-3 mb-3" style={{ border: '1px solid rgba(99,102,241,0.12)' }}>
+                <article key={exp.id} className="rs-entry-card">
                   <Field id={`${exp.id}-t`} label="Job title" value={exp.title} onChange={v => patch({ experience: doc.experience.map(e => (e.id === exp.id ? { ...e, title: v } : e)) })} />
                   <Field id={`${exp.id}-c`} label="Company" value={exp.company} onChange={v => patch({ experience: doc.experience.map(e => (e.id === exp.id ? { ...e, company: v } : e)) })} />
                   <Field id={`${exp.id}-l`} label="Location" value={exp.location} onChange={v => patch({ experience: doc.experience.map(e => (e.id === exp.id ? { ...e, location: v } : e)) })} />
@@ -452,12 +437,12 @@ export default function CareerResume() {
                     const hint = bulletHint[key]
                     return (
                       <div key={key} className="mb-3">
-                        <textarea className="field w-full p-2 text-sm" rows={2} placeholder="Describe work you actually did..." value={b} onChange={e => {
+                        <textarea className="rs-input" rows={2} placeholder="Action + technology + outcome..." value={b} onChange={e => {
                           const bullets = exp.bullets.slice()
                           bullets[i] = e.target.value
                           patch({ experience: doc.experience.map(x => (x.id === exp.id ? { ...x, bullets } : x)) })
                         }} />
-                        <button type="button" className="btn-glass text-xs mt-1" onClick={() => setBulletHint({ ...bulletHint, [key]: { original: b, improved: improveBullet(b, 0), variant: 0 } })}>✨ Improve With AI</button>
+                        <button type="button" className="rs-btn rs-btn-ai mt-1" onClick={() => setBulletHint({ ...bulletHint, [key]: { original: b, improved: improveBullet(b, 0), variant: 0 } })}>Improve Bullet</button>
                         {hint && (
                           <div className="mt-2 text-sm">
                             <p className="text-muted">Original: {hint.original}</p>
@@ -483,18 +468,18 @@ export default function CareerResume() {
                       </div>
                     )
                   })}
-                  <button type="button" className="btn-glass text-xs" onClick={() => patch({ experience: doc.experience.map(x => (x.id === exp.id ? { ...x, bullets: [...x.bullets, ''] } : x)) })}>+ Add bullet</button>
+                  <button type="button" className="rs-btn rs-btn-ghost" onClick={() => patch({ experience: doc.experience.map(x => (x.id === exp.id ? { ...x, bullets: [...x.bullets, ''] } : x)) })}>+ Add bullet</button>
                 </article>
               ))}
-              <button type="button" className="btn-primary text-sm" onClick={() => patch({ experience: [...doc.experience, emptyExperience()] })}>+ Add Experience</button>
+              <button type="button" className="rs-btn rs-btn-primary" onClick={() => patch({ experience: [...doc.experience, emptyExperience()] })}>+ Add Experience</button>
             </>
           )}
 
           {section === 'education' && (
             <>
-              <h2 className="text-lg font-black text-ink mb-3">Education</h2>
+              <h2 className="rs-editor-title">Education</h2>
               {doc.education.map(ed => (
-                <article key={ed.id} className="rounded-2xl p-3 mb-3" style={{ border: '1px solid rgba(99,102,241,0.12)' }}>
+                <article key={ed.id} className="rs-entry-card">
                   <Field id={`${ed.id}-d`} label="Degree" value={ed.degree} onChange={v => patch({ education: doc.education.map(e => (e.id === ed.id ? { ...e, degree: v } : e)) })} />
                   <Field id={`${ed.id}-i`} label="Institution" value={ed.institution} onChange={v => patch({ education: doc.education.map(e => (e.id === ed.id ? { ...e, institution: v } : e)) })} />
                   <Field id={`${ed.id}-l`} label="Location" value={ed.location} onChange={v => patch({ education: doc.education.map(e => (e.id === ed.id ? { ...e, location: v } : e)) })} />
@@ -506,20 +491,20 @@ export default function CareerResume() {
                   <Field id={`${ed.id}-c`} label="Relevant coursework (optional)" value={ed.coursework} onChange={v => patch({ education: doc.education.map(e => (e.id === ed.id ? { ...e, coursework: v } : e)) })} />
                 </article>
               ))}
-              <button type="button" className="btn-primary text-sm" onClick={() => patch({ education: [...doc.education, emptyEducation()] })}>+ Add Education</button>
+              <button type="button" className="rs-btn rs-btn-primary" onClick={() => patch({ education: [...doc.education, emptyEducation()] })}>+ Add Education</button>
             </>
           )}
 
           {section === 'skills' && (
             <>
-              <h2 className="text-lg font-black text-ink mb-2">🧬 Skills</h2>
-              <p className="text-xs text-muted mb-3">Suggested from LearnSyra learning history. Verified only when backed by course or project data.</p>
-              <div className="flex flex-wrap gap-2 mb-4">
+              <h2 className="rs-editor-title">Technical Skills</h2>
+              <p className="rs-editor-sub">Include only skills you can support with projects or experience.</p>
+              <div className="rs-skill-row">
                 {doc.skills.map(sk => (
-                  <label key={sk.id} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm" style={{ background: sk.included ? 'rgba(108,92,231,0.12)' : 'rgba(255,255,255,0.8)', border: '1px solid rgba(99,102,241,0.12)' }}>
+                  <label key={sk.id} className={`rs-skill-chip${sk.included ? ' rs-skill-chip--on' : ''}`}>
                     <input type="checkbox" className="career-check" checked={sk.included} onChange={e => patch({ skills: doc.skills.map(s => (s.id === sk.id ? { ...s, included: e.target.checked } : s)) })} />
                     {sk.name}
-                    {sk.verified && <span className="text-[10px] font-semibold text-success">Verified through LearnSyra</span>}
+                    {sk.verified && <span className="text-[10px] text-success">Verified</span>}
                   </label>
                 ))}
               </div>
@@ -529,19 +514,23 @@ export default function CareerResume() {
 
           {section === 'projects' && (
             <>
-              <h2 className="text-lg font-black text-ink mb-3">🚀 Projects</h2>
+              <h2 className="rs-editor-title">Projects</h2>
+              <p className="rs-editor-sub">Highlight engineering projects with tech stack and outcomes.</p>
               {doc.projects.map(p => (
-                <article key={p.projectId} className="rounded-2xl p-4 mb-3" style={{ border: '1px solid rgba(99,102,241,0.12)' }}>
+                <article key={p.projectId} className="rs-entry-card">
                   <div className="flex justify-between gap-2">
                     <div className="font-bold text-ink">{p.title}</div>
-                    <div className="text-sm font-black">{p.score} / 100</div>
+                    <div className="text-sm font-semibold text-muted">{p.score} / 100</div>
                   </div>
-                  <p className="text-xs text-muted">{p.skills.join(' · ')} {p.portfolioReady ? '· ✓ Portfolio ready' : ''}</p>
-                  <textarea className="field w-full p-2 text-sm mt-2" rows={2} value={p.description} onChange={e => patch({ projects: doc.projects.map(x => (x.projectId === p.projectId ? { ...x, description: e.target.value } : x)) })} />
+                  <Field id={`${p.projectId}-stack`} label="Tech Stack / Technologies" value={p.skills.join(', ')} onChange={v => patch({ projects: doc.projects.map(x => (x.projectId === p.projectId ? { ...x, skills: v.split(',').map(s => s.trim()).filter(Boolean) } : x)) })} />
+                  <label className="rs-field">
+                    <span>Project summary</span>
+                    <textarea className="rs-input" rows={2} value={p.description} onChange={e => patch({ projects: doc.projects.map(x => (x.projectId === p.projectId ? { ...x, description: e.target.value } : x)) })} />
+                  </label>
                   <div className="flex flex-wrap gap-2 mt-2">
-                    <button type="button" className="btn-glass text-xs" onClick={() => patch({ projects: doc.projects.map(x => (x.projectId === p.projectId ? { ...x, included: true } : x)) })}>Add to Resume</button>
-                    <button type="button" className="btn-glass text-xs" onClick={() => patch({ projects: doc.projects.map(x => (x.projectId === p.projectId ? { ...x, bullets: projectBullets(x) } : x)) })}>✨ Generate Project Description</button>
-                    <button type="button" className="btn-glass text-xs" onClick={() => patch({ projects: doc.projects.map(x => (x.projectId === p.projectId ? { ...x, included: false } : x)) })}>Remove</button>
+                    <button type="button" className="rs-btn rs-btn-ghost" onClick={() => patch({ projects: doc.projects.map(x => (x.projectId === p.projectId ? { ...x, included: true } : x)) })}>Include on resume</button>
+                    <button type="button" className="rs-btn rs-btn-ai" onClick={() => patch({ projects: doc.projects.map(x => (x.projectId === p.projectId ? { ...x, bullets: projectBullets(x) } : x)) })}>Generate bullets</button>
+                    <button type="button" className="rs-btn rs-btn-ghost" onClick={() => patch({ projects: doc.projects.map(x => (x.projectId === p.projectId ? { ...x, included: false } : x)) })}>Exclude</button>
                   </div>
                   {p.bullets.length > 0 && (
                     <ul className="text-sm mt-2 list-disc pl-5">{p.bullets.map(b => <li key={b}>{b}</li>)}</ul>
@@ -626,38 +615,33 @@ export default function CareerResume() {
           )}
         </div>
 
-        <aside className={`${pane === 'preview' ? '' : 'hidden'} lg:block`}>
-          <div className="flex flex-wrap gap-2 mb-3">
-            <button type="button" className="btn-glass text-xs" onClick={() => setPreviewMode('desktop')}>Desktop Preview</button>
-            <button type="button" className="btn-glass text-xs" onClick={() => setPreviewMode('mobile')}>Mobile Preview</button>
-            <button type="button" className="btn-glass text-xs" onClick={() => setFullPreview(true)}>Full Screen</button>
-            <button type="button" className="btn-glass text-xs" onClick={() => setPane('edit')}>Edit</button>
-            <button type="button" className="btn-primary text-xs" onClick={() => printResumePreview()}>Download PDF</button>
+        <aside className={`rs-preview-wrap ${pane === 'preview' ? '' : 'hidden'} lg:block`}>
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <p className="rs-preview-label">Live preview · {templateMeta(doc.template).title}</p>
+            <div className="flex gap-1">
+              <button type="button" className="rs-btn rs-btn-ghost" onClick={() => setPreviewMode('desktop')}>Desktop</button>
+              <button type="button" className="rs-btn rs-btn-ghost" onClick={() => setPreviewMode('mobile')}>Mobile</button>
+              <button type="button" className="rs-btn rs-btn-ghost" onClick={() => setFullPreview(true)}>Fullscreen</button>
+            </div>
           </div>
-          <div className="overflow-x-auto">
-            <ResumePreview doc={doc} mode={previewMode} />
-          </div>
+          <ResumePreview doc={doc} mode={previewMode} />
         </aside>
       </div>
 
-      <section className="glass rounded-3xl p-5 mb-6">
-        <h2 className="text-lg font-black text-ink mb-3">Choose Your Resume Template</h2>
-        <div className="grid sm:grid-cols-2 xl:grid-cols-5 gap-3">
-          {TEMPLATE_CATALOG.map(t => (
-            <button key={t.id} type="button" className="rv-choice text-left rounded-2xl p-3 border" data-on={doc.template === t.id} onClick={() => patch({ template: t.id as ResumeTemplate, style: styleForTemplate(t.id, { ...(doc.style ?? {}), columns: t.defaultColumns }) })}>
-              <div className="text-sm font-black text-ink">{t.title}{t.id === 'minimal' ? ' · Default' : ''}</div>
-              <div className="text-xs text-muted mt-1">{t.desc}</div>
-              {t.supportsPhoto && <div className="text-[10px] text-primary mt-1">Photo supported</div>}
-            </button>
-          ))}
+      <details className="rs-panel" ref={templatesRef} open>
+        <summary>Templates &amp; typography</summary>
+        <div className="rs-panel-body">
+          <ResumeTemplatePicker doc={doc} onSelect={t => persist(applyTemplate(doc, t))} />
+          <div className="mt-4 pt-4 border-t border-slate-200">
+            <ResumeStylePanel doc={doc} onChange={style => patch({ style })} />
+          </div>
         </div>
-      </section>
+      </details>
 
-      <ResumeStylePanel doc={doc} onChange={style => patch({ style })} />
-
-      <section className="glass rounded-3xl p-5 mb-6">
-        <h2 className="text-lg font-black text-ink mb-2">🎯 Tailor Resume For a Job</h2>
-        <p className="text-sm text-muted mb-3">Select a target role or paste a job description. Analysis never adds skills you do not have.</p>
+      <details className="rs-panel">
+        <summary>Job targeting &amp; tailoring</summary>
+        <div className="rs-panel-body">
+        <p className="text-sm text-muted mb-3">Paste a job description or select a target role. Tailoring only uses information already in your resume.</p>
         <div className="flex flex-wrap gap-2 mb-3">
           {RESUME_ROLES.map(r => (
             <button key={r} type="button" className="rv-choice px-3 py-1.5 rounded-xl text-xs font-semibold border" data-on={doc.targetRole === r} onClick={() => patch({ targetRole: r })}>{r}</button>
@@ -700,10 +684,12 @@ export default function CareerResume() {
             }}>Save as job-specific version</button>
           </div>
         )}
-      </section>
+        </div>
+      </details>
 
-      <section className="glass rounded-3xl p-5 mb-6">
-        <h2 className="text-lg font-black text-ink mb-3">Saved Resumes</h2>
+      <details className="rs-panel">
+        <summary>Saved resume versions</summary>
+        <div className="rs-panel-body">
         <div className="space-y-3">
           {docs.map(d => (
             <article key={d.id} className="rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-3" style={{ border: '1px solid rgba(99,102,241,0.12)' }}>
@@ -739,21 +725,15 @@ export default function CareerResume() {
             </article>
           ))}
         </div>
-      </section>
-
-      <section className="glass rounded-3xl p-5 mb-6">
-        <h2 className="text-lg font-black text-ink mb-2">Export Resume</h2>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" className="btn-primary text-sm" onClick={() => { printResumePreview(); setExportNote("Use your browser's Print dialog and choose Save as PDF. The export matches the live preview template.") }}>Download PDF</button>
-          <button type="button" className="btn-glass text-sm" onClick={() => { downloadResumeDocx(doc); setExportNote('Downloaded DOCX with ATS-friendly plain structure.') }}>Download DOCX</button>
-          <button type="button" className="btn-glass text-sm" onClick={() => printResumePreview()}>Print</button>
         </div>
-        {exportNote && <p className="text-sm text-muted mt-3">{exportNote}</p>}
-      </section>
+      </details>
 
-      <section className="glass rounded-3xl p-5 mb-6">
-        <h2 className="text-lg font-black text-ink mb-2">Cover Letter</h2>
-        <p className="text-sm text-muted mb-3">Generated from your resume and current job-targeting context. No invented experience is added.</p>
+      {exportNote && <p className="text-sm text-muted mb-3">{exportNote}</p>}
+
+      <details className="rs-panel">
+        <summary>Cover letter</summary>
+        <div className="rs-panel-body">
+        <p className="text-sm text-muted mb-3">Generated from your resume and job context. No invented experience is added.</p>
         <div className="flex flex-wrap gap-2 mb-3">
           <button type="button" className="btn-primary text-sm" onClick={() => {
             const letter = generateCoverLetter(doc)
@@ -761,25 +741,20 @@ export default function CareerResume() {
           }}>Generate Cover Letter</button>
         </div>
         {doc.coverLetter && (
-          <textarea className="field w-full p-3 text-sm" rows={12} value={doc.coverLetter.body} onChange={e => patch({ coverLetter: { ...doc.coverLetter!, body: e.target.value, updatedAt: new Date().toISOString() } })} />
+          <textarea className="rs-input" rows={12} value={doc.coverLetter.body} onChange={e => patch({ coverLetter: { ...doc.coverLetter!, body: e.target.value, updatedAt: new Date().toISOString() } })} />
         )}
-      </section>
+        </div>
+      </details>
 
-      <section className="glass rounded-3xl p-5 mb-6">
-        <h2 className="text-lg font-black text-ink mb-2">Interview With Resume Context</h2>
-        <p className="text-sm text-muted mb-3">Your next AI interview can use the experience and projects from this resume.</p>
-        <button type="button" className="btn-primary text-sm" onClick={() => navigate(careerInterviewPath())}>Practice Interview →</button>
-      </section>
+      <details className="rs-panel">
+        <summary>Interview practice</summary>
+        <div className="rs-panel-body">
+          <p className="text-sm text-muted mb-3">Practice interviews using experience and projects from this resume.</p>
+          <button type="button" className="rs-btn rs-btn-primary" onClick={() => navigate(careerInterviewPath())}>Open interview studio</button>
+        </div>
+      </details>
 
-      <div className="rv-sticky lg:hidden flex gap-2">
-        <button type="button" className="btn-primary flex-1" disabled={busySave} onClick={saveBackend}>{busySave ? 'Saving…' : 'Save'}</button>
-        <button type="button" className="btn-glass flex-1" onClick={() => setPane('preview')}>Preview</button>
-      </div>
-      <div className="hidden lg:flex gap-2 items-center">
-        <button type="button" className="btn-primary" disabled={busySave} onClick={saveBackend}>{busySave ? 'Saving…' : 'Save resume'}</button>
-        {toast && <p className="text-sm" style={{ color: '#0F8A68' }}>{toast}</p>}
-      </div>
-      {toast && <p className="text-sm mt-2 lg:hidden" style={{ color: '#0F8A68' }}>{toast}</p>}
+      {toast && <p className="text-sm mt-3" style={{ color: '#0f766e' }}>{toast}</p>}
 
       {improved && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: 'rgba(23,32,51,0.45)' }} onClick={() => setImproved(null)}>

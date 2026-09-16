@@ -1,6 +1,6 @@
 import type { ResumeDoc, ResumeSectionId } from '../../../lib/resumeBuilder'
-import { defaultLayout, SECTION_CATALOG } from '../../../lib/resumeStudioTypes'
 import { sectionState } from '../../../lib/resumeBuilder'
+import { defaultLayout, SECTION_CATALOG, sectionStatusLabel } from '../../../lib/resumeStudioTypes'
 
 export default function ResumeSectionNav({
   doc,
@@ -18,14 +18,15 @@ export default function ResumeSectionNav({
   const layout = doc.layout?.length ? doc.layout : defaultLayout()
 
   return (
-    <nav className="glass rounded-3xl p-4" aria-label="Resume sections">
-      <h2 className="text-sm font-black text-ink mb-3">Resume Sections</h2>
-      <ul className="space-y-1">
+    <nav className="rs-nav" aria-label="Resume sections">
+      <p className="rs-nav-title">Sections</p>
+      <ul className="rs-nav-list">
         {layout.map((item, index) => {
           if (item.kind !== 'builtin') return null
           const section = SECTION_CATALOG.find(s => s.id === item.id)
           if (!section) return null
           const st = sectionState(doc, section.id)
+          const isActive = active === section.id
           return (
             <li
               key={section.id}
@@ -37,35 +38,27 @@ export default function ResumeSectionNav({
                 const from = Number(e.dataTransfer.getData('text/plain'))
                 if (!Number.isNaN(from) && from !== index) onReorder(from, index)
               }}
-              className="rounded-xl"
             >
-              <div className="flex items-center gap-2 px-2 py-1">
-                <span className="text-xs text-muted cursor-grab" aria-hidden="true">⋮⋮</span>
-                <button
-                  type="button"
-                  className="flex-1 text-left px-2 py-2 rounded-xl text-sm"
-                  style={{ background: active === section.id ? 'rgba(108,92,231,0.12)' : 'transparent', color: active === section.id ? '#5B4BD6' : '#172033' }}
-                  onClick={() => onSelect(section.id)}
-                >
-                  {section.label} {st === 'done' ? '✓' : st === 'warn' ? '⚠' : ''}
+              <button
+                type="button"
+                className={`rs-nav-item${isActive ? ' rs-nav-item--active' : ''}${!item.visible ? ' rs-nav-item--hidden' : ''}`}
+                onClick={() => onSelect(section.id)}
+              >
+                <span className="rs-nav-icon">{section.icon}</span>
+                <span className="rs-nav-text">
+                  <span className="rs-nav-label">{section.label}</span>
+                  <span className={`rs-nav-status rs-nav-status--${st}`}>{sectionStatusLabel(st)}</span>
+                </span>
+              </button>
+              {section.id !== 'contact' && (
+                <button type="button" className="rs-nav-toggle" onClick={() => onToggle(section.id, !item.visible)} title={item.visible ? 'Hide section' : 'Show section'}>
+                  {item.visible ? '−' : '+'}
                 </button>
-                {section.id !== 'contact' && (
-                  <button
-                    type="button"
-                    className="text-[10px] px-2 py-1 rounded-lg btn-glass"
-                    onClick={() => onToggle(section.id, !item.visible)}
-                  >
-                    {item.visible ? 'Hide' : 'Show'}
-                  </button>
-                )}
-              </div>
+              )}
             </li>
           )
         })}
       </ul>
-      {(doc.customSections ?? []).length > 0 && (
-        <div className="mt-3 text-xs text-muted">Custom sections appear at the end of the preview.</div>
-      )}
     </nav>
   )
 }

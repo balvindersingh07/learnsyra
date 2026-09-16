@@ -1,16 +1,17 @@
 import type { ResumeDoc } from './resumeBuilder'
-import { defaultLayout, styleForTemplate, type ResumeLayoutItem, type ResumeTemplate } from './resumeStudioTypes'
+import { defaultLayout, styleForTemplate, TEMPLATE_CATALOG, type ResumeLayoutItem, type ResumeTemplate } from './resumeStudioTypes'
 
-const LEGACY_TEMPLATES = new Set(['minimal', 'modern', 'professional', 'technical'])
+const VALID = new Set(TEMPLATE_CATALOG.map(t => t.id))
 
 export function normalizeResumeDoc(raw: ResumeDoc): ResumeDoc {
-  const template = LEGACY_TEMPLATES.has(raw.template) || isResumeTemplate(raw.template) ? raw.template : 'minimal'
+  const template = VALID.has(raw.template as ResumeTemplate) ? raw.template : 'minimal'
   const layout = normalizeLayout(raw.layout)
   const style = raw.style ? { ...styleForTemplate(template), ...raw.style } : styleForTemplate(template)
+  const meta = TEMPLATE_CATALOG.find(t => t.id === template)
   const contact = {
     ...raw.contact,
     photoUrl: raw.contact.photoUrl ?? null,
-    usePhoto: raw.contact.usePhoto ?? Boolean(raw.contact.photoUrl),
+    usePhoto: meta?.supportsPhoto ? (raw.contact.usePhoto ?? Boolean(raw.contact.photoUrl)) : false,
   }
   const extra = raw.extra ?? {
     languages: '',
@@ -32,21 +33,6 @@ export function normalizeResumeDoc(raw: ResumeDoc): ResumeDoc {
     coverLetter: raw.coverLetter ?? null,
     autosaveNote: raw.autosaveNote ?? null,
   }
-}
-
-function isResumeTemplate(value: string): value is ResumeTemplate {
-  return [
-    'minimal',
-    'modern',
-    'professional',
-    'technical',
-    'germany',
-    'canada',
-    'usa',
-    'india',
-    'australia',
-    'global-ats',
-  ].includes(value)
 }
 
 function normalizeLayout(layout?: ResumeLayoutItem[]): ResumeLayoutItem[] {
