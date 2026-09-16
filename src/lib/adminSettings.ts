@@ -240,7 +240,7 @@ export async function loadAdminSettings(): Promise<AdminSettingsPack> {
         row({ key: '2fa', label: '2FA availability', value: 'Unavailable', badge: 'unavailable', source: 'Unavailable' }),
         row({ key: 'login', label: 'Login protection', value: 'Unavailable', badge: 'unavailable', source: 'Unavailable' }),
         row({ key: 'admin-access', label: 'Admin access', value: 'Role guard (admin)', badge: 'managed', source: 'Application' }),
-        row({ key: 'google', label: 'Google sign-in', value: 'Managed by application configuration', badge: 'managed', source: 'Application', description: 'The client includes a Google OAuth call. Dashboard enablement is not confirmed from this page.' }),
+        row({ key: 'email-password', label: 'Email & password sign-in', value: 'Enabled', badge: 'managed', source: 'Application', description: 'Student and tutor accounts sign in with email and password.' }),
       ],
     }),
     panel({

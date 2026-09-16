@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
+import type { Session } from '@supabase/supabase-js'
 import { supabase, isSupabaseConfigured, type Profile, type UserRole } from '../lib/supabase'
 import { mapAuthError } from '../lib/authErrors'
 import {
@@ -8,13 +8,7 @@ import {
   validatePassword,
   validateSignupInput,
 } from '../lib/authValidation'
-import { authLoginPath, type SignupAuthRole } from '../lib/authFlow'
-import {
-  applyOAuthSignupRoleForUser,
-  persistPendingOAuthRole,
-} from '../lib/oauthSignupRole'
-
-const AUTH_RETURN_KEY = 'learnsyra_auth_return'
+import type { SignupAuthRole } from '../lib/authFlow'
 
 interface AuthContextValue {
   session: Session | null
@@ -24,7 +18,6 @@ interface AuthContextValue {
   recoveryMode: boolean
   isEmailVerified: boolean
   signIn: (email: string, password: string) => Promise<{ error: string | null }>
-  signInWithGoogle: (returnPath?: string, role?: SignupAuthRole) => Promise<{ error: string | null }>
   resetPassword: (email: string) => Promise<{ error: string | null }>
   resendVerificationEmail: () => Promise<{ error: string | null }>
   signUp: (
@@ -54,8 +47,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .eq('id', userId)
       .single()
     const row = data as Profile | null
-    setProfile(row ? { ...row, plan: row.plan ?? 'free' } : null)
-    return row
+    const next = row ? { ...row, plan: row.plan ?? 'free' } : null
+    setProfile(next)
+    return next
   }
 
   useEffect(() => {
@@ -64,61 +58,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    let cancelled = false
-    let bootstrapToken = 0
-
-    async function bootstrapAuthSession(next: Session | null, reason: AuthChangeEvent) {
-      const token = ++bootstrapToken
-      setSession(next)
-
-      if (!next?.user) {
-        setProfile(null)
-        if (!cancelled && token === bootstrapToken) setLoading(false)
-        return
-      }
-
-      if (!cancelled) setLoading(true)
-
-      try {
-        if (reason === 'SIGNED_IN' || reason === 'INITIAL_SESSION') {
-          await applyOAuthSignupRoleForUser(next.user)
-        }
-        if (!cancelled && token === bootstrapToken) {
-          await loadProfile(next.user.id)
-        }
-      } finally {
-        if (!cancelled && token === bootstrapToken) setLoading(false)
-      }
-    }
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session)
+    })
 
     const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
       if (event === 'PASSWORD_RECOVERY') setRecoveryMode(true)
       if (event === 'SIGNED_OUT') setRecoveryMode(false)
-      bootstrapAuthSession(next, event)
+      setSession(next)
+    })
+
+    return () => sub.subscription.unsubscribe()
+  }, [])
+
+  const userId = session?.user?.id ?? null
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return
+
+    if (!userId) {
+      setProfile(null)
+      setLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setLoading(true)
+
+    loadProfile(userId).finally(() => {
+      if (!cancelled) setLoading(false)
     })
 
     return () => {
       cancelled = true
-      sub.subscription.unsubscribe()
     }
-  }, [])
+  }, [userId])
 
   const signIn: AuthContextValue['signIn'] = async (email, password) => {
     const normalized = normalizeEmail(email)
     const { error } = await supabase.auth.signInWithPassword({ email: normalized, password })
-    return { error: mapAuthError(error) }
-  }
-
-  const signInWithGoogle: AuthContextValue['signInWithGoogle'] = async (returnPath, role = 'student') => {
-    const selectedRole: SignupAuthRole = role === 'tutor' ? 'tutor' : 'student'
-    if (returnPath) sessionStorage.setItem(AUTH_RETURN_KEY, returnPath)
-    persistPendingOAuthRole(selectedRole)
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${authSiteOrigin()}${authLoginPath(selectedRole)}`,
-      },
-    })
     return { error: mapAuthError(error) }
   }
 
@@ -201,7 +179,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     recoveryMode,
     isEmailVerified: Boolean(session?.user.email_confirmed_at),
     signIn,
-    signInWithGoogle,
     resetPassword,
     resendVerificationEmail,
     signUp,
@@ -218,14 +195,4 @@ export function useAuth() {
   const ctx = useContext(AuthContext)
   if (!ctx) throw new Error('useAuth must be used within an AuthProvider')
   return ctx
-}
-
-export function consumeAuthReturnPath(): string | undefined {
-  try {
-    const value = sessionStorage.getItem(AUTH_RETURN_KEY)
-    if (value) sessionStorage.removeItem(AUTH_RETURN_KEY)
-    return value ?? undefined
-  } catch {
-    return undefined
-  }
 }

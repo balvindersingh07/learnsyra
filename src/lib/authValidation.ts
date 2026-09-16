@@ -1,6 +1,6 @@
 export const MIN_PASSWORD_LENGTH = 8
 
-/** OAuth redirect origin must match the tab the user started from (www vs apex). */
+/** Auth email links must match the tab the user started from (www vs apex). */
 export function authSiteOrigin(): string {
   return window.location.origin
 }

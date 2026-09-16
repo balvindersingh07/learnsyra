@@ -1,8 +1,6 @@
 /** Student/tutor only — admin accounts are provisioned separately. */
 export type SignupAuthRole = 'student' | 'tutor'
 
-export const AUTH_ROLE_KEY = 'learnsyra_auth_role'
-
 export const ROLE_OPTIONS: {
   id: SignupAuthRole
   label: string
@@ -48,10 +46,6 @@ export function parseAuthRoleFromLocation(pathname: string, search: string): Sig
 
 export function authLoginPath(role: SignupAuthRole) {
   return `/login/${role}`
-}
-
-export function authLoginQueryPath(role: SignupAuthRole) {
-  return `/login?role=${role}`
 }
 
 export function authSignupPath(role: SignupAuthRole) {

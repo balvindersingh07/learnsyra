@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Link, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom'
-import { useAuth, consumeAuthReturnPath } from '../context/AuthContext'
+import { Link, Navigate, useLocation, useParams } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 import { postLoginPath } from '../lib/roleAccess'
 import { normalizeEmail } from '../lib/authValidation'
 import {
@@ -21,22 +21,16 @@ export default function Intro() {
     loading: authLoading,
     isEmailVerified,
     signIn,
-    signInWithGoogle,
     resetPassword,
     configured,
   } = useAuth()
   const location = useLocation()
   const { authRole } = useParams<{ authRole?: string }>()
-  const [searchParams] = useSearchParams()
   const role =
     (isSignupAuthRole(authRole) ? authRole : null) ??
     parseAuthRoleFromLocation(location.pathname, location.search)
 
-  const storedReturn = useState(() => consumeAuthReturnPath())[0]
-  const from =
-    storedReturn ??
-    (location.state as { from?: string } | null)?.from ??
-    '/dashboard'
+  const from = (location.state as { from?: string } | null)?.from ?? '/dashboard'
   const loginNotice = (location.state as { notice?: string } | null)?.notice
 
   const [email, setEmail] = useState('')
@@ -74,12 +68,6 @@ export default function Intro() {
     if (signInError) {
       setError(signInError)
     }
-  }
-
-  const google = async () => {
-    setError(null)
-    const { error: googleError } = await signInWithGoogle(from, role)
-    if (googleError) setError(googleError)
   }
 
   const forgot = async () => {
@@ -141,29 +129,6 @@ export default function Intro() {
               Supabase not configured — see SETUP.md
             </div>
           )}
-
-          <button
-            type="button"
-            onClick={google}
-            className="w-full rounded-xl py-3.5 font-semibold text-white flex items-center justify-center gap-2 cursor-pointer"
-            style={{
-              background: '#4F8CFF',
-              border: 'none',
-              fontFamily: 'Plus Jakarta Sans,sans-serif',
-              boxShadow: '0 10px 24px rgba(79,140,255,0.28)',
-            }}
-          >
-            <span className="w-6 h-6 rounded-full bg-white text-[#4F8CFF] text-sm font-black flex items-center justify-center">
-              G
-            </span>
-            Continue with Gmail
-          </button>
-
-          <div className="flex items-center gap-3 my-6">
-            <div className="flex-1 h-px" style={{ background: 'rgba(99,102,241,0.12)' }} />
-            <span className="text-xs text-muted">or</span>
-            <div className="flex-1 h-px" style={{ background: 'rgba(99,102,241,0.12)' }} />
-          </div>
 
           <form onSubmit={submit} className="flex flex-col gap-3">
             <input

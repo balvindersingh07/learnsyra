@@ -122,19 +122,6 @@ you prefer a tighter allow-list.)
 
 For faster local testing, leave confirm email **OFF** on the local stack only.
 
-### Google OAuth (optional)
-
-**Authentication → Providers → Google**
-
-1. Create OAuth credentials in Google Cloud Console.
-2. Add the Supabase callback URL shown in the dashboard.
-3. Paste Client ID and Client Secret into Supabase.
-
-**Important:** Google sign-in always creates a **student** profile (database
-trigger). **Tutor registration** must use email/password signup so the tutor
-role is set securely at registration. There is no client-side admin or tutor
-role escalation.
-
 ### Email templates
 
 Under **Authentication → Email Templates**, review:
