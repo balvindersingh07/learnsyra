@@ -9,6 +9,7 @@ import {
   tutorPath,
   tutorStudentPath,
 } from './paths'
+import { isAdminApp } from './appMode'
 import {
   ADMIN_LINKS,
   ADMIN_SYSTEM_LINKS,
@@ -316,13 +317,13 @@ export async function runGlobalSearch(query: string, role: UserRole | null | und
 
   try {
     const pages =
-      role === 'admin'
+      isAdminApp() && role === 'admin'
         ? pageResults(q, ADMIN_PAGES)
         : role === 'tutor'
           ? pageResults(q, TUTOR_PAGES)
           : pageResults(q, STUDENT_PAGES)
 
-    if (role === 'admin') {
+    if (isAdminApp() && role === 'admin') {
       const [workspace] = await Promise.all([searchAdminWorkspace(q)])
       return { query: q, results: [...pages, ...workspace], error: null }
     }

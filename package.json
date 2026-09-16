@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
+    "dev:admin": "vite --host 0.0.0.0 --mode admin",
+    "typecheck": "tsc --noEmit",
     "build": "vite build",
+    "build:admin": "vite build --mode admin",
     "preview": "vite preview",
     "format": "oxfmt"
   },

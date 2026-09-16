@@ -2,6 +2,8 @@ import { Fragment } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { isAdminApp } from '../lib/appMode'
+import { authAdminLoginPath } from '../lib/authFlow'
 import { roleHome } from '../lib/roleAccess'
 import type { UserRole } from '../lib/supabase'
 
@@ -25,7 +27,8 @@ export default function ProtectedRoute({ children, roles }: Props) {
   }
 
   if (!session) {
-    return <Navigate to="/" state={{ from: location.pathname }} replace />
+    const loginPath = isAdminApp() ? authAdminLoginPath() : '/'
+    return <Navigate to={loginPath} state={{ from: location.pathname }} replace />
   }
 
   if (requireVerifiedEmail && !isEmailVerified) {
@@ -33,6 +36,15 @@ export default function ProtectedRoute({ children, roles }: Props) {
   }
 
   if (roles && profile && !roles.includes(profile.role)) {
+    if (isAdminApp()) {
+      return (
+        <Navigate
+          to={authAdminLoginPath()}
+          state={{ from: location.pathname, notice: 'Admin access required.' }}
+          replace
+        />
+      )
+    }
     return <Navigate to={roleHome(profile.role)} replace />
   }
 

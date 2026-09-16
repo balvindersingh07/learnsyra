@@ -44,6 +44,12 @@ export function parseAuthRoleFromLocation(pathname: string, search: string): Sig
   return parseAuthRoleFromPath(pathname) ?? parseAuthRole(search)
 }
 
+export const ADMIN_LOGIN_PATH = '/login/admin'
+
+export function authAdminLoginPath() {
+  return ADMIN_LOGIN_PATH
+}
+
 export function authLoginPath(role: SignupAuthRole) {
   return `/login/${role}`
 }

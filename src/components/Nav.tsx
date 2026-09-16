@@ -4,10 +4,11 @@ import { useNav } from '../lib/useNav'
 import { pagePath, type Page } from '../lib/paths'
 import { useAuth } from '../context/AuthContext'
 import { planLabel, unreadNotificationCount } from '../lib/api'
+import { isPublicApp } from '../lib/appMode'
 import BrandMark from './BrandMark'
 import GlobalSearch from './GlobalSearch'
+import PublicAdminRedirect from './PublicAdminRedirect'
 import TutorNav from './TutorNav'
-import AdminNav from './AdminNav'
 
 const links: { label: string; page: Page }[] = [
   { label: 'Explore Courses', page: 'courses' },
@@ -72,7 +73,9 @@ export default function Nav() {
   }
 
   if (profile?.role === 'tutor') return <TutorNav />
-  if (profile?.role === 'admin') return <AdminNav />
+  if (profile?.role === 'admin' && isPublicApp()) {
+    return <PublicAdminRedirect />
+  }
 
   const isActive = (page: Page) =>
     page === 'courses'
