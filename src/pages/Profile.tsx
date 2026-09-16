@@ -284,9 +284,8 @@ export default function Profile() {
     const ext = file.name.split('.').pop()?.toLowerCase()
     const extOk = ext === 'jpg' || ext === 'jpeg' || ext === 'png' || ext === 'webp'
     if (!AVATAR_TYPES.has(file.type) && !extOk) {
-      return 'Please choose a JPG, PNG, or WebP image under 5 MB.'
+      return 'Please choose a JPG, PNG, or WebP image.'
     }
-    if (file.size > 5 * 1024 * 1024) return 'Image must be under 5 MB.'
     return null
   }
 

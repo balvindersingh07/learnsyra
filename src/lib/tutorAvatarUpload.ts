@@ -1,8 +1,10 @@
 import { isSupabaseConfigured, supabase } from './supabase'
 
-const MAX_BYTES = 5 * 1024 * 1024
 const BUCKET = 'avatars'
 const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+const MAX_DIMENSION = 1024
+const SKIP_PREP_MAX_BYTES = 512 * 1024
+const JPEG_WEBP_QUALITY = 0.85
 
 function formatUploadError(message: string): string {
   const lower = message.toLowerCase()
@@ -16,7 +18,7 @@ function formatUploadError(message: string): string {
     return `Photo upload blocked by storage permissions: ${message}`
   }
   if (lower.includes('payload too large') || lower.includes('file size') || lower.includes('too large')) {
-    return 'Image must be under 5 MB.'
+    return 'Upload failed. The image could not be stored. Try choosing a different photo.'
   }
   if (lower.includes('invalid') && lower.includes('mime')) {
     return 'Please choose a JPG, PNG, WebP, or GIF image.'
@@ -24,15 +26,106 @@ function formatUploadError(message: string): string {
   return message
 }
 
-function extForFile(file: File): string {
-  const fromName = file.name.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '')
-  if (fromName === 'jpeg') return 'jpg'
-  if (fromName && ['jpg', 'png', 'webp', 'gif'].includes(fromName)) return fromName
-  if (file.type === 'image/jpeg') return 'jpg'
-  if (file.type === 'image/png') return 'png'
-  if (file.type === 'image/webp') return 'webp'
-  if (file.type === 'image/gif') return 'gif'
+function isAllowedAvatarType(file: File): boolean {
+  if (ALLOWED_TYPES.has(file.type)) return true
+  const ext = file.name.split('.').pop()?.toLowerCase()
+  return ext === 'jpg' || ext === 'jpeg' || ext === 'png' || ext === 'webp' || ext === 'gif'
+}
+
+function mimeFromFile(file: File): string {
+  if (ALLOWED_TYPES.has(file.type)) return file.type
+  const ext = file.name.split('.').pop()?.toLowerCase()
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg'
+  if (ext === 'png') return 'image/png'
+  if (ext === 'webp') return 'image/webp'
+  if (ext === 'gif') return 'image/gif'
+  return 'image/jpeg'
+}
+
+function extForMime(mime: string): string {
+  if (mime === 'image/jpeg') return 'jpg'
+  if (mime === 'image/png') return 'png'
+  if (mime === 'image/webp') return 'webp'
+  if (mime === 'image/gif') return 'gif'
   return 'jpg'
+}
+
+function extForFile(file: File): string {
+  return extForMime(mimeFromFile(file))
+}
+
+function canvasToBlob(canvas: HTMLCanvasElement, type: string): Promise<Blob | null> {
+  return new Promise(resolve => {
+    canvas.toBlob(
+      blob => resolve(blob),
+      type,
+      type === 'image/jpeg' || type === 'image/webp' ? JPEG_WEBP_QUALITY : undefined,
+    )
+  })
+}
+
+async function prepareAvatarForUpload(file: File): Promise<{ file: File; error: null } | { file: null; error: string }> {
+  if (!isAllowedAvatarType(file)) {
+    return { file: null, error: 'Please choose a JPG, PNG, WebP, or GIF image.' }
+  }
+
+  const outputMime = mimeFromFile(file) === 'image/gif' ? 'image/jpeg' : mimeFromFile(file)
+
+  let bitmap: ImageBitmap
+  try {
+    bitmap = await createImageBitmap(file)
+  } catch {
+    return { file: null, error: 'Could not read this image. Try a different JPG, PNG, or WebP file.' }
+  }
+
+  const maxSide = Math.max(bitmap.width, bitmap.height)
+  const needsResize = maxSide > MAX_DIMENSION
+  const needsCompress = file.size > SKIP_PREP_MAX_BYTES || needsResize
+
+  if (!needsCompress) {
+    bitmap.close()
+    return { file, error: null }
+  }
+
+  const scale = needsResize ? MAX_DIMENSION / maxSide : 1
+  const targetWidth = Math.max(1, Math.round(bitmap.width * scale))
+  const targetHeight = Math.max(1, Math.round(bitmap.height * scale))
+
+  let source = bitmap
+  if (needsResize) {
+    try {
+      source = await createImageBitmap(bitmap, {
+        resizeWidth: targetWidth,
+        resizeHeight: targetHeight,
+        resizeQuality: 'high',
+      })
+      bitmap.close()
+    } catch {
+      bitmap.close()
+      return { file: null, error: 'Could not process this image. Try a different photo.' }
+    }
+  }
+
+  const canvas = document.createElement('canvas')
+  canvas.width = source.width
+  canvas.height = source.height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) {
+    source.close()
+    return { file: null, error: 'Could not process this image. Try a different photo.' }
+  }
+
+  ctx.drawImage(source, 0, 0)
+  source.close()
+
+  const blob = await canvasToBlob(canvas, outputMime)
+  if (!blob) {
+    return { file: null, error: 'Could not process this image. Try a different photo.' }
+  }
+
+  const ext = extForMime(outputMime)
+  const prepared = new File([blob], `avatar.${ext}`, { type: outputMime, lastModified: Date.now() })
+  return { file: prepared, error: null }
 }
 
 export async function uploadTutorAvatar(
@@ -41,10 +134,12 @@ export async function uploadTutorAvatar(
 ): Promise<{ url: string | null; error: string | null }> {
   if (!isSupabaseConfigured) return { url: null, error: 'Profile photo upload is unavailable (Supabase not configured).' }
   if (!userId) return { url: null, error: 'Not logged in.' }
-  if (!ALLOWED_TYPES.has(file.type)) {
-    return { url: null, error: 'Please choose a JPG, PNG, WebP, or GIF image under 5 MB.' }
+
+  const prepared = await prepareAvatarForUpload(file)
+  if (prepared.error || !prepared.file) {
+    return { url: null, error: prepared.error }
   }
-  if (file.size > MAX_BYTES) return { url: null, error: 'Image must be under 5 MB.' }
+  const uploadFile = prepared.file
 
   const {
     data: { session },
@@ -54,12 +149,12 @@ export async function uploadTutorAvatar(
   if (!session?.user) return { url: null, error: 'Your session expired. Sign in again and retry.' }
   if (session.user.id !== userId) return { url: null, error: 'Account mismatch. Sign out and sign in again.' }
 
-  const ext = extForFile(file)
+  const ext = extForFile(uploadFile)
   const path = `${session.user.id}/avatar.${ext}`
 
-  const { error: uploadErr } = await supabase.storage.from(BUCKET).upload(path, file, {
+  const { error: uploadErr } = await supabase.storage.from(BUCKET).upload(path, uploadFile, {
     upsert: true,
-    contentType: file.type,
+    contentType: uploadFile.type,
     cacheControl: '3600',
   })
   if (uploadErr) {
