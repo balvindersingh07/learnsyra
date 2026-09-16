@@ -47,3 +47,30 @@ export function roleLabel(role: SignupAuthRole) {
 export function roleEmoji(role: SignupAuthRole) {
   return ROLE_OPTIONS.find(r => r.id === role)?.emoji ?? '✨'
 }
+
+export function isSignupAuthRole(value: string | null | undefined): value is SignupAuthRole {
+  return value === 'student' || value === 'tutor'
+}
+
+/** Role chosen before OAuth redirect; survives the callback via sessionStorage. */
+export function readPendingOAuthRole(): SignupAuthRole | null {
+  try {
+    const stored = sessionStorage.getItem(AUTH_ROLE_KEY)
+    return isSignupAuthRole(stored) ? stored : null
+  } catch {
+    return null
+  }
+}
+
+export function clearPendingOAuthRole() {
+  try {
+    sessionStorage.removeItem(AUTH_ROLE_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Prefer sessionStorage; fall back to the OAuth redirect URL query param. */
+export function resolvePendingOAuthRole(search = ''): SignupAuthRole | null {
+  return readPendingOAuthRole() ?? parseAuthRole(search)
+}

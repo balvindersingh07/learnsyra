@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
+import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js'
 import { supabase, isSupabaseConfigured, type Profile, type UserRole } from '../lib/supabase'
 import { mapAuthError } from '../lib/authErrors'
 import {
@@ -8,9 +8,29 @@ import {
   validatePassword,
   validateSignupInput,
 } from '../lib/authValidation'
-import { AUTH_ROLE_KEY, type SignupAuthRole } from '../lib/authFlow'
+import {
+  AUTH_ROLE_KEY,
+  clearPendingOAuthRole,
+  resolvePendingOAuthRole,
+  type SignupAuthRole,
+} from '../lib/authFlow'
 
 const AUTH_RETURN_KEY = 'learnsyra_auth_return'
+
+function isGoogleOAuthUser(user: User) {
+  if (user.app_metadata?.provider === 'google') return true
+  return user.identities?.some(identity => identity.provider === 'google') ?? false
+}
+
+async function applyOAuthSignupRole(user: User) {
+  if (!isGoogleOAuthUser(user)) return
+
+  const pendingRole = resolvePendingOAuthRole(window.location.search)
+  if (!pendingRole) return
+
+  const { error } = await supabase.rpc('apply_oauth_signup_role', { p_role: pendingRole })
+  if (!error) clearPendingOAuthRole()
+}
 
 interface AuthContextValue {
   session: Session | null
@@ -59,22 +79,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(async ({ data }) => {
       setSession(data.session)
       if (data.session?.user) {
-        loadProfile(data.session.user.id).finally(() => setLoading(false))
+        try {
+          await applyOAuthSignupRole(data.session.user)
+        } catch {
+          /* profile load still proceeds */
+        }
+        await loadProfile(data.session.user.id)
+        setLoading(false)
       } else {
         setLoading(false)
       }
     })
 
-    const { data: sub } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, next) => {
+    const { data: sub } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, next) => {
       if (event === 'PASSWORD_RECOVERY') setRecoveryMode(true)
       if (event === 'SIGNED_OUT') setRecoveryMode(false)
       setSession(next)
       if (next?.user) {
         setProfile(null)
-        loadProfile(next.user.id)
+        if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+          try {
+            await applyOAuthSignupRole(next.user)
+          } catch {
+            /* profile load still proceeds */
+          }
+        }
+        await loadProfile(next.user.id)
       } else {
         setProfile(null)
       }
@@ -90,19 +123,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const signInWithGoogle: AuthContextValue['signInWithGoogle'] = async (returnPath, role = 'student') => {
+    const selectedRole: SignupAuthRole = role === 'tutor' ? 'tutor' : 'student'
     if (returnPath) sessionStorage.setItem(AUTH_RETURN_KEY, returnPath)
     try {
-      sessionStorage.setItem(AUTH_ROLE_KEY, role)
+      sessionStorage.setItem(AUTH_ROLE_KEY, selectedRole)
     } catch {
       /* ignore */
     }
-    // Supabase forwards `data` to signup metadata for new OAuth users; types omit this field.
+    // OAuth cannot pass custom user_metadata; role is applied post-callback via apply_oauth_signup_role.
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${authSiteOrigin()}/login?role=${role}`,
-        data: { role },
-      } as { redirectTo: string },
+        redirectTo: `${authSiteOrigin()}/login?role=${selectedRole}`,
+      },
     })
     return { error: mapAuthError(error) }
   }
