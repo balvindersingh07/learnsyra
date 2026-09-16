@@ -8,6 +8,7 @@ import {
   validatePassword,
   validateSignupInput,
 } from '../lib/authValidation'
+import { AUTH_ROLE_KEY, type SignupAuthRole } from '../lib/authFlow'
 
 const AUTH_RETURN_KEY = 'learnsyra_auth_return'
 
@@ -19,7 +20,7 @@ interface AuthContextValue {
   recoveryMode: boolean
   isEmailVerified: boolean
   signIn: (email: string, password: string) => Promise<{ error: string | null }>
-  signInWithGoogle: (returnPath?: string) => Promise<{ error: string | null }>
+  signInWithGoogle: (returnPath?: string, role?: SignupAuthRole) => Promise<{ error: string | null }>
   resetPassword: (email: string) => Promise<{ error: string | null }>
   resendVerificationEmail: () => Promise<{ error: string | null }>
   signUp: (
@@ -88,11 +89,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: mapAuthError(error) }
   }
 
-  const signInWithGoogle: AuthContextValue['signInWithGoogle'] = async returnPath => {
+  const signInWithGoogle: AuthContextValue['signInWithGoogle'] = async (returnPath, role = 'student') => {
     if (returnPath) sessionStorage.setItem(AUTH_RETURN_KEY, returnPath)
+    try {
+      sessionStorage.setItem(AUTH_ROLE_KEY, role)
+    } catch {
+      /* ignore */
+    }
+    // Supabase forwards `data` to signup metadata for new OAuth users; types omit this field.
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${authSiteOrigin()}/login` },
+      options: {
+        redirectTo: `${authSiteOrigin()}/login?role=${role}`,
+        data: { role },
+      } as { redirectTo: string },
     })
     return { error: mapAuthError(error) }
   }

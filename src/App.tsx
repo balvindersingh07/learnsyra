@@ -4,7 +4,10 @@ import AskLearnSyra from './components/AskLearnSyra'
 import ProtectedRoute from './components/ProtectedRoute'
 import TutorBounce from './components/TutorBounce'
 import { useNav } from './lib/useNav'
+import AuthRoleSelect from './pages/AuthRoleSelect'
 import Intro from './pages/Intro'
+import Blog from './pages/Blog'
+import BlogPost from './pages/BlogPost'
 import Landing from './pages/Landing'
 import Dashboard from './pages/Dashboard'
 import AILearning from './pages/AILearning'
@@ -120,9 +123,11 @@ export default function App() {
       <AskLearnSyra />
       <main>
         <Routes>
-          <Route path="/" element={<Intro />} />
+          <Route path="/" element={<AuthRoleSelect />} />
           <Route path="/login" element={<Intro />} />
           <Route path="/home" element={<LandingRoute />} />
+          <Route path="/blog" element={<Blog />} />
+          <Route path="/blog/:slug" element={<BlogPost />} />
           <Route path="/courses" element={<TutorBounce to="/tutor/courses"><CoursesRoute /></TutorBounce>} />
           <Route path="/courses/:id" element={<TutorBounce to="/tutor/courses"><CourseDetailRoute /></TutorBounce>} />
           <Route path="/courses/:id/learn/:lessonId" element={<TutorBounce to="/tutor/courses"><LessonPlayer /></TutorBounce>} />

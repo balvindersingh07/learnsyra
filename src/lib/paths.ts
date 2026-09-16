@@ -8,6 +8,7 @@ export type Page =
   | 'course-detail'
   | 'projects'
   | 'career'
+  | 'blog'
   | 'pricing'
   | 'tutor-dashboard'
   | 'admin'
@@ -27,6 +28,7 @@ export const pagePath: Record<Page, string> = {
   'course-detail': '/courses',
   projects: '/projects',
   career: '/career',
+  blog: '/blog',
   pricing: '/pricing',
   'tutor-dashboard': '/tutor',
   admin: '/admin',

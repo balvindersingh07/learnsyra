@@ -54,6 +54,7 @@ const STUDENT_PAGES: { title: string; subtitle: string; href: string; keywords: 
   { title: 'Interview Prep', subtitle: 'Mock interviews and feedback', href: careerInterviewPath(), keywords: ['interview', 'mock'] },
   { title: 'Resume Builder', subtitle: 'Improve your resume', href: careerResumePath(), keywords: ['resume', 'cv'] },
   { title: 'Job Board', subtitle: 'Browse open roles', href: careerJobsPath(), keywords: ['jobs', 'hiring'] },
+  { title: 'Blog', subtitle: 'Guides on learning, projects, and careers', href: '/blog', keywords: ['blog', 'articles', 'guides', 'learning'] },
   { title: 'Pricing', subtitle: 'Plans and subscriptions', href: '/pricing', keywords: ['pricing', 'plan', 'pro'] },
   { title: 'Dashboard', subtitle: 'Your learning home', href: '/dashboard', keywords: ['dashboard', 'home'] },
   { title: 'Profile', subtitle: 'Account settings', href: '/profile', keywords: ['profile', 'account'] },

@@ -16,6 +16,7 @@ const links: { label: string; page: Page }[] = [
   { label: 'Projects', page: 'projects' },
   { label: 'Live', page: 'live' },
   { label: 'Career', page: 'career' },
+  { label: 'Blog', page: 'blog' },
   { label: 'Pricing', page: 'pricing' },
 ]
 

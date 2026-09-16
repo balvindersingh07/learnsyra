@@ -95,11 +95,11 @@ export default function VerifyEmail() {
 
         <p className="text-muted text-sm text-center">
           Wrong address?{' '}
-          <Link to="/signup" className="gradient-text font-semibold">
+          <Link to="/" className="gradient-text font-semibold">
             Create a different account
           </Link>
           {' · '}
-          <Link to="/login" className="gradient-text font-semibold">
+          <Link to="/" className="gradient-text font-semibold">
             Sign in
           </Link>
         </p>
