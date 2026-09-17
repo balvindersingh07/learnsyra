@@ -1,6 +1,6 @@
-import { getJobs } from './api'
+import { getJobById as fetchJobRow, getJobs, saveCareerProfile, type JobRow } from './api'
 import { syncJobAppsToCareerStore } from './careerPersistence'
-import { peekAuthUserId, userStorageKey } from './supabase'
+import { isSupabaseConfigured, peekAuthUserId, userStorageKey } from './supabase'
 
 export type JobRole =
   | 'Frontend Developer'
@@ -32,7 +32,7 @@ export interface CatalogJob {
   yearsLabel: string
   jobType: JobType
   postedAt: string
-  source: 'mock' | 'server'
+  source: 'mock' | 'server' | string
   externalUrl: string | null
   description: string
   responsibilities: string[]
@@ -85,6 +85,18 @@ export interface JobFilters {
 const APPS_KEY = 'learnsyra_job_apps'
 const FILTER_KEY = 'learnsyra_job_filters'
 const ROLE_KEY = 'learnsyra_job_target_role'
+
+/** Minimum match score (0–100) for a job to appear in production recommendations. */
+export const JOB_MATCH_MIN_SCORE = Number(import.meta.env.VITE_JOB_MATCH_MIN_SCORE ?? 35)
+
+export function isDevMockJobsEnabled(): boolean {
+  return import.meta.env.DEV && import.meta.env.VITE_DEV_MOCK_JOBS === 'true'
+}
+
+export function invalidateJobCatalogCache() {
+  SERVER_CATALOG = null
+  SERVER_CATALOG_PROMISE = null
+}
 
 function appsStorageKey(userId?: string | null) {
   const uid = userId || peekAuthUserId()
@@ -285,49 +297,100 @@ function inferWorkMode(location: string | null | undefined): WorkMode {
   return 'Remote'
 }
 
-export function mapServerJob(row: {
-  id: string
-  title: string
-  company: string
-  location?: string | null
-  salary?: string | null
-  logo?: string | null
-  tags?: string[] | null
-  apply_url?: string | null
-  created_at?: string
-}): CatalogJob {
-  const tags = row.tags ?? []
-  const role = inferJobRole(row.title, tags)
+function parseExperienceBand(title: string, description: string): ExperienceBand {
+  const blob = `${title} ${description}`.toLowerCase()
+  if (/\b(senior|lead|principal|staff)\b/.test(blob)) return 'Senior'
+  if (/\b(mid|intermediate|3\+|3-5|4\+)\b/.test(blob)) return 'Mid Level'
+  if (/\b(junior|jr\.?|1-3|1–3|associate)\b/.test(blob)) return 'Junior'
+  if (/\b(intern|entry|fresher|graduate|0-1)\b/.test(blob)) return 'Entry Level'
+  return 'Junior'
+}
+
+function yearsLabelFor(exp: ExperienceBand): string {
+  if (exp === 'Entry Level') return '0–1 years'
+  if (exp === 'Junior') return '1–3 years'
+  if (exp === 'Mid Level') return '3–5 years'
+  return '5+ years'
+}
+
+function parseJobType(value: string | null | undefined, title: string): JobType {
+  const blob = `${value ?? ''} ${title}`.toLowerCase()
+  if (/\bintern/.test(blob)) return 'Internship'
+  if (/\bpart[- ]?time\b/.test(blob)) return 'Part Time'
+  if (/\bcontract\b/.test(blob)) return 'Contract'
+  return 'Full Time'
+}
+
+function parseWorkMode(row: JobRow): WorkMode {
+  if (row.work_mode) {
+    const w = row.work_mode.toLowerCase()
+    if (w.includes('hybrid')) return 'Hybrid'
+    if (w.includes('on-site') || w.includes('onsite')) return 'On-site'
+    if (w.includes('remote')) return 'Remote'
+  }
+  return inferWorkMode(row.location)
+}
+
+function salaryFromRow(row: JobRow): { min: number; max: number; currency: 'INR' } {
+  const currency = (row.currency?.trim() || 'INR') as 'INR'
+  if (row.salary_min != null || row.salary_max != null) {
+    return {
+      min: row.salary_min ?? row.salary_max ?? 0,
+      max: row.salary_max ?? row.salary_min ?? 0,
+      currency,
+    }
+  }
+  return { min: 0, max: 0, currency }
+}
+
+export function mapServerJob(row: JobRow): CatalogJob {
+  const skillList = [...(row.skills ?? []), ...(row.requirements ?? []), ...(row.tags ?? [])]
+    .map(s => s.trim())
+    .filter(Boolean)
+  const skills = [...new Set(skillList)].slice(0, 12)
+  const role = inferJobRole(row.title, skills)
+  const description = row.description?.trim() || `${row.title} at ${row.company}`
+  const experience = parseExperienceBand(row.title, description)
+  const salary = salaryFromRow(row)
+  const externalUrl = row.apply_url?.trim() || row.source_url?.trim() || null
+  const postedAt = row.posted_at || row.created_at || new Date().toISOString()
+
   return {
     id: row.id,
     title: row.title,
     company: row.company,
     companyLogo: row.logo?.trim() || row.company.slice(0, 2).toUpperCase(),
-    industry: 'Employer',
+    industry: row.source ? String(row.source) : 'Employer',
     companySize: '—',
-    location: row.location?.trim() || 'Remote',
-    workMode: inferWorkMode(row.location),
-    salaryMin: 6,
-    salaryMax: 12,
-    salaryCurrency: 'INR',
-    experience: 'Junior',
-    yearsLabel: '1–3 years',
-    jobType: 'Full Time',
-    postedAt: row.created_at || new Date().toISOString(),
-    source: 'server',
-    externalUrl: row.apply_url ?? null,
-    description: [row.title, row.company, row.salary ? `Compensation: ${row.salary}` : null]
-      .filter(Boolean)
-      .join(' · '),
+    location: row.location?.trim() || 'India',
+    workMode: parseWorkMode(row),
+    salaryMin: salary.min,
+    salaryMax: salary.max,
+    salaryCurrency: salary.currency,
+    experience,
+    yearsLabel: yearsLabelFor(experience),
+    jobType: parseJobType(row.job_type, row.title),
+    postedAt,
+    source: row.source?.trim() || 'server',
+    externalUrl,
+    description,
     responsibilities: [],
-    requirements: tags,
+    requirements: row.requirements?.length ? row.requirements : skills.slice(0, 6),
     niceToHave: [],
     benefits: [],
-    skills: tags.length ? tags : [role.split(' ')[0]],
+    skills: skills.length ? skills : extractFallbackSkills(description, role),
     role,
     relatedCourses: [],
     relatedProjects: [],
   }
+}
+
+function extractFallbackSkills(description: string, role: JobRole): string[] {
+  const fromDesc = description
+    .split(/[,;•\n]/)
+    .map(s => s.trim())
+    .filter(s => s.length > 2 && s.length < 40)
+  return fromDesc.length ? fromDesc.slice(0, 6) : [role.split(' ')[0]]
 }
 
 export async function loadServerJobCatalog(): Promise<CatalogJob[]> {
@@ -356,7 +419,8 @@ function getMockJobCatalog(): CatalogJob[] {
 function activeJobCatalog(serverJobs?: CatalogJob[] | null): CatalogJob[] {
   if (serverJobs?.length) return serverJobs
   if (SERVER_CATALOG?.length) return SERVER_CATALOG
-  return getMockJobCatalog()
+  if (isDevMockJobsEnabled()) return getMockJobCatalog()
+  return []
 }
 
 export function getJobCatalog(): CatalogJob[] {
@@ -367,6 +431,22 @@ export function getJobById(id: string) {
   return activeJobCatalog().find(j => j.id === id) ?? null
 }
 
+export async function loadJobById(id: string): Promise<CatalogJob | null> {
+  const cached = getJobById(id)
+  if (cached) return cached
+  try {
+    const row = await fetchJobRow(id)
+    if (!row) {
+      if (isDevMockJobsEnabled()) return getMockJobCatalog().find(j => j.id === id) ?? null
+      return null
+    }
+    return mapServerJob(row)
+  } catch {
+    if (isDevMockJobsEnabled()) return getMockJobCatalog().find(j => j.id === id) ?? null
+    return null
+  }
+}
+
 export function relativePosted(iso: string) {
   const days = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000))
   if (days === 0) return 'Today'
@@ -375,7 +455,12 @@ export function relativePosted(iso: string) {
 }
 
 export function salaryLabel(job: CatalogJob) {
-  return `₹${job.salaryMin}–${job.salaryMax} LPA`
+  if (job.salaryMin > 0 && job.salaryMax > 0) {
+    if (job.salaryMin === job.salaryMax) return `₹${job.salaryMin} ${job.salaryCurrency}`
+    return `₹${job.salaryMin}–${job.salaryMax} ${job.salaryCurrency}`
+  }
+  if (job.salaryMin > 0) return `₹${job.salaryMin}+ ${job.salaryCurrency}`
+  return 'Salary not listed'
 }
 
 function overlap(have: string[], need: string[]) {
@@ -404,38 +489,77 @@ function roleAlignScore(job: CatalogJob, targetRole: string) {
   return 0
 }
 
-export function rankJob(job: CatalogJob, profile: StudentJobProfile): RankedJob {
+function locationAlignScore(job: CatalogJob, profileLocation?: string): number {
+  const loc = (profileLocation || '').toLowerCase()
+  const blob = `${job.location} ${job.workMode}`.toLowerCase()
+  if (!loc) return job.workMode === 'Remote' ? 0.6 : 0.3
+  if (blob.includes('remote')) return 1
+  if (loc && blob.includes(loc)) return 1
+  if (blob.includes('india') && loc.includes('india')) return 0.7
+  return 0.2
+}
+
+function experienceAlignScore(job: CatalogJob, readiness: number): number {
+  const target = defaultExperience(readiness)
+  if (job.experience === target) return 1
+  const order = EXPERIENCE.indexOf(job.experience) - EXPERIENCE.indexOf(target)
+  if (order === 1) return 0.6
+  if (order === -1) return 0.8
+  if (Math.abs(order) === 2) return 0.35
+  return 0.15
+}
+
+export function rankJob(job: CatalogJob, profile: StudentJobProfile, readiness = 0): RankedJob {
   const have = overlap(profile.skills, job.skills)
-  const gaps = job.skills.filter(s => !have.includes(s))
+  const gaps = job.skills.filter(s => !have.some(h => h.toLowerCase() === s.toLowerCase()))
   if (!hasCareerSignals(profile)) {
     return { ...job, matchScore: 0, matchReasons: [], skillGaps: gaps.slice(0, 4), careerFit: 'Stretch Role' }
   }
   const skillPct = job.skills.length ? have.length / job.skills.length : 0
-  const projectHit = profile.projects.some(p => p.skills.some(s => job.skills.some(js => js.toLowerCase().includes(s.toLowerCase()) || s.toLowerCase().includes(js.toLowerCase()))))
-  const roleAlign = roleAlignScore(job, profile.targetRole)
-  const matchScore = Math.round(
-    Math.min(
-      96,
-      Math.max(
-        0,
-        skillPct * 35 +
-          (projectHit ? 20 : 0) +
-          (profile.resumeScore / 100) * 15 +
-          (profile.interviewScore / 100) * 15 +
-          roleAlign * 15,
-      ),
-    ),
+  const projectHit = profile.projects.some(p =>
+    p.skills.some(s => job.skills.some(js => js.toLowerCase().includes(s.toLowerCase()) || s.toLowerCase().includes(js.toLowerCase()))),
   )
-  const careerFit: CareerFit = matchScore >= 85 ? 'High Match' : matchScore >= 70 ? 'Skill Gap' : 'Stretch Role'
+  const roleAlign = roleAlignScore(job, profile.targetRole)
+  const locAlign = locationAlignScore(job)
+  const expAlign = experienceAlignScore(job, readiness)
+  const resumeSignal = Math.min(1, profile.resumeScore / 100)
+  const interviewSignal = Math.min(1, profile.interviewScore / 100)
+
+  const raw =
+    skillPct * 30 +
+    roleAlign * 22 +
+    (projectHit ? 12 : 0) +
+    resumeSignal * 12 +
+    interviewSignal * 10 +
+    locAlign * 8 +
+    expAlign * 6
+
+  const matchScore = Math.round(Math.min(92, Math.max(0, raw)))
+  const careerFit: CareerFit = matchScore >= 75 ? 'High Match' : matchScore >= 55 ? 'Skill Gap' : 'Stretch Role'
   const matchReasons = [
     ...have.slice(0, 4),
     ...(projectHit ? ['Your project experience'] : []),
+    ...(roleAlign >= 0.8 ? ['Target role alignment'] : []),
   ]
   return { ...job, matchScore, matchReasons, skillGaps: gaps.slice(0, 4), careerFit }
 }
 
-export function rankCatalog(profile: StudentJobProfile, serverJobs?: CatalogJob[] | null): RankedJob[] {
-  return activeJobCatalog(serverJobs).map(j => rankJob(j, profile))
+export function filterJobsByMatchThreshold(jobs: RankedJob[], minScore = JOB_MATCH_MIN_SCORE): RankedJob[] {
+  if (!hasCareerSignalsForJobs(jobs)) return jobs
+  return jobs.filter(j => j.matchScore === 0 || j.matchScore >= minScore)
+}
+
+function hasCareerSignalsForJobs(jobs: RankedJob[]): boolean {
+  return jobs.some(j => j.matchScore > 0)
+}
+
+export function rankCatalog(
+  profile: StudentJobProfile,
+  serverJobs?: CatalogJob[] | null,
+  readiness = 0,
+): RankedJob[] {
+  const ranked = activeJobCatalog(serverJobs).map(j => rankJob(j, profile, readiness))
+  return filterJobsByMatchThreshold(ranked)
 }
 
 export function defaultExperience(readiness: number): ExperienceBand {
@@ -554,10 +678,16 @@ export function loadTargetRole(fallback: string) {
   return localStorage.getItem(key) || fallback
 }
 
-export function saveTargetRole(role: string) {
+export function saveTargetRoleLocal(role: string) {
   const key = roleStorageKey()
   if (!key) return
   localStorage.setItem(key, role)
+}
+
+export async function saveTargetRole(role: string): Promise<void> {
+  saveTargetRoleLocal(role)
+  if (!isSupabaseConfigured || !peekAuthUserId()) return
+  await saveCareerProfile({ target_role: role }).catch(() => undefined)
 }
 
 export function buildJobProfile(input: {

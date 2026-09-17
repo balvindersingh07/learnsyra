@@ -200,11 +200,14 @@ async function searchProjects(q: string): Promise<GlobalSearchResult[]> {
 async function searchJobs(q: string): Promise<GlobalSearchResult[]> {
   if (!isSupabaseConfigured) return []
   const pattern = ilikePattern(q)
+  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
   const { data, error } = await supabase
     .from('jobs')
     .select('id, title, company, location, tags')
+    .eq('is_active', true)
+    .gte('posted_at', cutoff)
     .or(`title.ilike.${pattern},company.ilike.${pattern},location.ilike.${pattern}`)
-    .order('created_at', { ascending: false })
+    .order('posted_at', { ascending: false })
     .limit(6)
   if (error) return []
   return (data ?? []).map(j => ({

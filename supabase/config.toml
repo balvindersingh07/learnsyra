@@ -448,6 +448,9 @@ verify_jwt = true
 [functions.admin-delete-user]
 verify_jwt = true
 
+[functions.sync-jobs]
+verify_jwt = false
+
 # pg-delta is the schema diff engine for db diff / db pull / db remote commit.
 # Set enabled = false to fall back to the legacy migra engine.
 [experimental.pgdelta]

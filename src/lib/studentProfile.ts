@@ -281,7 +281,7 @@ export function buildStudentHub(input: {
     extras.targetRole.trim() &&
       (career.haveSkills.length || career.portfolio.length || overlay || career.interview.overall > 0),
   )
-  const ranked = hasJobSignal ? rankCatalog(profile) : []
+  const ranked = hasJobSignal ? rankCatalog(profile, undefined, career.readinessScore) : []
   const bestMatch = ranked.reduce((m, j) => Math.max(m, j.matchScore), 0)
 
   const skills = career.skills.map(s => ({

@@ -2,13 +2,22 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import CareerHubNav from '../components/career/CareerHubNav'
 import { useAuth } from '../context/AuthContext'
-import { getCareerSnapshot } from '../lib/careerCenter'
-import { hydrateCareerData } from '../lib/careerPersistence'
+import {
+  computeReadiness,
+  getCareerProfile,
+  getCertificates,
+  getMyEnrollments,
+  getMyStudentProjects,
+  getProjects,
+} from '../lib/api'
+import { getCareerSnapshot, type CareerSnapshot } from '../lib/careerCenter'
+import { careerSummaryText, hydrateCareerData, parseCareerBlob } from '../lib/careerPersistence'
 import { loadInterviewCareerOverlay } from '../lib/interviewStudio'
 import {
   applicationReadiness,
   buildJobProfile,
-  getJobById,
+  isDevMockJobsEnabled,
+  loadJobById,
   loadServerJobCatalog,
   loadApps,
   loadTargetRole,
@@ -18,6 +27,7 @@ import {
   STATUSES,
   upsertApp,
   type AppStatus,
+  type CatalogJob,
   type JobApplication,
 } from '../lib/jobRecommendations'
 import { careerInterviewPath, careerJobsPath, careerResumePath } from '../lib/paths'
@@ -25,8 +35,7 @@ import { loadActiveId, loadDocs, loadResumeCareerOverlay } from '../lib/resumeBu
 import './career-center.css'
 import './job-recs.css'
 
-function currentProfile() {
-  const snap = getCareerSnapshot()
+function buildProfileBundle(snap: CareerSnapshot) {
   const docs = loadDocs()
   const active = loadActiveId()
   const resume = docs.find(d => d.id === active) ?? docs.find(d => d.isDefault) ?? docs[0]
@@ -52,9 +61,9 @@ export default function CareerJobDetail() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const { session } = useAuth()
-  const [{ snap, resume, profile }, setBundle] = useState(currentProfile)
-  const [catalogJob, setCatalogJob] = useState(() => getJobById(id))
-  const job = catalogJob ? rankJob(catalogJob, profile) : null
+  const [{ snap, resume, profile }, setBundle] = useState(() => buildProfileBundle(getCareerSnapshot()))
+  const [catalogJob, setCatalogJob] = useState<CatalogJob | null>(null)
+  const job = catalogJob ? rankJob(catalogJob, profile, snap.readinessScore) : null
   const [apps, setApps] = useState<Record<string, JobApplication>>(() => loadApps())
   const [demoApply, setDemoApply] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
@@ -65,13 +74,63 @@ export default function CareerJobDetail() {
   useEffect(() => {
     let alive = true
     setLoading(true)
-    hydrateCareerData(session?.user.id ?? null)
+    const uid = session?.user.id ?? null
+    hydrateCareerData(uid)
       .then(async () => {
         if (!alive) return
         await loadServerJobCatalog()
+        const [loadedJob, profileRow, certs, mine, catalog, enrollments] = await Promise.all([
+          loadJobById(id),
+          getCareerProfile().catch(() => null),
+          getCertificates().catch(() => []),
+          getMyStudentProjects().catch(() => []),
+          getProjects().catch(() => []),
+          getMyEnrollments().catch(() => []),
+        ])
         if (!alive) return
-        setCatalogJob(getJobById(id))
-        setBundle(currentProfile())
+        setCatalogJob(loadedJob)
+        const titleById = new Map(catalog.map(p => [p.id, p.title]))
+        const portfolio = mine.map(row => ({
+          id: row.id,
+          title: titleById.get(row.project_id) || 'Project',
+          score: 0,
+          skills: catalog.find(p => p.id === row.project_id)?.skills ?? [],
+          status: (row.status === 'completed' ? 'Portfolio Ready' : 'Needs Review') as 'Portfolio Ready' | 'Needs Review',
+          href: `/projects/${row.project_id}`,
+        }))
+        const certificates = certs.map(r => ({
+          title: r.title,
+          completed: new Date(r.issued_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+          official: true,
+        }))
+        const hasActivity =
+          Boolean(profileRow?.target_role?.trim()) ||
+          (profileRow?.skills?.length ?? 0) > 0 ||
+          certs.length > 0 ||
+          mine.length > 0 ||
+          enrollments.length > 0
+        const resumeSummary = careerSummaryText(parseCareerBlob(profileRow?.resume_text), profileRow?.resume_text)
+        const readiness = hasActivity
+          ? computeReadiness({
+              enrolledCount: enrollments.length,
+              avgProgress:
+                enrollments.length > 0
+                  ? enrollments.reduce((s, e) => s + (e.progress ?? 0), 0) / enrollments.length
+                  : 0,
+              submittedProjects: mine.filter(p => p.status === 'submitted' || p.status === 'completed').length,
+              resumeLength: resumeSummary.length,
+              targetRole: profileRow?.target_role ?? '',
+            })
+          : 0
+        const snapLoaded = getCareerSnapshot({
+          userId: uid,
+          targetRole: profileRow?.target_role,
+          readiness: hasActivity ? readiness : undefined,
+          skills: profileRow?.skills,
+          certificates,
+          portfolio,
+        })
+        setBundle(buildProfileBundle(snapLoaded))
         setApps({ ...loadApps() })
       })
       .finally(() => {
@@ -82,9 +141,6 @@ export default function CareerJobDetail() {
     }
   }, [id, session?.user.id])
 
-  useEffect(() => {
-    setBundle(currentProfile())
-  }, [id])
 
   useEffect(() => {
     if (!demoApply && !reviewOpen) return
@@ -153,7 +209,11 @@ export default function CareerJobDetail() {
         <CareerHubNav />
         <section className="glass rounded-3xl p-8">
           <h1 className="text-2xl font-black text-ink mb-2">Job not found</h1>
-          <p className="text-sm text-muted mb-4">This sample listing is not in the LearnSyra catalog.</p>
+          <p className="text-sm text-muted mb-4">
+            {isDevMockJobsEnabled()
+              ? 'This listing is not in the current catalog.'
+              : 'This live job is no longer available or has expired from the 7-day window.'}
+          </p>
           <Link to={careerJobsPath()} className="btn-primary text-sm inline-block">Back to Jobs</Link>
         </section>
       </div>
@@ -258,7 +318,7 @@ export default function CareerJobDetail() {
       <section className="glass rounded-3xl p-5 mb-4">
         <h2 className="text-lg font-black text-ink mb-1">✨ Application Readiness</h2>
         <div className="text-4xl font-black career-count">{ready.overall}%</div>
-        <p className="text-xs font-semibold uppercase text-muted mb-3">AI Match Estimate</p>
+        <p className="text-xs font-semibold uppercase text-muted mb-3">Match Estimate</p>
         <div className="space-y-2 mb-3">
           {[
             ['Resume', ready.resume],
@@ -331,7 +391,11 @@ export default function CareerJobDetail() {
         <p className="text-sm text-muted">Industry: {job.industry}</p>
         <p className="text-sm text-muted">Size: {job.companySize}</p>
         <p className="text-sm text-muted">Location: {job.location}</p>
-        <p className="text-xs text-muted mt-2">Company details are sample data for LearnSyra practice, not a verified employer profile.</p>
+        {job.source === 'mock' ? (
+          <p className="text-xs text-muted mt-2">Company details are sample data for development practice, not a verified employer profile.</p>
+        ) : (
+          <p className="text-xs text-muted mt-2">Company details are provided by the job source ({job.source}).</p>
+        )}
       </section>
 
       <section className="glass rounded-3xl p-5 mb-4">
@@ -388,11 +452,13 @@ export default function CareerJobDetail() {
       {demoApply && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: 'rgba(23,32,51,0.45)' }} onClick={() => setDemoApply(false)}>
           <div role="dialog" aria-modal="true" className="glass rounded-3xl p-6 max-w-md w-full career-modal-in" onClick={e => e.stopPropagation()}>
-            <h2 className="text-lg font-black text-ink mb-2">{job.externalUrl ? 'External application opened' : 'Demo application flow'}</h2>
+            <h2 className="text-lg font-black text-ink mb-2">{job.externalUrl ? 'External application opened' : 'Application tracking'}</h2>
             <p className="text-sm text-muted mb-4">
               {job.externalUrl
-                ? 'This listing opened an example URL. After you apply on the source, mark it here. LearnSyra does not submit applications.'
-                : 'This is a mock listing with no live employer URL. Mark as Applied for local tracking practice only.'}
+                ? 'This listing opened the employer application page. After you apply on the source, mark it here. LearnSyra does not submit applications for you.'
+                : job.source === 'mock'
+                  ? 'This development listing has no live employer URL. Mark as Applied for local tracking only.'
+                  : 'No outbound application URL was provided for this listing.'}
             </p>
             <div className="flex flex-wrap gap-2">
               <button type="button" className="btn-primary text-sm" onClick={markApplied}>Mark as Applied</button>

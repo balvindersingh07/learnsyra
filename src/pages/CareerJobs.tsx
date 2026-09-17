@@ -4,8 +4,16 @@ import CareerHubNav from '../components/career/CareerHubNav'
 import JobCard from '../components/career/JobCard'
 import JobFiltersPanel from '../components/career/JobFiltersPanel'
 import { useAuth } from '../context/AuthContext'
-import { getCareerSnapshot } from '../lib/careerCenter'
-import { hydrateCareerData } from '../lib/careerPersistence'
+import {
+  computeReadiness,
+  getCareerProfile,
+  getCertificates,
+  getMyEnrollments,
+  getMyStudentProjects,
+  getProjects,
+} from '../lib/api'
+import { getCareerSnapshot, type CareerSnapshot } from '../lib/careerCenter'
+import { careerSummaryText, hydrateCareerData, parseCareerBlob } from '../lib/careerPersistence'
 import { loadInterviewCareerOverlay } from '../lib/interviewStudio'
 import {
   appStats,
@@ -14,6 +22,7 @@ import {
   EMPTY_FILTERS,
   filterJobs,
   fitCopy,
+  isDevMockJobsEnabled,
   JOB_ROLES,
   loadApps,
   loadFilters,
@@ -37,26 +46,42 @@ import { loadActiveId, loadDocs, loadResumeCareerOverlay } from '../lib/resumeBu
 import './career-center.css'
 import './job-recs.css'
 
-function currentProfile(targetRole: string) {
-  const snap = getCareerSnapshot()
+function buildProfileBundle(targetRole: string, snap: CareerSnapshot) {
   const docs = loadDocs()
   const active = loadActiveId()
   const resume = docs.find(d => d.id === active) ?? docs.find(d => d.isDefault) ?? docs[0]
   const iv = loadInterviewCareerOverlay()
   const rs = loadResumeCareerOverlay()
+  const gapSkills = snap.needSkills.length
+    ? snap.needSkills
+    : [...new Set(rankSkillGaps(targetRole, snap.haveSkills))]
   return {
     snap,
     resume,
     profile: buildJobProfile({
       targetRole,
       haveSkills: snap.haveSkills,
-      gapSkills: snap.needSkills,
+      gapSkills,
       projects: snap.portfolio.map(p => ({ id: p.id, title: p.title, skills: p.skills })),
       interviewScore: iv?.interviewAfter ?? snap.interview.overall,
       resumeScore: rs?.resumeScore ?? snap.resume.score,
       resumeSkills: resume?.skills.filter(s => s.included).map(s => s.name),
     }),
   }
+}
+
+function rankSkillGaps(targetRole: string, have: string[]): string[] {
+  const roleNeed: Record<string, string[]> = {
+    'Frontend Developer': ['TypeScript', 'Testing'],
+    'React Developer': ['TypeScript', 'Testing'],
+    'Full Stack Developer': ['Node.js', 'SQL'],
+    'Software Engineer': ['REST APIs', 'Git'],
+    'Data Analyst': ['SQL', 'Python'],
+    'Business Analyst': ['SQL', 'Communication'],
+  }
+  const needed = roleNeed[targetRole] ?? roleNeed['Frontend Developer']
+  const lower = have.map(s => s.toLowerCase())
+  return needed.filter(n => !lower.some(h => h.includes(n.toLowerCase()) || n.toLowerCase().includes(h)))
 }
 
 export default function CareerJobs() {
@@ -68,7 +93,6 @@ export default function CareerJobs() {
   const [filterOpen, setFilterOpen] = useState(false)
   const [why, setWhy] = useState<RankedJob | null>(null)
   const [demoApply, setDemoApply] = useState<RankedJob | null>(null)
-  const [aiReady, setAiReady] = useState(false)
   const [loading, setLoading] = useState(true)
   const [syncError, setSyncError] = useState<string | null>(null)
   const [tab, setTab] = useState<'Recommended' | 'Saved' | 'Applied'>('Recommended')
@@ -76,27 +100,79 @@ export default function CareerJobs() {
   const [filters, setFilters] = useState<JobFilters>(() => loadFilters() ?? { ...EMPTY_FILTERS })
   const [apps, setApps] = useState<Record<string, JobApplication>>(() => loadApps())
   const [serverJobs, setServerJobs] = useState<CatalogJob[] | null>(null)
-  const { snap, resume, profile } = useMemo(() => currentProfile(targetRole), [targetRole])
-  const ranked = useMemo(() => rankCatalog(profile, serverJobs), [profile, serverJobs])
-  const usingServerJobs = (serverJobs?.length ?? 0) > 0
+  const [careerSnap, setCareerSnap] = useState<CareerSnapshot>(() => getCareerSnapshot())
+  const { snap, resume, profile } = useMemo(() => buildProfileBundle(targetRole, careerSnap), [targetRole, careerSnap])
+  const ranked = useMemo(() => rankCatalog(profile, serverJobs, snap.readinessScore), [profile, serverJobs, snap.readinessScore])
+  const usingLiveJobs = (serverJobs?.length ?? 0) > 0
 
   useEffect(() => {
     let alive = true
     setLoading(true)
     setSyncError(null)
-    hydrateCareerData(session?.user.id ?? null)
+    const uid = session?.user.id ?? null
+    hydrateCareerData(uid)
       .then(async () => {
         if (!alive) return
-        const jobs = await loadServerJobCatalog()
+        const [jobs, profileRow, certs, mine, catalog, enrollments] = await Promise.all([
+          loadServerJobCatalog(),
+          getCareerProfile().catch(() => null),
+          getCertificates().catch(() => []),
+          getMyStudentProjects().catch(() => []),
+          getProjects().catch(() => []),
+          getMyEnrollments().catch(() => []),
+        ])
         if (!alive) return
         setServerJobs(jobs.length ? jobs : null)
         setApps({ ...loadApps() })
-        setTargetRole(loadTargetRole(getCareerSnapshot({ userId: session?.user.id ?? null }).targetRole))
+        const titleById = new Map(catalog.map(p => [p.id, p.title]))
+        const portfolio = mine.map(row => ({
+          id: row.id,
+          title: titleById.get(row.project_id) || 'Project',
+          score: 0,
+          skills: catalog.find(p => p.id === row.project_id)?.skills ?? [],
+          status: (row.status === 'completed' ? 'Portfolio Ready' : 'Needs Review') as 'Portfolio Ready' | 'Needs Review',
+          href: `/projects/${row.project_id}`,
+        }))
+        const certificates = certs.map(r => ({
+          title: r.title,
+          completed: new Date(r.issued_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+          official: true,
+        }))
+        const hasActivity =
+          Boolean(profileRow?.target_role?.trim()) ||
+          (profileRow?.skills?.length ?? 0) > 0 ||
+          certs.length > 0 ||
+          mine.length > 0 ||
+          enrollments.length > 0
+        const resumeSummary = careerSummaryText(parseCareerBlob(profileRow?.resume_text), profileRow?.resume_text)
+        const readiness = hasActivity
+          ? computeReadiness({
+              enrolledCount: enrollments.length,
+              avgProgress:
+                enrollments.length > 0
+                  ? enrollments.reduce((s, e) => s + (e.progress ?? 0), 0) / enrollments.length
+                  : 0,
+              submittedProjects: mine.filter(p => p.status === 'submitted' || p.status === 'completed').length,
+              resumeLength: resumeSummary.length,
+              targetRole: profileRow?.target_role ?? '',
+            })
+          : 0
+        const snapLoaded = getCareerSnapshot({
+          userId: uid,
+          targetRole: profileRow?.target_role,
+          readiness: hasActivity ? readiness : undefined,
+          skills: profileRow?.skills,
+          certificates,
+          portfolio,
+        })
+        setCareerSnap(snapLoaded)
+        setTargetRole(loadTargetRole(profileRow?.target_role ?? snapLoaded.targetRole))
       })
       .catch(() => {
         if (!alive) return
-        setSyncError('Could not sync job applications. Showing local data.')
+        setSyncError('Could not sync career and job data. Showing local data.')
         setApps({ ...loadApps() })
+        setCareerSnap(getCareerSnapshot({ userId: uid }))
       })
       .finally(() => {
         if (alive) setLoading(false)
@@ -105,11 +181,6 @@ export default function CareerJobs() {
       alive = false
     }
   }, [session?.user.id])
-
-  useEffect(() => {
-    const t = window.setTimeout(() => setAiReady(true), 280)
-    return () => window.clearTimeout(t)
-  }, [])
 
   useEffect(() => {
     saveFilters(filters)
@@ -250,12 +321,12 @@ export default function CareerJobs() {
             <button type="button" className="btn-primary text-sm" onClick={() => navigate(gapCourse ? `/courses?q=${encodeURIComponent(gapCourse)}` : '/courses')}>Improve My Match</button>
           </div>
         </section>
-        <section className={`glass rounded-3xl p-5 ${aiReady ? 'job-ai-in' : ''}`}>
+        <section className="glass rounded-3xl p-5 job-ai-in">
           <h2 className="text-lg font-black text-ink mb-1">Your Job Match</h2>
           {targetRole.trim() && readyPct > 0 ? (
             <>
-              <div className="text-4xl font-black text-ink career-count">{aiReady ? `${readyPct}%` : '…'}</div>
-              <p className="text-xs font-semibold uppercase text-muted mb-2">Ready · AI Match Estimate</p>
+              <div className="text-4xl font-black text-ink career-count">{readyPct}%</div>
+              <p className="text-xs font-semibold uppercase text-muted mb-2">Ready · Match Estimate</p>
               <p className="text-sm text-muted mb-3">You currently match {matchedSkills.length} of {Math.max(important.length, matchedSkills.length + profile.gapSkills.length)} important skills across your recommended roles.</p>
             </>
           ) : (
@@ -275,11 +346,13 @@ export default function CareerJobs() {
       </div>
 
       <section className="glass rounded-3xl p-5 mb-5">
-        <h2 className="text-lg font-black text-ink mb-2">🤖 AI Recommendation</h2>
-        {!aiReady ? (
-          <p className="text-sm text-muted">Estimating your match from skills, projects, resume, and interview practice…</p>
-        ) : !targetRole.trim() || ranked.every(j => j.matchScore === 0) ? (
-          <p className="text-sm text-muted">Set your career goal to see personalized job matches. Catalog listings below are for exploration.</p>
+        <h2 className="text-lg font-black text-ink mb-2">Personalized Recommendation</h2>
+        {!targetRole.trim() || ranked.every(j => j.matchScore === 0) ? (
+          <p className="text-sm text-muted">
+            {usingLiveJobs
+              ? 'Set your career goal and add skills, projects, or resume details to see personalized live job matches.'
+              : 'No matching live jobs found right now. Set your career goal and check back after the next sync.'}
+          </p>
         ) : (
           <>
             <blockquote className="text-sm text-ink mb-4 pl-3" style={{ borderLeft: '3px solid #6C5CE7' }}>
@@ -383,7 +456,15 @@ export default function CareerJobs() {
               </select>
             </label>
           </div>
-          {filtered.length === 0 && <p className="text-sm text-muted">No roles match these filters. Try All Matches or reset filters.</p>}
+          {filtered.length === 0 && (
+            <p className="text-sm text-muted">
+              {usingLiveJobs
+                ? 'No matching live jobs found for these filters. Try All Matches or reset filters.'
+                : isDevMockJobsEnabled()
+                  ? 'No roles match these filters. Try All Matches or reset filters.'
+                  : 'No matching live jobs found. Listings refresh from authorized job sources on a scheduled sync.'}
+            </p>
+          )}
           {list(filtered, tab !== 'Recommended')}
         </div>
       </div>
@@ -404,7 +485,7 @@ export default function CareerJobs() {
             <h2 id="goal-title" className="text-lg font-black text-ink mb-3">Change Career Goal</h2>
             <div className="flex flex-wrap gap-2">
               {JOB_ROLES.map(r => (
-                <button key={r} type="button" className="job-choice px-3 py-2 rounded-xl text-xs font-semibold" data-on={targetRole === r} onClick={() => { setTargetRole(r); saveTargetRole(r); setRoleOpen(false) }}>{r}</button>
+                <button key={r} type="button" className="job-choice px-3 py-2 rounded-xl text-xs font-semibold" data-on={targetRole === r} onClick={() => { setTargetRole(r); void saveTargetRole(r); setRoleOpen(false) }}>{r}</button>
               ))}
             </div>
             <button type="button" className="btn-glass text-sm mt-4" onClick={() => setRoleOpen(false)}>Close</button>
@@ -415,7 +496,7 @@ export default function CareerJobs() {
       {why && (
         <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-4" style={{ background: 'rgba(23,32,51,0.45)' }} onClick={() => setWhy(null)}>
           <div role="dialog" aria-modal="true" aria-labelledby="why-title" className="glass rounded-3xl p-6 max-w-lg w-full career-modal-in" onClick={e => e.stopPropagation()}>
-            <h2 id="why-title" className="text-lg font-black text-ink mb-1">✨ AI Match Explanation</h2>
+            <h2 id="why-title" className="text-lg font-black text-ink mb-1">Match Explanation</h2>
             <p className="text-2xl font-black text-primary career-count mb-1">{why.matchScore}% Match</p>
             <p className="text-xs font-semibold uppercase text-muted mb-3">LearnSyra Match · not a hiring probability</p>
             <p className="text-sm mb-1"><span className="font-bold">Strong matches:</span> {why.matchReasons.join(', ')}</p>
@@ -435,11 +516,13 @@ export default function CareerJobs() {
       {demoApply && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: 'rgba(23,32,51,0.45)' }} onClick={() => setDemoApply(null)}>
           <div role="dialog" aria-modal="true" className="glass rounded-3xl p-6 max-w-md w-full career-modal-in" onClick={e => e.stopPropagation()}>
-            <h2 className="text-lg font-black text-ink mb-2">{demoApply.externalUrl ? 'External application opened' : 'Demo application flow'}</h2>
+            <h2 className="text-lg font-black text-ink mb-2">{demoApply.externalUrl ? 'External application opened' : 'Application tracking'}</h2>
             <p className="text-sm text-muted mb-4">
               {demoApply.externalUrl
-                ? 'This listing opened an example URL. After you apply on the source, you can mark it here. LearnSyra does not submit applications for you.'
-                : 'This is a mock listing with no live employer URL. You can mark it Applied for tracking practice only.'}
+                ? 'This listing opened the employer application page. After you apply on the source, you can mark it here. LearnSyra does not submit applications for you.'
+                : demoApply.source === 'mock'
+                  ? 'This development listing has no live employer URL. You can mark it Applied for local tracking only.'
+                  : 'No outbound application URL was provided for this listing.'}
             </p>
             <div className="flex flex-wrap gap-2">
               <button type="button" className="btn-primary text-sm" onClick={() => markApplied(demoApply.id)}>Mark as Applied</button>
@@ -451,9 +534,11 @@ export default function CareerJobs() {
       )}
 
       <p className="text-xs text-muted mt-6">
-        {usingServerJobs
-          ? 'Live employer listings from LearnSyra. Match scores are estimates, not hiring predictions.'
-          : 'Listings are LearnSyra sample opportunities for career practice. Match scores are estimates, not hiring predictions.'}
+        {usingLiveJobs
+          ? 'Live India job listings from authorized sources, refreshed within the last 7 days. Match scores are estimates from your profile — not hiring predictions.'
+          : isDevMockJobsEnabled()
+            ? 'Development mock listings enabled. Match scores are estimates, not hiring predictions.'
+            : 'No live jobs are available right now. Listings refresh from authorized job sources on a scheduled sync.'}
       </p>
         </>
       )}

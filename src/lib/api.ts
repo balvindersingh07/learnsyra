@@ -61,6 +61,41 @@ export interface JobRow {
   logo: string | null
   tags: string[]
   apply_url: string | null
+  created_at?: string
+  source?: string | null
+  source_job_id?: string | null
+  source_url?: string | null
+  work_mode?: string | null
+  job_type?: string | null
+  description?: string | null
+  requirements?: string[] | null
+  skills?: string[] | null
+  salary_min?: number | null
+  salary_max?: number | null
+  currency?: string | null
+  posted_at?: string | null
+  updated_at?: string | null
+  expires_at?: string | null
+  is_active?: boolean | null
+  ingested_at?: string | null
+  content_hash?: string | null
+}
+
+export const JOB_FRESHNESS_DAYS = 7
+
+function isValidProductionJobUrl(url: string | null | undefined): boolean {
+  if (!url?.trim()) return false
+  try {
+    const u = new URL(url.trim())
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false
+    return !/example\.com$/i.test(u.hostname)
+  } catch {
+    return false
+  }
+}
+
+export function jobFreshnessCutoffIso(): string {
+  return new Date(Date.now() - JOB_FRESHNESS_DAYS * 24 * 60 * 60 * 1000).toISOString()
 }
 
 export interface CourseReview {
@@ -1090,9 +1125,33 @@ export async function getAdminStats() {
 
 export async function getJobs(): Promise<JobRow[]> {
   if (!isSupabaseConfigured) return []
-  const { data, error } = await supabase.from('jobs').select('*').order('created_at', { ascending: false })
+  const cutoff = jobFreshnessCutoffIso()
+  const { data, error } = await supabase
+    .from('jobs')
+    .select('*')
+    .eq('is_active', true)
+    .gte('posted_at', cutoff)
+    .order('posted_at', { ascending: false })
   if (error) throw error
-  return (data as JobRow[]) ?? []
+  const rows = (data as JobRow[]) ?? []
+  return rows.filter(row => isValidProductionJobUrl(row.apply_url) || isValidProductionJobUrl(row.source_url))
+}
+
+export async function getJobById(id: string): Promise<JobRow | null> {
+  if (!isSupabaseConfigured) return null
+  const cutoff = jobFreshnessCutoffIso()
+  const { data, error } = await supabase
+    .from('jobs')
+    .select('*')
+    .eq('id', id)
+    .eq('is_active', true)
+    .gte('posted_at', cutoff)
+    .maybeSingle()
+  if (error) throw error
+  const row = data as JobRow | null
+  if (!row) return null
+  if (!isValidProductionJobUrl(row.apply_url) && !isValidProductionJobUrl(row.source_url)) return null
+  return row
 }
 
 export function jobMatch(job: JobRow, skills: string[]) {
