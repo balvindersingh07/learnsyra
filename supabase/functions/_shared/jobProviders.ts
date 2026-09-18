@@ -1,4 +1,5 @@
 import {
+  assessJobRelevance,
   buildContentHash,
   formatSalaryLabel,
   isFreshPostedAt,
@@ -7,6 +8,7 @@ import {
   normalizeEmploymentType,
   normalizeWorkMode,
   parseIsoDate,
+  type JobRelevanceRejectReason,
   type NormalizedJob,
 } from './jobIngest.ts'
 
@@ -23,6 +25,8 @@ export type ProviderFetchResult = {
   errors: string[]
   providerRequests: number
   rateLimitRemaining: number | null
+  relevanceRejected: number
+  relevanceRejectReasons: Record<JobRelevanceRejectReason, number>
 }
 
 type IndianApiJob = {
@@ -109,7 +113,12 @@ function parseSalary(row: IndianApiJob): { min: number | null; max: number | nul
   return { min: null, max: null, label: text || null }
 }
 
-async function normalizeIndianApiJob(row: IndianApiJob): Promise<NormalizedJob | null> {
+type NormalizeIndianApiResult = {
+  job: NormalizedJob | null
+  relevanceReject?: JobRelevanceRejectReason
+}
+
+async function normalizeIndianApiJob(row: IndianApiJob): Promise<NormalizeIndianApiResult> {
   const jobId = String(row.id ?? '').trim()
   const title = String(row.title ?? row.job_title ?? '').trim()
   const company = String(row.company ?? '').trim()
@@ -118,8 +127,22 @@ async function normalizeIndianApiJob(row: IndianApiJob): Promise<NormalizedJob |
   const postedAt = parseIsoDate(row.posted_date)
   const urls = pickUrls(row)
 
-  if (!jobId || !title || !company || !postedAt || !description || !urls) return null
-  if (!isFreshPostedAt(postedAt)) return null
+  if (!jobId || !title || !company || !postedAt || !description || !urls) return { job: null }
+  if (!isFreshPostedAt(postedAt)) return { job: null }
+
+  const relevance = assessJobRelevance({
+    title: String(row.title ?? '').trim(),
+    job_title: row.job_title,
+    job_description: row.job_description,
+    role_and_responsibility: row.role_and_responsibility,
+    education_and_skills: row.education_and_skills,
+    experience: row.experience,
+    job_type: row.job_type,
+    company: row.company,
+  })
+  if (!relevance.accept) {
+    return { job: null, relevanceReject: relevance.reason ?? 'reject:no_it_signal' }
+  }
 
   const skills = stringList(row.education_and_skills)
   const requirements = skills.length ? skills : stringList(row.experience)
@@ -148,7 +171,7 @@ async function normalizeIndianApiJob(row: IndianApiJob): Promise<NormalizedJob |
     content_hash: '',
   }
   normalized.content_hash = await buildContentHash(normalized)
-  return normalized
+  return { job: normalized }
 }
 
 async function indianApiSearch(
@@ -192,12 +215,22 @@ async function indianApiSearch(
   return { rows: rows as IndianApiJob[] }
 }
 
+function emptyRejectReasons(): Record<JobRelevanceRejectReason, number> {
+  return {
+    'reject:title': 0,
+    'reject:domain': 0,
+    'reject:no_it_signal': 0,
+  }
+}
+
 export async function fetchProviderJobs(): Promise<ProviderFetchResult> {
   const apiKey = Deno.env.get('INDIANAPI_API_KEY')?.trim()
   const jobs: NormalizedJob[] = []
   const errors: string[] = []
   const budget = new RequestBudget(MAX_REQUESTS_PER_SYNC)
   const seenIds = new Set<string>()
+  let relevanceRejected = 0
+  const relevanceRejectReasons = emptyRejectReasons()
 
   if (!apiKey) {
     return {
@@ -205,6 +238,8 @@ export async function fetchProviderJobs(): Promise<ProviderFetchResult> {
       errors: ['indianapi:missing INDIANAPI_API_KEY'],
       providerRequests: 0,
       rateLimitRemaining: null,
+      relevanceRejected: 0,
+      relevanceRejectReasons: emptyRejectReasons(),
     }
   }
 
@@ -221,8 +256,13 @@ export async function fetchProviderJobs(): Promise<ProviderFetchResult> {
       if (!id || seenIds.has(id)) continue
       seenIds.add(id)
 
-      const normalized = await normalizeIndianApiJob(row)
-      if (normalized) jobs.push(normalized)
+      const { job, relevanceReject } = await normalizeIndianApiJob(row)
+      if (relevanceReject) {
+        relevanceRejected++
+        relevanceRejectReasons[relevanceReject]++
+        continue
+      }
+      if (job) jobs.push(job)
     }
 
     await sleep(200)
@@ -233,5 +273,7 @@ export async function fetchProviderJobs(): Promise<ProviderFetchResult> {
     errors,
     providerRequests: budget.used,
     rateLimitRemaining: null,
+    relevanceRejected,
+    relevanceRejectReasons,
   }
 }

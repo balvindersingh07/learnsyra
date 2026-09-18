@@ -4,16 +4,16 @@
 
 LearnSyra Career Jobs reads live listings from the Supabase `public.jobs` table. The student Jobs page (`/career/jobs`) shows only **active** rows posted within the last **7 days** with valid outbound application or source URLs.
 
-**Production has no active external job provider configured today.** The `sync-jobs` Edge Function runs the generic ingest pipeline (validation, deduplication, stale deactivation) but returns an empty provider batch until an authorized source is wired in server-side.
+**Production uses IndianAPI** (`source=indianapi`) as the authorized server-side job provider. The `sync-jobs` Edge Function fetches listings, applies a deterministic IT relevance gate, validates and deduplicates rows, then upserts into `public.jobs`.
 
 Mock/demo listings are **disabled in production**. For local development only, set `VITE_DEV_MOCK_JOBS=true` in `.env.local` to enable the legacy practice catalog when the database is empty.
 
 ## Architecture
 
 ```
-Authorized job API (future)  →  sync-jobs Edge Function  →  public.jobs  →  Frontend (getJobs)
+IndianAPI (jobs.indianapi.in)  →  sync-jobs Edge Function  →  public.jobs  →  Frontend (getJobs)
          ↑                              ↑
-   server-side secrets only      SYNC_JOBS_CRON_SECRET
+   INDIANAPI_API_KEY (secret)    SYNC_JOBS_CRON_SECRET
 ```
 
 ### Design principles
@@ -27,17 +27,43 @@ Authorized job API (future)  →  sync-jobs Edge Function  →  public.jobs  →
 | Server-side secrets | Provider credentials live in Supabase Edge Function secrets — never in `VITE_*` frontend vars |
 | Production mock-free | Production builds never fall back to the dev mock catalog |
 
-### Future authorized provider integration
+### IndianAPI provider
 
-When a provider is added:
+- **Endpoint:** `https://jobs.indianapi.in/jobs`
+- **Auth:** `x-api-key` header from `INDIANAPI_API_KEY` (Supabase secret only)
+- **Source identifier:** `indianapi`
+- **Rotation:** 14 IT role queries, 4 per sync slot, slot advances every 4 hours
+- **Request budget:** up to 6 HTTP calls per sync (`MAX_REQUESTS_PER_SYNC`)
+- **Field mapping:** `apply_link` → `apply_url` / `source_url` (preserved exactly), `posted_date` → `posted_at`
 
-1. Implement `fetchProviderJobs()` in `supabase/functions/_shared/jobProviders.ts` to call the authorized API and map results to `NormalizedJob`.
-2. Set provider credentials as Supabase Edge Function secrets (names depend on the provider).
-3. Deploy `sync-jobs` and schedule periodic runs via cron or an external scheduler.
-4. Store `source` (e.g. provider identifier string) and `source_job_id` for uniqueness.
-5. Preserve employer apply URLs in `apply_url` (preferred) and listing URLs in `source_url`.
+### Deterministic IT relevance gate
 
-The existing schema, RLS, client `getJobs()` / `getJobById()`, matching, and Jobs UI require no structural changes when a provider is connected.
+Before any upsert, each IndianAPI row passes `assessJobRelevance()` in `supabase/functions/_shared/jobIngest.ts`. Rejected jobs are never inserted or updated.
+
+**Decision order:**
+
+1. **Mandatory validation** (unchanged): required fields, ≤7-day freshness, valid HTTPS apply URL, `example.com` blocked.
+2. **Title hard reject** (`reject:title`): HR/recruitment/sales/marketing/finance/legal/non-IT support patterns in `title` + `job_title`. Uses word boundaries (e.g. `\bhr\b` does **not** match **HRIS**).
+3. **Title accept:** strong IT title phrases (`IT_ROLE_PHRASES`, software engineer/developer, SDE, software development/testing, etc.) or tier-2 IT support (`IT Helpdesk`, `IT Support`, technical support with IT context).
+4. **Domain reject** (`reject:domain`): same reject patterns scanned across the full listing when the title is weak.
+5. **Body accept:** at least **2 distinct** hits from `IT_SKILL_LEXICON` (react, javascript, python, docker, etc.) anywhere in the listing text.
+6. **Otherwise** (`reject:no_it_signal`).
+
+**Seniority is neutral:** fresher, graduate, trainee, intern, junior, and associate titles are never rejected solely because of seniority. Generic roles like *Graduate Engineer Trainee* require IT evidence (title or body) to pass.
+
+**Examples:**
+
+| Listing | Result |
+|---------|--------|
+| Associate Software Engineer | Accept (title) |
+| Software Development and Testing Intern | Accept (title) |
+| IT Helpdesk Analyst | Accept (tier-2 IT support) |
+| HRIS Developer | Accept (HRIS not caught by `\bhr\b`) |
+| Recruitment Coordinator | Reject (`reject:title`) |
+| HR Apprentice Trainee | Reject (`reject:title`) |
+| Graduate Engineer Trainee (no IT body signals) | Reject (`reject:no_it_signal`) |
+
+**Observability:** sync responses and logs include `relevanceRejected` and `relevanceRejectReasons` counts. No database columns are added for reject tracking.
 
 ## Environment variables
 
@@ -46,7 +72,7 @@ The existing schema, RLS, client `getJobs()` / `getJobById()`, matching, and Job
 | Secret | Required | Description |
 |--------|----------|-------------|
 | `SYNC_JOBS_CRON_SECRET` | **Yes** (for scheduled sync) | Shared secret for `x-sync-jobs-secret` header |
-| Provider API key(s) | When a provider is active | Set per provider — never commit or expose to the frontend |
+| `INDIANAPI_API_KEY` | **Yes** (production ingest) | IndianAPI `x-api-key` — never commit or expose to the frontend |
 | `SUPABASE_SERVICE_ROLE_KEY` | Auto | Provided by Supabase runtime |
 
 ### Frontend (optional)

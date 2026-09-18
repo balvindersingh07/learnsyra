@@ -121,14 +121,23 @@ Deno.serve(async req => {
     deactivated: 0,
     providerRequests: 0,
     providerErrors: [] as string[],
+    relevanceRejected: 0,
+    relevanceRejectReasons: {
+      'reject:title': 0,
+      'reject:domain': 0,
+      'reject:no_it_signal': 0,
+    },
   }
 
   try {
     const admin = serviceClient()
-    const { jobs, errors, providerRequests } = await fetchProviderJobs()
+    const { jobs, errors, providerRequests, relevanceRejected, relevanceRejectReasons } =
+      await fetchProviderJobs()
     stats.providerErrors = errors
     stats.fetched = jobs.length
     stats.providerRequests = providerRequests
+    stats.relevanceRejected = relevanceRejected
+    stats.relevanceRejectReasons = relevanceRejectReasons
 
     const seenHash = new Set<string>()
     for (const job of jobs) {
