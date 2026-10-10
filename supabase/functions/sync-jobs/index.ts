@@ -2,6 +2,7 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { fetchProviderJobs } from '../_shared/jobProviders.ts'
 import { isFreshPostedAt, JOB_FRESHNESS_DAYS, validateNormalizedJob, type NormalizedJob } from '../_shared/jobIngest.ts'
+import { runLegacyIndianApiRelevanceCleanup } from '../_shared/legacyIndianApiRelevanceCleanup.ts'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -127,6 +128,13 @@ Deno.serve(async req => {
       'reject:domain': 0,
       'reject:no_it_signal': 0,
     },
+    legacyRelevanceEvaluated: 0,
+    legacyRelevanceDeactivated: 0,
+    legacyRelevanceDeactivateReasons: {
+      'reject:title': 0,
+      'reject:domain': 0,
+      'reject:no_it_signal': 0,
+    },
   }
 
   try {
@@ -159,6 +167,11 @@ Deno.serve(async req => {
     }
 
     stats.deactivated = await deactivateStaleJobs(admin)
+
+    const legacyCleanup = await runLegacyIndianApiRelevanceCleanup(admin)
+    stats.legacyRelevanceEvaluated = legacyCleanup.evaluated
+    stats.legacyRelevanceDeactivated = legacyCleanup.deactivated
+    stats.legacyRelevanceDeactivateReasons = legacyCleanup.deactivateReasons
 
     console.log(
       JSON.stringify({

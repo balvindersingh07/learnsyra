@@ -65,6 +65,10 @@ Before any upsert, each IndianAPI row passes `assessJobRelevance()` in `supabase
 
 **Observability:** sync responses and logs include `relevanceRejected` and `relevanceRejectReasons` counts. No database columns are added for reject tracking.
 
+### Legacy active-row cleanup
+
+Each `sync-jobs` run also re-evaluates **active** `indianapi` rows already in `public.jobs` using the same `assessJobRelevance()` logic. Rows that fail are set to `is_active = false` (not deleted). Other `source` values are never touched. Sync stats include `legacyRelevanceEvaluated`, `legacyRelevanceDeactivated`, and `legacyRelevanceDeactivateReasons`.
+
 ## Environment variables
 
 ### Edge Function secrets (Supabase Dashboard → Edge Functions → Secrets)
